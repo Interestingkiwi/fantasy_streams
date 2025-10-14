@@ -59,7 +59,6 @@ def callback():
     token = yahoo.fetch_token(TOKEN_URL, client_secret=YAHOO_CLIENT_SECRET,
                               authorization_response=request.url)
 
-    # THE FIX IS HERE (Part 1): Save the token and the user's guid to the session.
     session['oauth_token'] = token
     session['yahoo_guid'] = token.get('xoauth_yahoo_guid')
 
@@ -86,43 +85,50 @@ def get_leagues():
         token_data['token_time'] = time.time()
         token_data['consumer_key'] = YAHOO_CLIENT_ID
         token_data['consumer_secret'] = YAHOO_CLIENT_SECRET
-        # THE FIX IS HERE (Part 2): Add the user's guid to the token data.
         token_data['guid'] = session.get('yahoo_guid')
         access_token_json = json.dumps(token_data)
-
-        yq = YahooFantasySportsQuery(
-            None,  # league_id
-            None,  # game_code
-            yahoo_access_token_json=access_token_json
-        )
-
-        # 1. Get all of the user's teams
-        user_teams_data = yq.get_user_teams()
 
         teams_2025 = []
         game_keys = set()
 
-        if user_teams_data and hasattr(user_teams_data, 'teams'):
-            for team in user_teams_data.teams:
-                if team.game.season == '2025':
-                    team_key_parts = team.team_key.split('.')
-                    game_key = team_key_parts[0]
-                    league_id = team_key_parts[2]
-                    team_num = team_key_parts[4]
+        # THE FIX IS HERE: Iterate through known sports to avoid the interactive prompt.
+        for sport in ['nhl']:
+            yq = YahooFantasySportsQuery(
+                None,  # league_id
+                sport,  # game_code
+                yahoo_access_token_json=access_token_json
+            )
 
-                    teams_2025.append({
-                        "team_key": team.team_key,
-                        "team_name": team.name,
-                        "game_key": game_key,
-                        "league_id": league_id,
-                        "team_num": team_num
-                    })
-                    game_keys.add(game_key)
+            # 1. Get all of the user's teams for the current sport
+            user_teams_data = yq.get_user_teams()
 
-        # 2. Get league names for all unique game keys
+            if user_teams_data and hasattr(user_teams_data, 'teams'):
+                for team in user_teams_data.teams:
+                    if team.game.season == '2025':
+                        team_key_parts = team.team_key.split('.')
+                        game_key = team_key_parts[0]
+                        league_id = team_key_parts[2]
+                        team_num = team_key_parts[4]
+
+                        teams_2025.append({
+                            "team_key": team.team_key,
+                            "team_name": team.name,
+                            "game_key": game_key,
+                            "league_id": league_id,
+                            "team_num": team_num
+                        })
+                        game_keys.add(game_key)
+
+        # 2. Get league names for all unique game keys found across all sports
         league_names = {}
         for game_key in game_keys:
-            leagues_data = yq.get_user_leagues_by_game_key(game_key)
+            # Re-initialize query for the specific game key to get league info
+            yq_league = YahooFantasySportsQuery(
+                None,
+                game_key.split('.')[0], # Extract sport from game_key e.g., '448' -> 'nfl'
+                yahoo_access_token_json=access_token_json
+            )
+            leagues_data = yq_league.get_user_leagues_by_game_key(game_key)
             if leagues_data and hasattr(leagues_data, 'leagues'):
                 for league in leagues_data.leagues:
                     league_names[league.league_id] = league.name
