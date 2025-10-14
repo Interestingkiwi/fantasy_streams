@@ -1,7 +1,9 @@
 from flask import Flask, jsonify, redirect, request, session, send_from_directory
 from requests_oauthlib import OAuth2Session
+from yfpy.query import YahooFantasySportsQuery
 import os
 import json
+import time
 
 # Initialize the Flask application to serve static files from the 'client' directory
 app = Flask(__name__, static_folder='../client', static_url_path='')
@@ -69,6 +71,69 @@ def get_user():
         return jsonify({"loggedIn": True})
     else:
         return jsonify({"loggedIn": False})
+
+@app.route("/api/leagues")
+def get_leagues():
+    """Fetches and processes the user's fantasy leagues for the 2025 season."""
+    if 'oauth_token' not in session:
+        return jsonify({"error": "User not authenticated"}), 401
+
+    try:
+        # Prepare the token for yfpy
+        token_data = session['oauth_token'].copy()
+        token_data['token_time'] = time.time()
+        token_data['consumer_key'] = YAHOO_CLIENT_ID
+        token_data['consumer_secret'] = YAHOO_CLIENT_SECRET
+        access_token_json = json.dumps(token_data)
+
+        yq = YahooFantasySportsQuery(
+            auth_dir=None, # Use programmatic auth instead of file
+            consumer_key=YAHOO_CLIENT_ID,
+            consumer_secret=YAHOO_CLIENT_SECRET,
+            access_token_json=access_token_json
+        )
+
+        # 1. Get all of the user's teams
+        user_teams_data = yq.get_user_teams()
+
+        teams_2025 = []
+        game_keys = set()
+
+        if user_teams_data and hasattr(user_teams_data, 'teams'):
+            for team in user_teams_data.teams:
+                if team.game.season == '2025':
+                    team_key_parts = team.team_key.split('.')
+                    game_key = team_key_parts[0]
+                    league_id = team_key_parts[2]
+                    team_num = team_key_parts[4]
+
+                    teams_2025.append({
+                        "team_key": team.team_key,
+                        "team_name": team.name,
+                        "game_key": game_key,
+                        "league_id": league_id,
+                        "team_num": team_num
+                    })
+                    game_keys.add(game_key)
+
+        # 2. Get league names for all unique game keys
+        league_names = {}
+        for game_key in game_keys:
+            leagues_data = yq.get_user_leagues_by_game_key(game_key)
+            if leagues_data and hasattr(leagues_data, 'leagues'):
+                for league in leagues_data.leagues:
+                    league_names[league.league_id] = league.name
+
+        # 3. Combine the data
+        for team in teams_2025:
+            team['league_name'] = league_names.get(team['league_id'], 'Unknown League')
+
+        return jsonify(teams_2025)
+
+    except Exception as e:
+        # Log the actual error on the server for debugging
+        print(f"Error fetching leagues from Yahoo API: {e}")
+        return jsonify({"error": "Failed to fetch data from Yahoo API."}), 500
 
 
 @app.route("/logout")
