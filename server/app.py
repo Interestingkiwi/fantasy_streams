@@ -93,7 +93,7 @@ def get_leagues():
         game_key_to_code = {}
 
         # Iterate through known sports to find all user teams
-        for sport in [nhl']:
+        for sport in ['nhl']:
             yq = YahooFantasySportsQuery(
                 None,  # league_id
                 sport,  # game_code
