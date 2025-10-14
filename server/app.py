@@ -55,12 +55,14 @@ def login():
 @app.route("/callback")
 def callback():
     """Handles the callback from Yahoo after authorization."""
-    # THE FIX IS HERE: Added redirect_uri to the OAuth2Session constructor
     yahoo = OAuth2Session(YAHOO_CLIENT_ID, state=session.get('oauth_state'), redirect_uri=REDIRECT_URI)
     token = yahoo.fetch_token(TOKEN_URL, client_secret=YAHOO_CLIENT_SECRET,
                               authorization_response=request.url)
 
+    # THE FIX IS HERE (Part 1): Save the token and the user's guid to the session.
     session['oauth_token'] = token
+    session['yahoo_guid'] = token.get('xoauth_yahoo_guid')
+
     # Redirect user back to the correct frontend URL's root
     return redirect(FRONTEND_URL)
 
@@ -84,9 +86,10 @@ def get_leagues():
         token_data['token_time'] = time.time()
         token_data['consumer_key'] = YAHOO_CLIENT_ID
         token_data['consumer_secret'] = YAHOO_CLIENT_SECRET
+        # THE FIX IS HERE (Part 2): Add the user's guid to the token data.
+        token_data['guid'] = session.get('yahoo_guid')
         access_token_json = json.dumps(token_data)
 
-        # THE FIX IS HERE: Added None for the two required positional arguments.
         yq = YahooFantasySportsQuery(
             None,  # league_id
             None,  # game_code
