@@ -90,9 +90,11 @@ def get_leagues():
 
         teams_2025 = []
         game_keys = set()
+        # THE FIX IS HERE (Part 1): Create a map to store the sport code for each game key.
+        game_key_to_code = {}
 
-        # THE FIX IS HERE: Iterate through known sports to avoid the interactive prompt.
-        for sport in ['nhl']:
+        # Iterate through known sports to find all user teams
+        for sport in ['nfl', 'mlb', 'nba', 'nhl']:
             yq = YahooFantasySportsQuery(
                 None,  # league_id
                 sport,  # game_code
@@ -104,7 +106,10 @@ def get_leagues():
 
             if user_teams_data and hasattr(user_teams_data, 'teams'):
                 for team in user_teams_data.teams:
+                    # Re-instating the 2025 season filter as requested
                     if team.game.season == '2025':
+                        print(f"Found team '{team.name}' in season '2025'")
+
                         team_key_parts = team.team_key.split('.')
                         game_key = team_key_parts[0]
                         league_id = team_key_parts[2]
@@ -118,14 +123,21 @@ def get_leagues():
                             "team_num": team_num
                         })
                         game_keys.add(game_key)
+                        # Store the mapping from the numeric game_key to the text-based sport code
+                        game_key_to_code[game_key] = sport
 
-        # 2. Get league names for all unique game keys found across all sports
+        # 2. Get league names for all unique game keys found
         league_names = {}
         for game_key in game_keys:
-            # Re-initialize query for the specific game key to get league info
+            # THE FIX IS HERE (Part 2): Look up the correct sport code (e.g., 'nfl').
+            sport_code = game_key_to_code.get(game_key)
+            if not sport_code:
+                continue # Skip if for some reason we don't have a sport code
+
+            # Initialize the query with the correct sport code context
             yq_league = YahooFantasySportsQuery(
                 None,
-                game_key.split('.')[0], # Extract sport from game_key e.g., '448' -> 'nfl'
+                sport_code,
                 yahoo_access_token_json=access_token_json
             )
             leagues_data = yq_league.get_user_leagues_by_game_key(game_key)
