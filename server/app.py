@@ -86,8 +86,10 @@ def get_leagues():
         token_data['consumer_secret'] = YAHOO_CLIENT_SECRET
         access_token_json = json.dumps(token_data)
 
-        # THE FIX IS HERE: Renamed the keyword argument as suggested by the error log.
+        # THE FIX IS HERE: Added None for the two required positional arguments.
         yq = YahooFantasySportsQuery(
+            None,  # league_id
+            None,  # game_code
             yahoo_access_token_json=access_token_json
         )
 
