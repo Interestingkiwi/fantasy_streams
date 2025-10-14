@@ -86,8 +86,8 @@ def get_leagues():
         token_data['consumer_secret'] = YAHOO_CLIENT_SECRET
         access_token_json = json.dumps(token_data)
 
+        # THE FIX IS HERE: Removed the unexpected 'auth_dir' argument
         yq = YahooFantasySportsQuery(
-            auth_dir=None, # Use programmatic auth instead of file
             consumer_key=YAHOO_CLIENT_ID,
             consumer_secret=YAHOO_CLIENT_SECRET,
             access_token_json=access_token_json
