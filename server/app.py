@@ -53,7 +53,8 @@ def login():
 @app.route("/callback")
 def callback():
     """Handles the callback from Yahoo after authorization."""
-    yahoo = OAuth2Session(YAHOO_CLIENT_ID, state=session.get('oauth_state'))
+    # THE FIX IS HERE: Added redirect_uri to the OAuth2Session constructor
+    yahoo = OAuth2Session(YAHOO_CLIENT_ID, state=session.get('oauth_state'), redirect_uri=REDIRECT_URI)
     token = yahoo.fetch_token(TOKEN_URL, client_secret=YAHOO_CLIENT_SECRET,
                               authorization_response=request.url)
 
