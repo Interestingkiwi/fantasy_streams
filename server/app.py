@@ -86,10 +86,9 @@ def get_leagues():
         token_data['consumer_secret'] = YAHOO_CLIENT_SECRET
         access_token_json = json.dumps(token_data)
 
-        # THE FIX IS HERE: Removed the unexpected keyword arguments.
-        # The library gets the consumer key/secret from the access_token_json.
+        # THE FIX IS HERE: Renamed the keyword argument as suggested by the error log.
         yq = YahooFantasySportsQuery(
-            access_token_json=access_token_json
+            yahoo_access_token_json=access_token_json
         )
 
         # 1. Get all of the user's teams
