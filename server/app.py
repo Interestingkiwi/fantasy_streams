@@ -93,7 +93,7 @@ def get_leagues():
         game_key_to_code = {}
 
         # Iterate through known sports to find all user teams
-        for sport in ['nhl']:
+        for sport in [nhl']:
             yq = YahooFantasySportsQuery(
                 None,  # league_id
                 sport,  # game_code
@@ -105,18 +105,27 @@ def get_leagues():
             print(f"--- [DEBUG] Checking sport: {sport} ---")
             print(f"--- [DEBUG] Raw data returned from yq.get_user_teams(): {user_games_data}")
             if isinstance(user_games_data, list):
+                print(f"DEBUG: Found {len(user_games_data)} game object(s) for {sport}.")
                 # Iterate through each Game object returned by the API
-                for game in user_games_data:
+                for i, game in enumerate(user_games_data):
+                    print(f"\n--- DEBUG: Processing game {i+1}/{len(user_games_data)} for {sport} ---")
                     # Check if the Game object contains team data
                     if hasattr(game, 'teams') and hasattr(game.teams, 'team'):
+                        print("DEBUG: Game object has '.teams.team' attribute.")
 
-                        # THE FIX IS HERE: Handle both single teams and lists of teams
                         teams_in_game = game.teams.team
                         if not isinstance(teams_in_game, list):
-                            teams_in_game = [teams_in_game] # Make a single team into a list of one
+                            teams_in_game = [teams_in_game]
 
-                        for team in teams_in_game:
-                            if str(game.season) == '2025':
+                        for j, team in enumerate(teams_in_game):
+                            print(f"DEBUG: Processing team {j+1}/{len(teams_in_game)} ('{team.name}') in this game object.")
+
+                            season_value = game.season
+                            print(f"DEBUG: Season value found: '{season_value}' (type: {type(season_value)})")
+                            is_match = str(season_value) == '2025'
+                            print(f"DEBUG: Comparing str({season_value}) == '2025'. Result: {is_match}")
+
+                            if is_match:
                                 print(f"SUCCESS: Matched team '{team.name}' in season '2025'")
 
                                 team_key_parts = team.team_key.split('.')
@@ -133,6 +142,12 @@ def get_leagues():
                                 })
                                 game_keys.add(game_key)
                                 game_key_to_code[game_key] = sport
+                            else:
+                                print("DEBUG: Season did not match '2025'. Skipping team.")
+                    else:
+                        print("DEBUG: Game object is missing '.teams.team' attribute. Skipping.")
+            else:
+                 print(f"DEBUG: No game objects found or data is not a list for {sport}.")
 
         # 2. Get league names for all unique game keys found
         league_names = {}
