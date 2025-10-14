@@ -25,41 +25,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Simulates the login process.
+     * Initiates the login process by redirecting to the backend.
      */
     function handleLogin() {
-        // In a real application, this is where you would redirect to Yahoo's OAuth page.
-        // For now, we'll simulate a successful login.
-
-        if (rememberMeCheckbox.checked) {
-            // If "Remember me" is checked, store the login state permanently.
-            localStorage.setItem('isLoggedIn', 'true');
-        }
-
-        // Show the main application view.
-        showAppView();
+        // Use a relative path for the login route. This will work on any domain.
+        window.location.href = '/login';
     }
 
     /**
      * Handles the logout process.
      */
-    function handleLogout() {
-        // Clear the stored login state.
-        localStorage.removeItem('isLoggedIn');
+    async function handleLogout() {
+        // Use a relative path for the logout route.
+        await fetch('/logout');
+
+        localStorage.removeItem('isLoggedIn'); // Clear any old local storage flags
 
         // Show the login page.
         showLoginView();
     }
 
     /**
-     * Checks the stored login state when the page loads.
-     * If the user chose to be remembered, they will bypass the login screen.
+     * Checks the login state with the backend when the page loads.
      */
-    function checkInitialState() {
-        if (localStorage.getItem('isLoggedIn') === 'true') {
-            showAppView();
-        } else {
-            showLoginView();
+    async function checkInitialState() {
+        try {
+            // Use a relative path to check the user's login status.
+            const response = await fetch('/api/user');
+            const data = await response.json();
+
+            if (data.loggedIn) {
+                showAppView();
+            } else {
+                showLoginView();
+            }
+        } catch (error) {
+            console.error("Error checking login state:", error);
+            showLoginView(); // If the backend is not running, show login.
         }
     }
 
