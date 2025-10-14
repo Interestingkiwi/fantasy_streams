@@ -103,16 +103,14 @@ def get_leagues():
             # 1. Get all of the user's teams for the current sport
             user_teams_data = yq.get_user_teams()
 
-            # --- START OF DIAGNOSTIC LOGGING ---
-            print(f"--- Checking sport: {sport} ---")
-            if user_teams_data and hasattr(user_teams_data, 'teams'):
-                print(f"API returned {len(user_teams_data.teams)} team(s) for {sport}.")
-                for i, team in enumerate(user_teams_data.teams):
-                    # Log the critical details for each team found
-                    print(f"  Team {i+1}: Name='{team.name}', Season='{team.game.season}', Key='{team.team_key}'")
-            else:
-                print(f"API returned no teams or an unexpected data structure for {sport}.")
-            # --- END OF DIAGNOSTIC LOGGING ---
+            # --- START OF ENHANCED DIAGNOSTIC LOGGING ---
+            print(f"--- [DEBUG] Checking sport: {sport} ---")
+            print(f"--- [DEBUG] Raw data returned from yq.get_user_teams(): {user_teams_data}")
+            # Also log the type and attributes of the returned object to see what it is
+            if user_teams_data is not None:
+                print(f"--- [DEBUG] Type of returned data: {type(user_teams_data)}")
+                print(f"--- [DEBUG] Attributes of returned data: {dir(user_teams_data)}")
+            # --- END OF ENHANCED DIAGNOSTIC LOGGING ---
 
             if user_teams_data and hasattr(user_teams_data, 'teams'):
                 for team in user_teams_data.teams:
