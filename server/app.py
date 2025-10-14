@@ -93,7 +93,7 @@ def get_leagues():
         game_key_to_code = {}
 
         # Iterate through known sports to find all user teams
-        for sport in ['nhl']:
+        for sport in ['nfl', 'mlb', 'nba', 'nhl']:
             yq = YahooFantasySportsQuery(
                 None,  # league_id
                 sport,  # game_code
@@ -103,12 +103,21 @@ def get_leagues():
             # 1. Get all of the user's teams for the current sport
             user_teams_data = yq.get_user_teams()
 
+            # --- START OF DIAGNOSTIC LOGGING ---
+            print(f"--- Checking sport: {sport} ---")
+            if user_teams_data and hasattr(user_teams_data, 'teams'):
+                print(f"API returned {len(user_teams_data.teams)} team(s) for {sport}.")
+                for i, team in enumerate(user_teams_data.teams):
+                    # Log the critical details for each team found
+                    print(f"  Team {i+1}: Name='{team.name}', Season='{team.game.season}', Key='{team.team_key}'")
+            else:
+                print(f"API returned no teams or an unexpected data structure for {sport}.")
+            # --- END OF DIAGNOSTIC LOGGING ---
+
             if user_teams_data and hasattr(user_teams_data, 'teams'):
                 for team in user_teams_data.teams:
-                    # THE FIX IS HERE: The season from the API might be an integer, not a string.
-                    # Casting to a string makes the comparison safe.
                     if str(team.game.season) == '2025':
-                        print(f"Found team '{team.name}' in season '2025'")
+                        print(f"SUCCESS: Matched team '{team.name}' in season '2025'")
 
                         team_key_parts = team.team_key.split('.')
                         game_key = team_key_parts[0]
@@ -147,6 +156,7 @@ def get_leagues():
         for team in teams_2025:
             team['league_name'] = league_names.get(team['league_id'], 'Unknown League')
 
+        print(f"--- Final result: Returning {len(teams_2025)} team(s) to the frontend. ---")
         return jsonify(teams_2025)
 
     except Exception as e:
@@ -157,7 +167,7 @@ def get_leagues():
 
 @app.route("/logout")
 def logout():
-    """Logs the user out by clearing the session."""
+    """Logs the out by clearing the session."""
     session.clear()
     return jsonify({"message": "Successfully logged out."})
 
