@@ -110,7 +110,7 @@ def get_leagues():
                     # Check if the Game object contains the team data
                     if hasattr(game, 'teams') and hasattr(game.teams, 'team'):
                         team = game.teams.team
-                        if str(game.season) == '2025':
+                        if str(team.season) == '2025':
                             print(f"SUCCESS: Matched team '{team.name}' in season '2025'")
 
                             team_key_parts = team.team_key.split('.')
