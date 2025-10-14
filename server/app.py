@@ -102,7 +102,8 @@ def get_leagues():
 
             # 1. Get all of the user's teams for the current sport
             user_games_data = yq.get_user_teams()
-
+            print(f"--- [DEBUG] Checking sport: {sport} ---")
+            print(f"--- [DEBUG] Raw data returned from yq.get_user_teams(): {user_teams_data}")
             # THE FIX IS HERE: Check if the response is a list and iterate through it.
             if isinstance(user_games_data, list):
                 # Iterate through each Game object returned by the API
