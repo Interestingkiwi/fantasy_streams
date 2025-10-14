@@ -102,52 +102,38 @@ def get_leagues():
 
             # 1. Get all of the user's teams for the current sport
             user_games_data = yq.get_user_teams()
-            print(f"--- [DEBUG] Checking sport: {sport} ---")
-            print(f"--- [DEBUG] Raw data returned from yq.get_user_teams(): {user_games_data}")
-            if isinstance(user_games_data, list):
-                print(f"DEBUG: Found {len(user_games_data)} game object(s) for {sport}.")
-                # Iterate through each Game object returned by the API
-                for i, game in enumerate(user_games_data):
-                    print(f"\n--- DEBUG: Processing game {i+1}/{len(user_games_data)} for {sport} ---")
-                    # Check if the Game object contains team data
-                    if hasattr(game, 'teams') and hasattr(game.teams, 'team'):
-                        print("DEBUG: Game object has '.teams.team' attribute.")
 
-                        teams_in_game = game.teams.team
+            if isinstance(user_games_data, list):
+                # Iterate through each Game object returned by the API
+                for game in user_games_data:
+                    # THE FIX IS HERE: Access data using dictionary keys from the internal 'extracted_data' attribute
+                    game_data = game.extracted_data
+                    if game_data and 'teams' in game_data and 'team' in game_data['teams']:
+
+                        teams_in_game = game_data['teams']['team']
                         if not isinstance(teams_in_game, list):
                             teams_in_game = [teams_in_game]
 
-                        for j, team in enumerate(teams_in_game):
-                            print(f"DEBUG: Processing team {j+1}/{len(teams_in_game)} ('{team.name}') in this game object.")
+                        for team_data in teams_in_game:
+                            season_value = game_data.get('season')
+                            if str(season_value) == '2025':
+                                print(f"SUCCESS: Matched team '{team_data.get('name')}' in season '2025'")
 
-                            season_value = game.season
-                            print(f"DEBUG: Season value found: '{season_value}' (type: {type(season_value)})")
-                            is_match = str(season_value) == '2025'
-                            print(f"DEBUG: Comparing str({season_value}) == '2025'. Result: {is_match}")
+                                team_key_parts = team_data.get('team_key', '').split('.')
+                                if len(team_key_parts) > 4:
+                                    game_key = team_key_parts[0]
+                                    league_id = team_key_parts[2]
+                                    team_num = team_key_parts[4]
 
-                            if is_match:
-                                print(f"SUCCESS: Matched team '{team.name}' in season '2025'")
-
-                                team_key_parts = team.team_key.split('.')
-                                game_key = team_key_parts[0]
-                                league_id = team_key_parts[2]
-                                team_num = team_key_parts[4]
-
-                                teams_2025.append({
-                                    "team_key": team.team_key,
-                                    "team_name": team.name,
-                                    "game_key": game_key,
-                                    "league_id": league_id,
-                                    "team_num": team_num
-                                })
-                                game_keys.add(game_key)
-                                game_key_to_code[game_key] = sport
-                            else:
-                                print("DEBUG: Season did not match '2025'. Skipping team.")
-                    else:
-                        print("DEBUG: Game object is missing '.teams.team' attribute. Skipping.")
-            else:
-                 print(f"DEBUG: No game objects found or data is not a list for {sport}.")
+                                    teams_2025.append({
+                                        "team_key": team_data.get('team_key'),
+                                        "team_name": team_data.get('name'),
+                                        "game_key": game_key,
+                                        "league_id": league_id,
+                                        "team_num": team_num
+                                    })
+                                    game_keys.add(game_key)
+                                    game_key_to_code[game_key] = sport
 
         # 2. Get league names for all unique game keys found
         league_names = {}
