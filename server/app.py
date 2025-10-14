@@ -93,7 +93,7 @@ def get_leagues():
         game_key_to_code = {}
 
         # Iterate through known sports to find all user teams
-        for sport in ['nfl', 'mlb', 'nba', 'nhl']:
+        for sport in ['nhl']:
             yq = YahooFantasySportsQuery(
                 None,  # league_id
                 sport,  # game_code
@@ -108,7 +108,8 @@ def get_leagues():
                 # Check if the Game object contains the team data
 #                if hasattr(game, 'teams') and hasattr(game.teams, 'team'):
 #                    team = game.teams.team
-                if game.season == '2025':
+
+                if user_games_data.season == '2025':
                     print(f"SUCCESS: Matched team '{game.teams.team.name}' in season '2025'")
 
                     team_key_parts = game.teams.team.team_key.split('.')
