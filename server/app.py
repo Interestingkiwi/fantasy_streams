@@ -1,36 +1,74 @@
-from flask import Flask, jsonify, redirect, request, session, send_from_directory
-from requests_oauthlib import OAuth2Session
-from yfpy.query import YahooFantasySportsQuery
+from flask import Flask, jsonify, redirect, request, session, send_from_directory, url_for
+from yahoo_oauth import OAuth2
+import yahoo_fantasy_api as yfa
 import os
 import json
 import time
+from urllib.parse import urlencode
+import requests
+from requests.auth import HTTPBasicAuth
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+# --- App Initialization ---
 
 # Initialize the Flask application to serve static files from the 'client' directory
 app = Flask(__name__, static_folder='../client', static_url_path='')
 
-# You must set a secret key for session management
-# Render will need a secure, randomly generated key.
+# Add ProxyFix middleware to trust headers from Render's proxy.
+# This is crucial for OAuth redirects to work correctly in production.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# Set a secret key for session management from environment variables
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
-# --- OAuth Configuration from Environment Variables ---
-YAHOO_CLIENT_ID = os.environ.get("YAHOO_CLIENT_ID")
-YAHOO_CLIENT_SECRET = os.environ.get("YAHOO_CLIENT_SECRET")
+# --- Credential Handling for Render ---
 
-# --- Environment-Specific Redirects ---
-# Set an environment variable in Render to 'production' or 'staging'
-if os.environ.get("FLASK_ENV") == "production":
-    # Production URLs
-    REDIRECT_URI = "https://fantasystreams.app/callback"
-    FRONTEND_URL = "https://fantasystreams.app"
+# This block writes the environment variable to a file on the fly.
+# The 'yahoo-oauth' library requires a file to read credentials from.
+YAHOO_CREDENTIALS_FILE = 'private.json'
+private_content = os.environ.get('YAHOO_PRIVATE_JSON')
+if private_content:
+    print("YAHOO_PRIVATE_JSON environment variable found. Writing to file.")
+    with open(YAHOO_CREDENTIALS_FILE, 'w') as f:
+        f.write(private_content)
 else:
-    # Staging (or local development) URLs
-    REDIRECT_URI = "https://fantasy-optimizer-stg.onrender.com/callback"
-    FRONTEND_URL = "https://fantasy-optimizer-stg.onrender.com"
+    print("YAHOO_PRIVATE_JSON not found. Assuming local private.json file exists for development.")
 
 
-# Yahoo's OAuth endpoints
-AUTHORIZATION_BASE_URL = "https://api.login.yahoo.com/oauth2/request_auth"
-TOKEN_URL = "https://api.login.yahoo.com/oauth2/get_token"
+# --- Helper function to get an authenticated API object ---
+
+def get_authenticated_oauth_client():
+    """
+    Checks for a token in the session, refreshes it if needed,
+    and returns an authenticated OAuth2 object.
+    """
+    token_data = session.get('yahoo_token_data')
+    if not token_data:
+        return None, (jsonify({"error": "User not authenticated"}), 401)
+
+    # Manually check if the token is expired or close to expiring
+    expires_in = token_data.get('expires_in', 3600)
+    token_time = token_data.get('token_time', 0)
+
+    # Refresh if less than 5 minutes remain
+    if time.time() > token_time + expires_in - 300:
+        print("Token expired or nearing expiration, attempting to refresh...")
+        try:
+            # Create the client with the expired token data to access the refresh method
+            oauth = OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data)
+            oauth.refresh_access_token()
+
+            # The library updates its internal token_data upon refresh
+            session['yahoo_token_data'] = oauth.token_data
+            print("Successfully refreshed access token and updated session.")
+            return oauth, None
+        except Exception as e:
+            print(f"Failed to refresh access token: {e}")
+            session.clear()
+            return None, (jsonify({"error": "Failed to refresh token, please log in again."}), 401)
+
+    # If token is valid, just return a new client instance with it
+    return OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data), None
 
 # --- Static Frontend Route ---
 @app.route("/")
@@ -38,142 +76,137 @@ def serve_index():
     """Serves the frontend's index.html file."""
     return send_from_directory(app.static_folder, 'index.html')
 
-
 # --- API & OAuth Routes ---
+
 @app.route("/login")
 def login():
-    """Redirects the user to Yahoo's authorization page."""
-    if not YAHOO_CLIENT_ID or not YAHOO_CLIENT_SECRET:
-        return "OAuth credentials not configured on the server.", 500
+    """
+    Initiates the Yahoo login process by manually constructing the authorization
+    URL and redirecting the user to Yahoo's auth page.
+    """
+    if not os.path.exists(YAHOO_CREDENTIALS_FILE):
+        return "OAuth credentials not configured on the server. Set YAHOO_PRIVATE_JSON env var.", 500
 
-    yahoo = OAuth2Session(YAHOO_CLIENT_ID, redirect_uri=REDIRECT_URI)
-    authorization_url, state = yahoo.authorization_url(AUTHORIZATION_BASE_URL)
+    try:
+        with open(YAHOO_CREDENTIALS_FILE) as f:
+            creds = json.load(f)
+        consumer_key = creds.get('consumer_key')
 
-    session['oauth_state'] = state
-    return redirect(authorization_url)
+        # Use url_for to generate the correct callback URL, respecting proxy headers
+        redirect_uri = url_for('callback', _external=True)
+
+        params = {
+            'client_id': consumer_key,
+            'redirect_uri': redirect_uri,
+            'response_type': 'code',
+            'language': 'en-us'
+        }
+        auth_url = f"https://api.login.yahoo.com/oauth2/request_auth?{urlencode(params)}"
+        return redirect(auth_url)
+
+    except Exception as e:
+        print(f"Error during login initiation: {e}")
+        return "Failed to start login process. Check server logs.", 500
 
 @app.route("/callback")
 def callback():
-    """Handles the callback from Yahoo after authorization."""
-    yahoo = OAuth2Session(YAHOO_CLIENT_ID, state=session.get('oauth_state'), redirect_uri=REDIRECT_URI)
-    token = yahoo.fetch_token(TOKEN_URL, client_secret=YAHOO_CLIENT_SECRET,
-                              authorization_response=request.url)
+    """
+    Handles the callback from Yahoo, manually exchanging the code for a token.
+    """
+    code = request.args.get('code')
+    if not code:
+        return "Authorization code not found in callback.", 400
 
-    session['oauth_token'] = token
-    session['yahoo_guid'] = token.get('xoauth_yahoo_guid')
+    try:
+        redirect_uri = url_for('callback', _external=True)
+        with open(YAHOO_CREDENTIALS_FILE) as f:
+            creds = json.load(f)
+        consumer_key = creds.get('consumer_key')
+        consumer_secret = creds.get('consumer_secret')
 
-    # Redirect user back to the correct frontend URL's root
-    return redirect(FRONTEND_URL)
+        token_url = 'https://api.login.yahoo.com/oauth2/get_token'
+        payload = {
+            'client_id': consumer_key,
+            'client_secret': consumer_secret,
+            'redirect_uri': redirect_uri,
+            'code': code,
+            'grant_type': 'authorization_code'
+        }
+        auth = HTTPBasicAuth(consumer_key, consumer_secret)
+
+        response = requests.post(token_url, data=payload, auth=auth)
+        response.raise_for_status()
+        token_data = response.json()
+
+        if 'access_token' not in token_data:
+            return "Failed to retrieve access token from Yahoo.", 500
+
+        # Store the entire token dictionary and set the session to be permanent
+        token_data['token_time'] = time.time()
+        session['yahoo_token_data'] = token_data
+        session.permanent = True # This respects the app.permanent_session_lifetime
+        print("Successfully stored token data in session.")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error during token exchange: {e.response.text if e.response else e}")
+        return "Authentication failed: Could not exchange code for token.", 400
+    except Exception as e:
+        print(f"Error in callback: {e}")
+        return "Authentication failed due to an unexpected server error.", 500
+
+    # Redirect to the main frontend page after successful login
+    return redirect(url_for('serve_index'))
+
 
 @app.route("/api/user")
 def get_user():
-    """A sample API endpoint to check for an active session."""
-    if 'oauth_token' in session:
+    """Checks if the user has a valid token in their session."""
+    if 'yahoo_token_data' in session:
         return jsonify({"loggedIn": True})
-    else:
-        return jsonify({"loggedIn": False})
+    return jsonify({"loggedIn": False})
 
 @app.route("/api/leagues")
 def get_leagues():
-    """Fetches and processes the user's fantasy leagues for the 2025 season."""
-    if 'oauth_token' not in session:
-        return jsonify({"error": "User not authenticated"}), 401
+    """
+    Fetches the user's fantasy leagues for the 2025 season using yfa.
+    """
+    oauth, error = get_authenticated_oauth_client()
+    if error:
+        return error
 
     try:
-        # Prepare the token for yfpy
-        token_data = session['oauth_token'].copy()
-        token_data['token_time'] = time.time()
-        token_data['consumer_key'] = YAHOO_CLIENT_ID
-        token_data['consumer_secret'] = YAHOO_CLIENT_SECRET
-        token_data['guid'] = session.get('yahoo_guid')
-        access_token_json = json.dumps(token_data)
+        # The 'yfa.Game' object is the entry point for the yahoo_fantasy_api library
+        gm = yfa.Game(oauth, 'nhl')
 
-        teams_2025 = []
-        game_keys = set()
-        game_key_to_code = {}
+        # The library uses the integer year to find game keys
+        leagues_data = gm.league_ids(year=2025)
 
-        # Iterate through known sports to find all user teams
-        for sport in ['nhl']:
-            yq = YahooFantasySportsQuery(
-                None,  # league_id
-                sport,  # game_code
-                yahoo_access_token_json=access_token_json
-            )
+        leagues_list = []
+        for league_id in leagues_data:
+            try:
+                lg = gm.to_league(league_id)
+                leagues_list.append({
+                    'league_id': league_id,
+                    'name': lg.settings().get('name', 'Unknown League')
+                })
+            except Exception as e:
+                print(f"Could not fetch info for league {league_id}: {e}")
+                continue # Skip leagues that fail, but continue with others
 
-            # 1. Get all of the user's teams for the current sport
-            user_games_data = yq.get_user_teams()
-
-            if isinstance(user_games_data, list):
-                # Iterate through each Game object returned by the API
-                for game in user_games_data:
-                    # THE FIX IS HERE: Access data using dictionary keys from the internal 'extracted_data' attribute
-                    game_data = game.extracted_data
-                    if game_data and 'teams' in game_data and 'team' in game_data['teams']:
-
-                        teams_in_game = game_data['teams']['team']
-                        if not isinstance(teams_in_game, list):
-                            teams_in_game = [teams_in_game]
-
-                        for team_data in teams_in_game:
-                            season_value = game_data.get('season')
-                            if str(season_value) == '2025':
-                                print(f"SUCCESS: Matched team '{team_data.get('name')}' in season '2025'")
-
-                                team_key_parts = team_data.get('team_key', '').split('.')
-                                if len(team_key_parts) > 4:
-                                    game_key = team_key_parts[0]
-                                    league_id = team_key_parts[2]
-                                    team_num = team_key_parts[4]
-
-                                    teams_2025.append({
-                                        "team_key": team_data.get('team_key'),
-                                        "team_name": team_data.get('name'),
-                                        "game_key": game_key,
-                                        "league_id": league_id,
-                                        "team_num": team_num
-                                    })
-                                    game_keys.add(game_key)
-                                    game_key_to_code[game_key] = sport
-
-        # 2. Get league names for all unique game keys found
-        league_names = {}
-        for game_key in game_keys:
-            sport_code = game_key_to_code.get(game_key)
-            if not sport_code:
-                continue
-
-            # Initialize the query with the correct sport code context
-            yq_league = YahooFantasySportsQuery(
-                None,
-                sport_code,
-                yahoo_access_token_json=access_token_json
-            )
-            leagues_data = yq_league.get_user_leagues_by_game_key(game_key)
-            if leagues_data and hasattr(leagues_data, 'leagues'):
-                for league in leagues_data.leagues:
-                    league_names[league.league_id] = league.name
-
-        # 3. Combine the data
-        for team in teams_2025:
-            team['league_name'] = league_names.get(team['league_id'], 'Unknown League')
-
-        print(f"--- Final result: Returning {len(teams_2025)} team(s) to the frontend. ---")
-        return jsonify(teams_2025)
+        print(f"--- Final result: Returning {len(leagues_list)} league(s) to the frontend. ---")
+        return jsonify(leagues_list)
 
     except Exception as e:
-        # Log the actual error on the server for debugging
         print(f"Error fetching leagues from Yahoo API: {e}")
         return jsonify({"error": "Failed to fetch data from Yahoo API."}), 500
 
 
 @app.route("/logout")
 def logout():
-    """Logs the out by clearing the session."""
+    """Logs the user out by clearing their session."""
     session.clear()
     return jsonify({"message": "Successfully logged out."})
 
 # This allows the script to be run directly for local testing
 if __name__ == "__main__":
-    # When running locally, it will default to staging URLs
-    # You can set environment variables locally to test production settings
     app.run(debug=True, port=5000)
