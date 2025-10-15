@@ -185,10 +185,20 @@ def get_leagues():
         for league_id in leagues_data:
             try:
                 lg = gm.to_league(league_id)
+#                leagues_list.append({
+#                    'league_id': league_id,
+#                    'name': lg.settings().get('name', 'Unknown League')
+#                })
+                lg_settings = lg.settings()
+                print(lg_settings)
+                league_name = lg_settings['name']
+                league_id = lg_settings['league_id']
+                print(league_name)
+                print(league_id)
                 leagues_list.append({
-                    'league_id': league_id,
-                    'name': lg.settings().get('name', 'Unknown League')
-                })
+                                    'league_id': league_id,
+                                    'name': league_name
+                                })
             except Exception as e:
                 print(f"Could not fetch info for league {league_id}: {e}")
                 continue # Skip leagues that fail, but continue with others
