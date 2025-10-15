@@ -8,7 +8,7 @@ import sys
 # Add the parent directory to the path to allow imports from other folders
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tasks.queries import YahooDataFetcher
+from tasks.yfpy_queries import YahooDataFetcher
 from tasks.yfa_queries import YfaDataFetcher
 from tasks.finalize_db import DataProcessor
 
