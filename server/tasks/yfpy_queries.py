@@ -34,24 +34,26 @@ class YahooDataFetcher:
     def _refresh_yahoo_query(self):
         logger.debug("Refreshing Yahoo query")
 
-        auth_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # server directory
+        # The auth_dir is no longer needed here, as yfpy will find the credentials.
+        # auth_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # server directory
 
         # The game_id is needed for some queries.
         # We perform an initial query to get the game_id for the league.
-        yq_init = YahooFantasySportsQuery(auth_dir=auth_dir, league_id=self.league_id, game_code="nhl")
+
+        # Corrected line: removed auth_dir
+        yq_init = YahooFantasySportsQuery(league_id=self.league_id, game_code="nhl")
+
         game_info = yq_init.get_current_game_info()
         game_id = game_info.game_id
 
         # Now we create the final query object with the game_id,
         # reusing the authentication token from the initial query.
         self.yq = YahooFantasySportsQuery(
-            auth_dir=auth_dir,
             league_id=self.league_id,
             game_code="nhl",
             game_id=game_id,
             yahoo_access_token_json=yq_init._yahoo_access_token_dict
         )
-
 
     def fetch_all_data(self):
         """
