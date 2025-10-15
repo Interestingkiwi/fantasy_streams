@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
             leagues.forEach(league => {
                 const option = document.createElement('option');
                 option.value = league.league_id;
-                option.textContent = league.league_name;
+                option.textContent = league.name;
                 leaguesDropdown.appendChild(option);
             });
 
