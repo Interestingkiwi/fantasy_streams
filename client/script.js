@@ -1,43 +1,39 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Get references to all necessary elements
     const loginView = document.getElementById('login-view');
     const appView = document.getElementById('app-view');
     const loginButton = document.getElementById('login-button');
     const logoutButton = document.getElementById('logout-button');
     const useLeagueButton = document.getElementById('use-league-button');
 
-    // App view elements
-    const loadingState = document.getElementById('loading-state');
+    const loadingLeaguesState = document.getElementById('loading-leagues-state');
+    const initializingDbState = document.getElementById('initializing-db-state');
     const dataState = document.getElementById('data-state');
     const errorState = document.getElementById('error-state');
     const leaguesDropdown = document.getElementById('leagues-dropdown');
 
+    let statusInterval;
 
-    // --- Function Definitions ---
-
-    /**
-     * Fetches the user's league data from the backend and populates the dropdown.
-     */
     async function fetchAndDisplayLeagues() {
-        // Show loading state, hide others
-        loadingState.classList.remove('hidden');
-        dataState.classList.add('hidden');
-        errorState.classList.add('hidden');
-        leaguesDropdown.innerHTML = ''; // Clear previous options
+        showView(appView);
+        showWithinApp(loadingLeaguesState);
 
         try {
             const response = await fetch('/api/leagues');
             if (!response.ok) {
-                throw new Error('Failed to fetch leagues');
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
             const leagues = await response.json();
 
-            if (leagues.length === 0) {
-                loadingState.querySelector('p').textContent = 'No 2025 fantasy leagues found.';
-                return; // Keep showing the modified loading message
+            if (leagues.error) {
+                 throw new Error(leagues.error);
             }
 
-            // Populate dropdown
+            if (leagues.length === 0) {
+                loadingLeaguesState.querySelector('p').textContent = 'No 2025 fantasy leagues found.';
+                return;
+            }
+
+            leaguesDropdown.innerHTML = '';
             leagues.forEach(league => {
                 const option = document.createElement('option');
                 option.value = league.league_id;
@@ -45,99 +41,117 @@ document.addEventListener('DOMContentLoaded', () => {
                 leaguesDropdown.appendChild(option);
             });
 
-            // Show data state
-            dataState.classList.remove('hidden');
-            loadingState.classList.add('hidden');
+            showWithinApp(dataState);
 
         } catch (error) {
             console.error("Error fetching leagues:", error);
-            // Show error state
-            errorState.classList.remove('hidden');
-            loadingState.classList.add('hidden');
+            showWithinApp(errorState);
+        }
+    }
+
+    function showWithinApp(elementToShow) {
+        [loadingLeaguesState, initializingDbState, dataState, errorState].forEach(el => {
+            el.classList.add('hidden');
+        });
+        elementToShow.classList.remove('hidden');
+    }
+
+    function showView(viewToShow) {
+        [loginView, appView].forEach(view => view.classList.add('hidden'));
+        viewToShow.classList.remove('hidden');
+
+        if(viewToShow === appView) {
+            logoutButton.classList.remove('hidden');
+        } else {
+            logoutButton.classList.add('hidden');
+        }
+    }
+
+    function handleLogin() {
+        window.location.href = '/login';
+    }
+
+    async function handleLogout() {
+        await fetch('/logout');
+        showView(loginView);
+        if (statusInterval) {
+            clearInterval(statusInterval);
+        }
+    }
+
+    async function handleUseLeague() {
+        const selectedLeagueId = leaguesDropdown.value;
+        showWithinApp(initializingDbState);
+
+        try {
+            const response = await fetch('/api/initialize_league', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ league_id: selectedLeagueId }),
+            });
+            const data = await response.json();
+
+            if (data.status === 'exists') {
+                 window.location.href = '/home';
+            } else if (data.status === 'initializing') {
+                // Start polling for status
+                statusInterval = setInterval(() => checkLeagueStatus(selectedLeagueId), 3000);
+            } else {
+                throw new Error(data.message || 'Failed to start initialization.');
+            }
+
+        } catch (error) {
+            console.error('Error initializing league:', error);
+            errorState.querySelector('p').textContent = 'Error initializing league.';
+            showWithinApp(errorState);
+        }
+    }
+
+    async function checkLeagueStatus(leagueId) {
+        try {
+            const response = await fetch(`/api/league_status/${leagueId}`);
+            const data = await response.json();
+
+            if (data.status === 'complete') {
+                clearInterval(statusInterval);
+                window.location.href = '/home';
+            } else if (data.status === 'error') {
+                 clearInterval(statusInterval);
+                 console.error('Database initialization failed:', data.message);
+                 errorState.querySelector('p').textContent = 'Database initialization failed.';
+                 showWithinApp(errorState);
+            }
+            // If status is 'initializing', do nothing and let the interval continue.
+        } catch (error) {
+             clearInterval(statusInterval);
+             console.error('Error checking league status:', error);
+             errorState.querySelector('p').textContent = 'Error checking league status.';
+             showWithinApp(errorState);
         }
     }
 
 
-    /**
-     * Switches the view to the main application and triggers data fetching.
-     */
-    function showAppView() {
-        loginView.classList.add('hidden');
-        appView.classList.remove('hidden');
-        logoutButton.classList.remove('hidden');
-        fetchAndDisplayLeagues();
-    }
-
-    /**
-     * Switches the view to the login page.
-     */
-    function showLoginView() {
-        appView.classList.add('hidden');
-        loginView.classList.remove('hidden');
-        logoutButton.classList.add('hidden');
-    }
-
-    /**
-     * Initiates the login process by redirecting to the backend.
-     */
-    function handleLogin() {
-        // Use a relative path for the login route. This will work on any domain.
-        window.location.href = '/login';
-    }
-
-    /**
-     * Handles the logout process.
-     */
-    async function handleLogout() {
-        // Use a relative path for the logout route.
-        await fetch('/logout');
-        // Show the login page.
-        showLoginView();
-    }
-
-    /**
-     * Handles the "Use This League" button click.
-     */
-    function handleUseLeague() {
-        const selectedLeagueId = leaguesDropdown.value;
-        alert(`Selected League ID: ${selectedLeagueId}`);
-        // You can add your logic here to proceed with the selected league.
-    }
-
-    /**
-     * Checks the login state with the backend when the page loads.
-     */
     async function checkInitialState() {
         try {
-            // Use a relative path to check the user's login status.
             const response = await fetch('/api/user');
             const data = await response.json();
 
             if (data.loggedIn) {
-                showAppView();
+                fetchAndDisplayLeagues();
             } else {
-                showLoginView();
+                showView(loginView);
             }
         } catch (error) {
             console.error("Error checking login state:", error);
-            showLoginView(); // If the backend is not running, show login.
+            showView(loginView);
         }
     }
 
-    // --- Event Listeners ---
-
-    // Add click listener for the login button.
     loginButton.addEventListener('click', handleLogin);
-
-    // Add click listener for the logout button.
     logoutButton.addEventListener('click', handleLogout);
-
-    // Add click listener for the "Use This League" button.
     useLeagueButton.addEventListener('click', handleUseLeague);
 
-
-    // --- Initial Execution ---
-
-    // Check the login state as soon as the page is ready.
     checkInitialState();
 });

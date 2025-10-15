@@ -8,6 +8,8 @@ from urllib.parse import urlencode
 import requests
 from requests.auth import HTTPBasicAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
+import subprocess
+import atexit
 
 # --- App Initialization ---
 
@@ -20,6 +22,27 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 # Set a secret key for session management from environment variables
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
+
+# --- Database Path Configuration ---
+# Use the DATABASE_DIR from environment variables if it exists (for production on Render).
+# Otherwise, fall back to a local directory within the project (for staging/local).
+DATABASE_DIR = os.environ.get('DATABASE_DIR', os.path.join(os.getcwd(), 'server', 'tasks'))
+# Ensure the directory exists, especially for local/staging runs
+if not os.path.exists(DATABASE_DIR):
+    os.makedirs(DATABASE_DIR)
+
+# Keep track of background processes
+background_processes = {}
+
+def cleanup_processes():
+    for league_id, process in background_processes.items():
+        if process.poll() is None:  # Check if the process is still running
+            print(f"Terminating background process for league {league_id}")
+            process.terminate()
+            process.wait()
+
+atexit.register(cleanup_processes)
+
 
 # --- Credential Handling for Render ---
 
@@ -70,11 +93,17 @@ def get_authenticated_oauth_client():
     # If token is valid, just return a new client instance with it
     return OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data), None
 
-# --- Static Frontend Route ---
+# --- Static Frontend Routes ---
 @app.route("/")
 def serve_index():
     """Serves the frontend's index.html file."""
     return send_from_directory(app.static_folder, 'index.html')
+
+@app.route("/home")
+def serve_home():
+    """Serves the new home.html file."""
+    return send_from_directory(app.static_folder, 'home.html')
+
 
 # --- API & OAuth Routes ---
 
@@ -185,15 +214,11 @@ def get_leagues():
         for league_id in leagues_data:
             try:
                 lg = gm.to_league(league_id)
-#                leagues_list.append({
-#                    'league_id': league_id,
-#                    'name': lg.settings().get('name', 'Unknown League')
-#                })
                 lg_settings = lg.settings()
                 league_name = lg_settings['name']
-                league_id = lg_settings['league_id']
+                league_id_only = lg_settings['league_id']
                 leagues_list.append({
-                                    'league_id': league_id,
+                                    'league_id': league_id_only,
                                     'name': league_name
                                 })
             except Exception as e:
@@ -206,6 +231,80 @@ def get_leagues():
     except Exception as e:
         print(f"Error fetching leagues from Yahoo API: {e}")
         return jsonify({"error": "Failed to fetch data from Yahoo API."}), 500
+
+@app.route("/api/initialize_league", methods=['POST'])
+def initialize_league():
+    league_id = request.json.get('league_id')
+    if not league_id:
+        return jsonify({"error": "League ID is required"}), 400
+
+    db_filename = f"yahoo-nhl-{league_id}-custom.db"
+    db_path = os.path.join(DATABASE_DIR, db_filename) # Use the configured directory
+
+    if os.path.exists(db_path):
+        session['current_league_id'] = league_id
+        return jsonify({"status": "exists", "message": "Database already exists."})
+
+    # Check if a process for this league is already running
+    if league_id in background_processes and background_processes[league_id].poll() is None:
+        return jsonify({"status": "initializing", "message": "Database initialization is already in progress."})
+
+    # Run the db_initializer.py script as a background process
+    script_path = os.path.join('server', 'tasks', 'db_initializer.py')
+
+    # Pass credentials AND the database directory to the subprocess environment
+    proc_env = os.environ.copy()
+    proc_env['YAHOO_PRIVATE_JSON'] = private_content or ""
+    proc_env['DATABASE_DIR'] = DATABASE_DIR # Pass the directory to the subprocess
+
+    process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
+    background_processes[league_id] = process
+
+    session['current_league_id'] = league_id
+
+    return jsonify({"status": "initializing", "message": "Initializing league database, this may take a few minutes."})
+
+@app.route("/api/league_status/<league_id>")
+def league_status(league_id):
+    db_filename = f"yahoo-nhl-{league_id}-custom.db"
+    db_path = os.path.join(DATABASE_DIR, db_filename)
+
+    process = background_processes.get(league_id)
+
+    if os.path.exists(db_path):
+        if process:
+            # If the file exists and the process is done, it's complete.
+            if process.poll() is not None:
+                del background_processes[league_id] # Clean up
+                timestamp = os.path.getmtime(db_path)
+                return jsonify({"status": "complete", "timestamp": timestamp})
+        else: # Process not found, but file exists.
+             timestamp = os.path.getmtime(db_path)
+             return jsonify({"status": "complete", "timestamp": timestamp})
+
+
+    if process and process.poll() is None:
+        return jsonify({"status": "initializing"})
+    elif process and process.poll() is not None: # Process finished but file not found
+        del background_processes[league_id] # Clean up
+        return jsonify({"status": "error", "message": "Database initialization failed."})
+
+    return jsonify({"status": "not_found"})
+
+@app.route("/api/get_league_timestamp")
+def get_league_timestamp():
+    league_id = session.get('current_league_id')
+    if not league_id:
+        return jsonify({"error": "No league selected"}), 400
+
+    db_filename = f"yahoo-nhl-{league_id}-custom.db"
+    db_path = os.path.join(DATABASE_DIR, db_filename)
+
+    if os.path.exists(db_path):
+        timestamp = os.path.getmtime(db_path)
+        return jsonify({"timestamp": timestamp})
+    else:
+        return jsonify({"error": "Database not found"}), 404
 
 
 @app.route("/logout")
