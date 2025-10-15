@@ -190,11 +190,8 @@ def get_leagues():
 #                    'name': lg.settings().get('name', 'Unknown League')
 #                })
                 lg_settings = lg.settings()
-                print(lg_settings)
                 league_name = lg_settings['name']
                 league_id = lg_settings['league_id']
-                print(league_name)
-                print(league_id)
                 leagues_list.append({
                                     'league_id': league_id,
                                     'name': league_name

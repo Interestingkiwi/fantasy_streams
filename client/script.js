@@ -40,8 +40,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Populate dropdown
             leagues.forEach(league => {
                 const option = document.createElement('option');
-                option.value = league.team_key;
-                option.textContent = `${league.team_name} (${league.league_name})`;
+                option.value = league.league_id;
+                option.textContent = league.league_name;
                 leaguesDropdown.appendChild(option);
             });
 
