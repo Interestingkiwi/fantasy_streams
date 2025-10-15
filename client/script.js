@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const appView = document.getElementById('app-view');
     const loginButton = document.getElementById('login-button');
     const logoutButton = document.getElementById('logout-button');
-    const rememberMeCheckbox = document.getElementById('remember-me');
+    const useLeagueButton = document.getElementById('use-league-button');
 
     // App view elements
     const loadingState = document.getElementById('loading-state');
@@ -64,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function showAppView() {
         loginView.classList.add('hidden');
         appView.classList.remove('hidden');
+        logoutButton.classList.remove('hidden');
         fetchAndDisplayLeagues();
     }
 
@@ -73,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function showLoginView() {
         appView.classList.add('hidden');
         loginView.classList.remove('hidden');
+        logoutButton.classList.add('hidden');
     }
 
     /**
@@ -89,11 +91,17 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleLogout() {
         // Use a relative path for the logout route.
         await fetch('/logout');
-
-        localStorage.removeItem('isLoggedIn'); // Clear any old local storage flags
-
         // Show the login page.
         showLoginView();
+    }
+
+    /**
+     * Handles the "Use This League" button click.
+     */
+    function handleUseLeague() {
+        const selectedLeagueId = leaguesDropdown.value;
+        alert(`Selected League ID: ${selectedLeagueId}`);
+        // You can add your logic here to proceed with the selected league.
     }
 
     /**
@@ -123,6 +131,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Add click listener for the logout button.
     logoutButton.addEventListener('click', handleLogout);
+
+    // Add click listener for the "Use This League" button.
+    useLeagueButton.addEventListener('click', handleUseLeague);
+
 
     // --- Initial Execution ---
 
