@@ -10,6 +10,7 @@ from requests.auth import HTTPBasicAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
 import subprocess
 import atexit
+import sqlite3
 
 # --- App Initialization ---
 
@@ -305,6 +306,68 @@ def get_league_timestamp():
         return jsonify({"timestamp": timestamp})
     else:
         return jsonify({"error": "Database not found"}), 404
+
+@app.route("/api/get_current_league_id")
+def get_current_league_id():
+    """Gets the currently selected league ID from the session."""
+    league_id = session.get('current_league_id')
+    if league_id:
+        return jsonify({"league_id": league_id})
+    return jsonify({"error": "No league selected in session"}), 400
+
+@app.route("/api/refresh_league", methods=['POST'])
+def refresh_league():
+    """Triggers a background process to update the database for the current league."""
+    league_id = session.get('current_league_id')
+    if not league_id:
+        return jsonify({"error": "No league selected in session"}), 400
+
+    # Check if a process for this league is already running
+    if league_id in background_processes and background_processes[league_id].poll() is None:
+        return jsonify({"status": "refreshing", "message": "A refresh is already in progress."})
+
+    # Run the db_initializer.py script, which will now handle updates.
+    script_path = os.path.join('server', 'tasks', 'db_initializer.py')
+
+    # Pass credentials and DB directory to the subprocess environment
+    proc_env = os.environ.copy()
+    proc_env['YAHOO_PRIVATE_JSON'] = private_content or ""
+    proc_env['DATABASE_DIR'] = DATABASE_DIR
+
+    process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
+    background_processes[league_id] = process
+
+    return jsonify({"status": "refreshing", "message": "Refreshing league database, this may take a few minutes."})
+
+@app.route("/api/matchups")
+def get_matchups():
+    """Fetches the matchups for the current league from its database."""
+    league_id = session.get('current_league_id')
+    if not league_id:
+        return jsonify({"error": "No league selected"}), 400
+
+    db_filename = f"yahoo-nhl-{league_id}-custom.db"
+    db_path = os.path.join(DATABASE_DIR, db_filename)
+
+    if not os.path.exists(db_path):
+        return jsonify({"error": "Database not found for this league"}), 404
+
+    try:
+        con = sqlite3.connect(db_path)
+        con.row_factory = sqlite3.Row # This allows accessing columns by name
+        cursor = con.cursor()
+        cursor.execute("SELECT week, team1, team2 FROM matchups")
+        rows = cursor.fetchall()
+        con.close()
+
+        # Convert rows to a list of dictionaries
+        matchups = [dict(row) for row in rows]
+
+        return jsonify(matchups)
+
+    except Exception as e:
+        print(f"Error fetching matchups from database: {e}")
+        return jsonify({"error": "Failed to fetch matchups from the database."}), 500
 
 
 @app.route("/logout")

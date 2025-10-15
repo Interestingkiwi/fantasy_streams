@@ -30,9 +30,10 @@ def run():
 
 
     # Handle existing database file
-    if os.path.isfile(db_path):
-        logger.info(f"Database {db_path} already exists. Skipping creation.")
-        sys.exit(0)
+    #removed to allow for refresh data button functionality
+#    if os.path.isfile(db_path):
+#        logger.info(f"Database {db_path} already exists. Skipping creation.")
+#        sys.exit(0)
 
     try:
         with open(schema_path, "r") as f:
