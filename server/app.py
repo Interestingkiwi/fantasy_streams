@@ -68,22 +68,19 @@ def get_and_validate_token():
     Returns a complete, valid token dictionary, or None.
     """
     if 'yahoo_token_data' not in session:
-        print("[DEBUG] get_and_validate_token: No token data found in session.")
         return None
 
     token_data = session['yahoo_token_data']
 
-    # This logic remains as a fallback, but the main fix is in /callback
     guid_added = False
     if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
         token_data['guid'] = token_data['xoauth_yahoo_guid']
         guid_added = True
 
-    # Check for expiration and refresh if needed.
     expires_in = token_data.get('expires_in', 3600)
     token_time = token_data.get('token_time', 0)
     refreshed = False
-    if time.time() > token_time + expires_in - 300:  # 5-minute buffer
+    if time.time() > token_time + expires_in - 300:
         try:
             original_guid = token_data.get('guid')
             oauth_for_refresh = OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data)
@@ -95,7 +92,7 @@ def get_and_validate_token():
 
             refreshed = True
         except Exception as e:
-            print(f"[DEBUG] FAILED to refresh access token: {e}")
+            print(f"FAILED to refresh access token: {e}")
             session.clear()
             return None
 
@@ -186,8 +183,6 @@ def callback():
             return "Failed to retrieve access token from Yahoo.", 500
 
         # --- Step 2: Use the access token to fetch the User GUID ---
-        # This call is now wrapped in a try/except block to prevent login failures
-        # if the OpenID Connect permission is not enabled in the Yahoo App settings.
         try:
             userinfo_url = 'https://api.login.yahoo.com/openid/v1/userinfo'
             headers = {'Authorization': f'Bearer {token_data["access_token"]}'}
@@ -199,21 +194,22 @@ def callback():
                     token_data['guid'] = userinfo_data['sub']
                     print(f"[SUCCESS] Fetched and added guid to token data: {userinfo_data['sub']}")
             else:
-                print(f"[WARNING] Could not fetch userinfo (status code: {userinfo_response.status_code}). This is likely a permission issue in your Yahoo App settings. Proceeding without explicit guid.")
+                print(f"\n[WARNING] Could not fetch userinfo (status code: {userinfo_response.status_code}).")
+                print("[ACTION REQUIRED] Please go to your app on the Yahoo Developer Network and ensure 'OpenID Connect' permissions are enabled with the 'Profile (Read)' scope checked.\n")
 
         except Exception as e:
-            print(f"[WARNING] An exception occurred while trying to fetch userinfo: {e}. Proceeding without explicit guid.")
+            print(f"[WARNING] An exception occurred while trying to fetch userinfo: {e}. This is likely a permission issue in your Yahoo App settings.")
 
-        # Fallback for older API versions, just in case
+        # Fallback for older API versions or if userinfo fails
         if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
              token_data['guid'] = token_data['xoauth_yahoo_guid']
-             print(f"[INFO] Found guid in the main token response.")
+             print(f"[INFO] Found guid in the main token response as a fallback.")
 
         # --- Step 3: Store the complete token in the session ---
         token_data['token_time'] = time.time()
         session['yahoo_token_data'] = token_data
         session.permanent = True
-        print("Successfully stored complete token data in session.")
+        print("Successfully stored token data in session.")
 
     except requests.exceptions.RequestException as e:
         print(f"Error during token exchange: {e.response.text if e.response else e}")
