@@ -36,26 +36,20 @@
 
         <!-- AUTHENTICATION VIEW -->
         <div id="auth-view" class="{{ 'hidden' if is_authenticated else '' }}">
-            <div class="max-w-md mx-auto bg-gray-800 p-8 rounded-lg shadow-xl">
-                <h2 class="text-xl font-semibold mb-6 text-center">Connect to Yahoo Fantasy</h2>
+            <div class="max-w-xl mx-auto bg-gray-800 p-8 rounded-lg shadow-xl">
 
-                <form id="credentials-form" class="space-y-4">
-                    <div>
-                        <label for="league_id" class="block mb-2 text-sm font-medium">League ID</label>
-                        <input type="text" id="league_id" class="form-input w-full p-2.5 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 12345" required>
-                    </div>
-                    <div>
-                        <label for="consumer_key" class="block mb-2 text-sm font-medium">Yahoo Consumer Key</label>
-                        <input type="password" id="consumer_key" class="form-input w-full p-2.5 rounded-md focus:ring-blue-500 focus:border-blue-500" required>
-                    </div>
-                    <div>
-                        <label for="consumer_secret" class="block mb-2 text-sm font-medium">Yahoo Consumer Secret</label>
-                        <input type="password" id="consumer_secret" class="form-input w-full p-2.5 rounded-md focus:ring-blue-500 focus:border-blue-500" required>
-                    </div>
-                    <button type="submit" class="w-full btn-primary font-medium rounded-md text-sm px-5 py-2.5 text-center transition-colors duration-200">
-                        Connect with Yahoo
-                    </button>
-                </form>
+                <div id="credentials-view">
+                    <h2 class="text-xl font-semibold mb-6 text-center">Enter League ID</h2>
+                    <form id="credentials-form" class="space-y-4">
+                        <div>
+                            <label for="league_id" class="block mb-2 text-sm font-medium">League ID</label>
+                            <input type="text" id="league_id" class="form-input w-full p-2.5 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 12345" required>
+                        </div>
+                        <button type="submit" class="w-full btn-primary font-medium rounded-md text-sm px-5 py-2.5 text-center transition-colors duration-200">
+                            Login with Yahoo
+                        </button>
+                    </form>
+                </div>
 
                 <div id="auth-error" class="mt-4 text-red-400 text-sm hidden"></div>
             </div>
@@ -64,7 +58,7 @@
         <!-- TERMINAL VIEW -->
         <div id="terminal-view" class="{{ '' if is_authenticated else 'hidden' }}">
              <div class="terminal w-full h-[60vh] p-4 rounded-lg shadow-inner overflow-y-auto" id="terminal-output-container">
-                <div id="terminal-output" class="terminal-output">Welcomae! Type a yfpy query and press Enter. Example: yq.get_league_teams()</div>
+                <div id="terminal-output" class="terminal-output">Welcome! Type a yfpy query and press Enter. Example: yq.get_league_teams()</div>
             </div>
             <div class="mt-4 flex">
                 <span class="p-2 text-gray-400">$</span>
@@ -82,7 +76,7 @@
             const terminalOutputContainer = document.getElementById('terminal-output-container');
 
             const showAuthError = (message) => {
-                authError.textContent = message;
+                authError.textContent = `Error: ${message}`;
                 authError.classList.remove('hidden');
             };
 
@@ -100,22 +94,18 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 league_id: document.getElementById('league_id').value,
-                                consumer_key: document.getElementById('consumer_key').value,
-                                consumer_secret: document.getElementById('consumer_secret').value,
                             })
                         });
 
                         const data = await response.json();
-                        if (!response.ok) {
-                            throw new Error(data.error || 'Failed to start the login process.');
-                        }
+                        if (!response.ok) throw new Error(data.error || 'Failed to start login.');
 
                         // Redirect the user to Yahoo for authorization
                         window.location.href = data.auth_url;
 
                     } catch (error) {
                         showAuthError(error.message);
-                        button.textContent = 'Connect with Yahoo';
+                        button.textContent = 'Login with Yahoo';
                         button.disabled = false;
                     }
                 });
