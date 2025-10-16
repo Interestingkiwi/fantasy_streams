@@ -37,8 +37,9 @@ class YfaDataFetcher:
         """
         logger.debug("Authenticating with Yahoo and getting league object...")
         try:
-            # The OAuth2 object will look for private.json in the current directory
-            sc = OAuth2(None, None, from_file="private.json")
+            # Go up two directories to find private.json in the project root
+            auth_file_path = os.path.join(os.path.dirname(__file__), '..', '..', 'private.json')
+            sc = OAuth2(None, None, from_file=auth_file_path)
             lg = league.League(sc, self.league_id)
             logger.info("Authentication successful with yfa.")
             return lg
