@@ -68,56 +68,55 @@ def get_and_validate_token():
     Returns a complete, valid token dictionary, or None.
     """
     if 'yahoo_token_data' not in session:
-        app.logger.warning("No token data found in session.")
+        print("[DEBUG] get_and_validate_token: No token data found in session.")
         return None
 
     token_data = session['yahoo_token_data']
-    app.logger.info(f"--- TOKEN VALIDATION START ---")
-    app.logger.info(f"Step 1: Initial token keys in session: {list(token_data.keys())}")
+    print(f"\n--- [DEBUG] TOKEN VALIDATION START ---")
+    print(f"[DEBUG] Step 1: Initial token keys in session: {list(token_data.keys())}")
 
     # 1. Ensure 'guid' is present.
     guid_added = False
     if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
         token_data['guid'] = token_data['xoauth_yahoo_guid']
         guid_added = True
-        app.logger.info(f"Step 2: 'guid' was missing. Added from 'xoauth_yahoo_guid'.")
+        print(f"[DEBUG] Step 2: 'guid' was MISSING. Added it from 'xoauth_yahoo_guid'.")
     else:
-        app.logger.info(f"Step 2: 'guid' check complete. Found: {'guid' in token_data}. Found xoauth: {'xoauth_yahoo_guid' in token_data}")
+        print(f"[DEBUG] Step 2: 'guid' check complete. Guid present: {'guid' in token_data}. Xoauth guid present: {'xoauth_yahoo_guid' in token_data}")
 
     # 2. Check for expiration and refresh if needed.
     expires_in = token_data.get('expires_in', 3600)
     token_time = token_data.get('token_time', 0)
     refreshed = False
     if time.time() > token_time + expires_in - 300:  # 5-minute buffer
-        app.logger.info("Step 3: Token expired or nearing expiration. Attempting refresh.")
+        print("[DEBUG] Step 3: Token expired or nearing expiration. Attempting refresh.")
         try:
             original_guid = token_data.get('guid')
             oauth_for_refresh = OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data)
             oauth_for_refresh.refresh_access_token()
 
-            # Update token_data with the new data from the library
             token_data = oauth_for_refresh.token_data
             if original_guid and 'guid' not in token_data:
                 token_data['guid'] = original_guid
 
             refreshed = True
-            app.logger.info(f"Step 3: Token refreshed successfully. New keys: {list(token_data.keys())}")
+            print(f"[DEBUG] Step 3: Token refreshed successfully. New keys: {list(token_data.keys())}")
         except Exception as e:
-            app.logger.error(f"Step 3: Failed to refresh access token: {e}")
-            session.clear()  # Clear session on refresh failure
+            print(f"[DEBUG] Step 3: FAILED to refresh access token: {e}")
+            session.clear()
             return None
     else:
-        app.logger.info("Step 3: Token is valid, no refresh needed.")
+        print("[DEBUG] Step 3: Token is valid, no refresh needed.")
 
     # 3. Update the session if anything changed to ensure persistence.
     if guid_added or refreshed:
         session['yahoo_token_data'] = token_data
         session.modified = True
-        app.logger.info("Step 4: Session was modified and flagged for saving.")
+        print("[DEBUG] Step 4: Session was modified and has been flagged for saving.")
     else:
-        app.logger.info("Step 4: No changes to token, session not modified.")
+        print("[DEBUG] Step 4: No changes to token, session not modified.")
 
-    app.logger.info(f"--- TOKEN VALIDATION END --- Returning token with keys: {list(session['yahoo_token_data'].keys())}")
+    print(f"--- [DEBUG] TOKEN VALIDATION END --- Returning token with keys: {list(session['yahoo_token_data'].keys())}\n")
     return session['yahoo_token_data']
 
 
@@ -197,11 +196,12 @@ def callback():
         if 'access_token' not in token_data:
             return "Failed to retrieve access token from Yahoo.", 500
 
+        print(f"[DEBUG] CALLBACK: Initial token received from Yahoo. Keys: {list(token_data.keys())}")
+
         token_data['token_time'] = time.time()
         session['yahoo_token_data'] = token_data
         session.permanent = True
         # Call once to process and ensure guid is stored
-        app.logger.info("--- Calling get_and_validate_token from CALLBACK ---")
         get_and_validate_token()
         print("Successfully stored and validated token data in session.")
 
@@ -248,7 +248,7 @@ def _start_db_process(league_id):
     """Helper to create auth env var and start the background DB process."""
     token_data = get_and_validate_token()
     if not token_data:
-        app.logger.error("User token not found in session for background process.")
+        print("[DEBUG] _start_db_process: User token not found in session for background process.")
         return False, "User token not found in session."
 
     with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
@@ -256,7 +256,7 @@ def _start_db_process(league_id):
     full_auth_data = {**token_data, **creds}
 
     # --- DEBUGGING STEP ---
-    app.logger.info(f"START_DB_PROCESS: Final auth data being sent to background process. Keys: {list(full_auth_data.keys())}")
+    print(f"[DEBUG] START_DB_PROCESS: Final auth data being sent to background process. Keys: {list(full_auth_data.keys())}")
 
     auth_data_string = json.dumps(full_auth_data)
 
