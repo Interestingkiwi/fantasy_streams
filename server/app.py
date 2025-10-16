@@ -186,21 +186,28 @@ def callback():
             return "Failed to retrieve access token from Yahoo.", 500
 
         # --- Step 2: Use the access token to fetch the User GUID ---
-        userinfo_url = 'https://api.login.yahoo.com/openid/v1/userinfo'
-        headers = {'Authorization': f'Bearer {token_data["access_token"]}'}
-        userinfo_response = requests.get(userinfo_url, headers=headers)
-        userinfo_response.raise_for_status()
-        userinfo_data = userinfo_response.json()
+        # This call is now wrapped in a try/except block to prevent login failures
+        # if the OpenID Connect permission is not enabled in the Yahoo App settings.
+        try:
+            userinfo_url = 'https://api.login.yahoo.com/openid/v1/userinfo'
+            headers = {'Authorization': f'Bearer {token_data["access_token"]}'}
+            userinfo_response = requests.get(userinfo_url, headers=headers)
 
-        # The 'sub' field in the OIDC response is the user's unique ID (guid)
-        if 'sub' in userinfo_data:
-            token_data['guid'] = userinfo_data['sub']
-            print(f"[SUCCESS] Fetched and added guid to token data: {userinfo_data['sub']}")
-        else:
-            print("[WARNING] Could not find 'sub' (guid) in userinfo response.")
-            # Fallback for older API versions, just in case
-            if 'xoauth_yahoo_guid' in token_data:
-                 token_data['guid'] = token_data['xoauth_yahoo_guid']
+            if userinfo_response.status_code == 200:
+                userinfo_data = userinfo_response.json()
+                if 'sub' in userinfo_data:
+                    token_data['guid'] = userinfo_data['sub']
+                    print(f"[SUCCESS] Fetched and added guid to token data: {userinfo_data['sub']}")
+            else:
+                print(f"[WARNING] Could not fetch userinfo (status code: {userinfo_response.status_code}). This is likely a permission issue in your Yahoo App settings. Proceeding without explicit guid.")
+
+        except Exception as e:
+            print(f"[WARNING] An exception occurred while trying to fetch userinfo: {e}. Proceeding without explicit guid.")
+
+        # Fallback for older API versions, just in case
+        if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
+             token_data['guid'] = token_data['xoauth_yahoo_guid']
+             print(f"[INFO] Found guid in the main token response.")
 
         # --- Step 3: Store the complete token in the session ---
         token_data['token_time'] = time.time()
@@ -209,7 +216,7 @@ def callback():
         print("Successfully stored complete token data in session.")
 
     except requests.exceptions.RequestException as e:
-        print(f"Error during token exchange/userinfo fetch: {e.response.text if e.response else e}")
+        print(f"Error during token exchange: {e.response.text if e.response else e}")
         return "Authentication failed.", 400
     except Exception as e:
         print(f"Error in callback: {e}")
