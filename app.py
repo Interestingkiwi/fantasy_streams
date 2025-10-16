@@ -114,7 +114,6 @@ def handle_query():
         return jsonify({"error": "User not authenticated. Please log in again."}), 401
 
     try:
-        # ** FIX **
         # Manually construct the auth dictionary in the exact format yfpy expects,
         # translating from the standard OAuth2 session token.
         token = session['yahoo_token']
@@ -124,8 +123,10 @@ def handle_query():
             'access_token': token.get('access_token'),
             'refresh_token': token.get('refresh_token'),
             'token_type': token.get('token_type', 'bearer'),
-            # yfpy expects 'token_time', not 'expires_at'. They are both Unix timestamps.
-            'token_time': token.get('expires_at', time.time() + token.get('expires_in', 3600))
+            'token_time': token.get('expires_at', time.time() + token.get('expires_in', 3600)),
+            # ** FIX **
+            # yfpy expects 'guid', which Yahoo provides as 'xoauth_yahoo_guid'.
+            'guid': token.get('xoauth_yahoo_guid')
         }
 
         yq = YahooFantasySportsQuery(
