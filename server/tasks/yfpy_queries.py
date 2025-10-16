@@ -21,12 +21,13 @@ logger = logging.getLogger(__name__)
 
 class YahooDataFetcher:
     def __init__(
-        self, con, league_id, *, yahoo_consumer_key=None, yahoo_consumer_secret=None
+        self, con, league_id, *, yahoo_consumer_key=None, yahoo_consumer_secret=None, yahoo_access_token_json=None
     ):
         self.con = con
         self.league_id = league_id
         self._yahoo_consumer_key = yahoo_consumer_key
         self._yahoo_consumer_secret = yahoo_consumer_secret
+        self._yahoo_access_token_json = yahoo_access_token_json
         self.yq = None
         self._refresh_yahoo_query()
 
@@ -34,15 +35,14 @@ class YahooDataFetcher:
     def _refresh_yahoo_query(self):
         logger.debug("Refreshing Yahoo query")
         kwargs = {}
-        if (
-            self._yahoo_consumer_key is not None
-            and self._yahoo_consumer_secret is not None
-        ):
+        if self._yahoo_consumer_key and self._yahoo_consumer_secret:
             kwargs["yahoo_consumer_key"] = self._yahoo_consumer_key
             kwargs["yahoo_consumer_secret"] = self._yahoo_consumer_secret
-            logger.debug("Refreshing with provided credentials")
-        else:
-            logger.debug("No credentials provided, yfpy will look for env variables or a token file.")
+            logger.debug("Refreshing with provided credentials.")
+
+        if self._yahoo_access_token_json:
+            kwargs["yahoo_access_token_json"] = self._yahoo_access_token_json
+            logger.debug("Refreshing with provided access token.")
 
         # The game_id is needed for some queries.
         # We perform an initial query to get the game_id for the league.

@@ -242,7 +242,7 @@ def initialize_league():
     db_filename = f"yahoo-nhl-{league_id}-custom.db"
     db_path = os.path.join(DATABASE_DIR, db_filename) # Use the configured directory
 
-    if os.path.exists(db_path):
+        if os.path.exists(db_path):
         session['current_league_id'] = league_id
         return jsonify({"status": "exists", "message": "Database already exists."})
 
@@ -255,10 +255,13 @@ def initialize_league():
     if token_data:
         with open('token_cache.json', 'w') as f:
             json.dump(token_data, f)
+    else:
+        # If there's no token, we can't proceed.
+        return jsonify({"status": "error", "message": "User not authenticated, cannot initialize."}), 401
 
     # Run the db_initializer.py script as a background process
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
-
+    
     # Pass credentials AND the database directory to the subprocess environment
     proc_env = os.environ.copy()
     proc_env['YAHOO_PRIVATE_JSON'] = private_content or ""
@@ -337,6 +340,9 @@ def refresh_league():
     if token_data:
         with open('token_cache.json', 'w') as f:
             json.dump(token_data, f)
+    else:
+        return jsonify({"status": "error", "message": "User not authenticated, cannot refresh."}), 401
+
 
     # Run the db_initializer.py script, which will now handle updates.
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
