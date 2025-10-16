@@ -34,13 +34,11 @@ class YahooDataFetcher:
     def _refresh_yahoo_query(self):
         logger.debug("Refreshing Yahoo query")
 
-        # The auth_dir should point to the directory containing private.json.
-        # When run via app.py, the current working directory is the project root.
-        auth_dir = "."
+        # The yfpy library finds the private.json file in the project root by default.
 
         # The game_id is needed for some queries.
         # We perform an initial query to get the game_id for the league.
-        yq_init = YahooFantasySportsQuery(auth_dir=auth_dir, league_id=self.league_id, game_code="nhl")
+        yq_init = YahooFantasySportsQuery(league_id=self.league_id, game_code="nhl")
 
         game_info = yq_init.get_current_game_info()
         game_id = game_info.game_id
@@ -48,7 +46,6 @@ class YahooDataFetcher:
         # Now we create the final query object with the game_id,
         # reusing the authentication token from the initial query.
         self.yq = YahooFantasySportsQuery(
-            auth_dir=auth_dir,
             league_id=self.league_id,
             game_code="nhl",
             game_id=game_id,
