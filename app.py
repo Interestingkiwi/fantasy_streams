@@ -20,13 +20,21 @@ def init_yfpy():
     """
     global yq
     try:
+        # Get League ID
         league_id_str = os.environ.get("LEAGUE_ID")
         if not league_id_str:
             logging.error("FATAL: LEAGUE_ID environment variable not set.")
             return
-        # Convert league_id to integer as the library expects
         league_id = int(league_id_str)
 
+        # Get Consumer Key and Secret from environment variables
+        consumer_key = os.environ.get("YAHOO_CONSUMER_KEY")
+        consumer_secret = os.environ.get("YAHOO_CONSUMER_SECRET")
+        if not consumer_key or not consumer_secret:
+            logging.error("FATAL: YAHOO_CONSUMER_KEY or YAHOO_CONSUMER_SECRET environment variables not set.")
+            return
+
+        # Get the private.json content for access/refresh tokens
         private_json_content = os.environ.get("PRIVATE_JSON_CONTENT")
         if not private_json_content:
             logging.error("FATAL: PRIVATE_JSON_CONTENT environment variable not set.")
@@ -34,17 +42,21 @@ def init_yfpy():
             return
 
         # yfpy automatically looks for "private.json" in the current working directory.
-        # We just need to create the file there.
+        # We just need to create the file there for it to find the tokens.
         private_json_path = "private.json"
-
         with open(private_json_path, "w") as f:
             f.write(private_json_content)
 
         logging.info("Successfully created private.json for yfpy.")
 
-        # Initialize the query object. yfpy will find the private.json file automatically.
-        # The first argument must be the league_id.
-        yq = YahooFantasySportsQuery(league_id, game_code="nhl")
+        # Initialize the query object, providing all required credentials.
+        # yfpy will use the key/secret for initialization and the private.json for tokens.
+        yq = YahooFantasySportsQuery(
+            league_id,
+            game_code="nhl",
+            yahoo_consumer_key=consumer_key,
+            yahoo_consumer_secret=consumer_secret
+        )
         logging.info(f"Successfully connected to Yahoo Fantasy API for league {league_id}.")
 
     except Exception as e:
@@ -121,6 +133,7 @@ def handle_query():
 if __name__ == '__main__':
     # This block is for local development.
     # To run locally:
-    # 1. Set the LEAGUE_ID and PRIVATE_JSON_CONTENT environment variables.
+    # 1. Set the LEAGUE_ID, PRIVATE_JSON_CONTENT, YAHOO_CONSUMER_KEY,
+    #    and YAHOO_CONSUMER_SECRET environment variables.
     # 2. Run `python app.py`
     app.run(debug=True, port=5001)
