@@ -272,7 +272,6 @@ def initialize_league():
 
     # Pass credentials AND the database directory to the subprocess environment
     proc_env = os.environ.copy()
-    proc_env['YAHOO_PRIVATE_JSON'] = private_content or ""
     proc_env['DATABASE_DIR'] = DATABASE_DIR # Pass the directory to the subprocess
 
     process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
@@ -366,7 +365,6 @@ def refresh_league():
 
     # Pass credentials and DB directory to the subprocess environment
     proc_env = os.environ.copy()
-    proc_env['YAHOO_PRIVATE_JSON'] = private_content or ""
     proc_env['DATABASE_DIR'] = DATABASE_DIR
 
     process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)

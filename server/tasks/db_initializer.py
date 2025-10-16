@@ -45,19 +45,16 @@ def run():
             con.commit()
             logger.info("Custom DB tables created from schema.sql")
 
-            # Read credentials from the generated private.json
-            consumer_key = None
-            consumer_secret = None
+            # Read all auth data from the generated private.json
+            auth_data = None
             # The auth file is in the project root, so we go up two directories from the current script
             auth_file_path = os.path.join(os.path.dirname(__file__), '..', '..', 'private.json')
             if os.path.exists(auth_file_path):
                 with open(auth_file_path, 'r') as f:
-                    creds = json.load(f)
-                    consumer_key = creds.get('consumer_key')
-                    consumer_secret = creds.get('consumer_secret')
+                    auth_data = json.load(f)
 
-            if not consumer_key or not consumer_secret:
-                logger.critical("Could not find consumer key or secret in private.json")
+            if not auth_data:
+                logger.critical("Could not find or load auth data from private.json")
                 sys.exit(1)
 
 
@@ -66,8 +63,7 @@ def run():
             fetcher = YahooDataFetcher(
                 con,
                 args.league_id,
-                yahoo_consumer_key=consumer_key,
-                yahoo_consumer_secret=consumer_secret
+                auth_data=auth_data
             )
             fetcher.fetch_all_data()
 
