@@ -12,8 +12,8 @@ import re
 from datetime import datetime, timedelta
 
 # --- Configuration ---
-YAHOO_CONSUMER_KEY = os.environ.get("YAHOO_CONSUMER_KEY", "YOUR_YAHOO_CONSUMER_KEY")
-YAHOO_CONSUMER_SECRET = os.environ.get("YAHOO_CONSUMER_SECRET", "YOUR_YAHOO_CONSUMER_SECRET")
+YAHOO_CONSUMER_KEY = os.environ.get("YAHOO_CONSUMER_KEY")
+YAHOO_CONSUMER_SECRET = os.environ.get("YAHOO_CONSUMER_SECRET")
 
 # --- App Initialization ---
 # The static_folder is now relative to the server directory
@@ -219,18 +219,16 @@ def login():
     """Redirects user to Yahoo for authentication."""
     auth_dir = '.'
 
-    # Create the private.json file from environment variables for yfpy.
-    # This is necessary because yfpy reads credentials from this file.
-    private_json_path = os.path.join(auth_dir, 'private.json')
-    credentials = {
-        "consumer_key": YAHOO_CONSUMER_KEY,
-        "consumer_secret": YAHOO_CONSUMER_SECRET
-    }
-    with open(private_json_path, 'w') as f:
-        json.dump(credentials, f)
-
-    # Now, instantiate the query object with the required game_code.
-    query = YahooFantasySportsQuery(auth_dir, game_code='nhl')
+    # yfpy requires auth_dir and a league_id (can be None for login) as positional arguments.
+    # We then pass the credentials from environment variables as keyword arguments.
+    # This avoids creating a temporary private.json file.
+    query = YahooFantasySportsQuery(
+        auth_dir,
+        None,
+        game_code='nhl',
+        consumer_key=YAHOO_CONSUMER_KEY,
+        consumer_secret=YAHOO_CONSUMER_SECRET
+    )
 
     return redirect(query.login())
 
@@ -248,8 +246,15 @@ def logout():
 def user_status():
     """Checks if the user is logged in by looking for private.json in the root."""
     token_file = 'private.json'
+    # Check for the access_token within the file to be sure
     if os.path.exists(token_file):
-        return jsonify({'loggedIn': True})
+        try:
+            with open(token_file, 'r') as f:
+                data = json.load(f)
+                if 'access_token' in data:
+                    return jsonify({'loggedIn': True})
+        except (IOError, json.JSONDecodeError):
+            pass # File might exist but be empty/corrupt, treat as logged out
     return jsonify({'loggedIn': False})
 
 @app.route('/api/leagues')
@@ -260,12 +265,14 @@ def get_leagues():
         return jsonify({'error': 'Not authenticated'}), 401
     try:
         auth_dir = '.'
-        query = YahooFantasySportsQuery(auth_dir, game_code='nhl')
+        # After login, private.json exists with tokens, so we don't need to pass credentials.
+        # We still provide None for league_id to satisfy the positional argument.
+        query = YahooFantasySportsQuery(auth_dir, None, game_code='nhl')
         leagues = query.get_leagues_by_game_code('nhl', 2025)
         leagues_data = [{'league_id': l.league_id, 'name': l.name} for l in leagues]
         return jsonify(leagues_data)
     except Exception as e:
-        logging.error(f"Error fetching leagues: {e}")
+        logging.error(f"Error fetching leagues: {e}", exc_info=True)
         return jsonify({'error': 'Failed to fetch leagues from Yahoo. Your token might be expired.'}), 500
 
 @app.route('/api/initialize_league', methods=['POST'])
