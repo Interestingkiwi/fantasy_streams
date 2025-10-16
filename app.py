@@ -3,7 +3,8 @@ import json
 import logging
 from flask import Flask, render_template, request, jsonify
 from yfpy.query import YahooFantasySportsQuery
-from yfpy.models import Model
+# The 'Model' class is not available for import in this manner in recent yfpy versions.
+# We will adjust the serialization function to not depend on it.
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -51,13 +52,18 @@ def init_yfpy():
 
 def model_to_dict(obj):
     """
-    Recursively converts yfpy Model objects and lists of them into dictionaries
-    so they can be easily serialized to JSON.
+    Recursively converts yfpy model objects and lists of them into dictionaries
+    so they can be easily serialized to JSON. This version avoids a direct
+    dependency on a specific 'Model' base class.
     """
     if isinstance(obj, list):
         return [model_to_dict(i) for i in obj]
-    if not isinstance(obj, Model):
-        return obj
+
+    # We want to convert custom objects that have attributes, but not basic types.
+    # A reliable way to check if an object is from the yfpy library is to inspect
+    # its __module__ attribute. This is safer than checking for specific types.
+    if not hasattr(obj, '__module__') or not obj.__module__.startswith('yfpy.'):
+         return obj
 
     # Convert a single yfpy Model object to a dictionary
     result = {}
