@@ -47,8 +47,8 @@ def index():
 @app.route('/login', methods=['POST'])
 def login():
     """
-    Starts the OAuth2 login process. It generates Yahoo's authorization URL
-    and sends it to the frontend to redirect the user.
+    Starts the manual OAuth2 login process. It generates Yahoo's authorization URL
+    and sends it back to the frontend for the user to visit manually.
     """
     data = request.get_json()
     session['league_id'] = data.get('league_id')
@@ -58,8 +58,6 @@ def login():
     if not all([session['league_id'], session['consumer_key'], session['consumer_secret']]):
         return jsonify({"error": "League ID, Consumer Key, and Consumer Secret are all required."}), 400
 
-    # The Redirect URI must match exactly what you've configured in your Yahoo App settings.
-    # We construct it dynamically to work in both local dev and on Render.
     redirect_uri = url_for('callback', _external=True, _scheme='https')
 
     yahoo = OAuth2Session(session['consumer_key'], redirect_uri=redirect_uri)
@@ -71,33 +69,38 @@ def login():
 @app.route('/callback')
 def callback():
     """
-    This is the endpoint Yahoo redirects the user to after they authorize the app.
-    It exchanges the authorization code from Yahoo for a permanent access token.
+    This is a simple page that the user is redirected to by Yahoo.
+    Its only purpose is to contain the verifier code in its URL.
+    The user will copy the URL of this page and paste it back into the app.
     """
-    if 'error' in request.args:
-        error_msg = request.args.get('error_description', 'An unknown error occurred during Yahoo authentication.')
-        logging.error(f"Yahoo OAuth Error: {request.args.get('error')} - {error_msg}")
-        return f'<h1>Error: {error_msg}</h1><p>Please try logging in again.</p>', 400
+    return "<h1>Verification successful!</h1><p>Please copy the full URL from your browser's address bar and paste it back into the yfpy Web Terminal.</p>"
 
-    if request.args.get('state') != session.get('oauth_state'):
-        return '<h1>Error: State mismatch. Please try logging in again.</h1>', 400
+@app.route('/verify', methods=['POST'])
+def verify():
+    """
+    Receives the full redirect URL (containing the verifier code) from the user,
+    and exchanges it for a permanent access token.
+    """
+    redirected_url = request.get_json().get('redirected_url')
+    if not redirected_url:
+        return jsonify({"error": "The redirected URL from Yahoo is required."}), 400
 
+    # Recreate the session object to ensure state and redirect URI match
     redirect_uri = url_for('callback', _external=True, _scheme='https')
     yahoo = OAuth2Session(session['consumer_key'], state=session.get('oauth_state'), redirect_uri=redirect_uri)
 
     try:
-        # The 'code' is the authorization code from Yahoo
         token = yahoo.fetch_token(
             token_url,
             client_secret=session['consumer_secret'],
-            code=request.args.get('code')
+            authorization_response=redirected_url
         )
         session['yahoo_token'] = token
+        return jsonify({"success": True})
     except Exception as e:
-        logging.error(f"Error fetching token in callback: {e}", exc_info=True)
-        return '<h1>Error: Could not fetch access token from Yahoo. Please try again.</h1>', 500
+        logging.error(f"Error fetching token with verifier URL: {e}", exc_info=True)
+        return jsonify({"error": "Could not verify the URL. It might be invalid, expired, or used already. Please try generating a new auth URL."}), 500
 
-    return redirect(url_for('index'))
 
 @app.route('/logout')
 def logout():
@@ -124,8 +127,6 @@ def handle_query():
             'refresh_token': token.get('refresh_token'),
             'token_type': token.get('token_type', 'bearer'),
             'token_time': token.get('expires_at', time.time() + token.get('expires_in', 3600)),
-            # ** FIX **
-            # yfpy expects 'guid', which Yahoo provides as 'xoauth_yahoo_guid'.
             'guid': token.get('xoauth_yahoo_guid')
         }
 
