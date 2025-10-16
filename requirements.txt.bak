@@ -1,0 +1,7 @@
+Flask
+requests
+requests-oauthlib
+gunicorn
+yfpy
+yahoo-oauth
+yahoo_fantasy_api
