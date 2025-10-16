@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - H2H Fantasy Optimizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-900 text-white">
+
+    <div class="p-4">
+        <div class="flex justify-between items-start mb-4">
+            <div class="flex items-center gap-4">
+                <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+                    League Home
+                </h1>
+                <main class="bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-2 w-fit">
+                    <p id="timestamp-text" class="text-gray-400 text-xs">Loading league data...</p>
+                    <p class="text-gray-400 text-xs">Projection data is sourced by reddit user: <a href="https://www.reddit.com/r/fantasyhockey/comments/1n1wsqc/dtz_20252026_nhl_projections/" target="_blank" class="text-blue-400 hover:underline">Datsyuktozetterberg</a></p>
+                </main>
+                <button id="refresh-data-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-2 text-xs rounded-lg transition duration-300 ease-in-out">
+                    Refresh League Data
+                </button>
+            </div>
+
+            <button id="logout-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 ease-in-out">
+                Logout
+            </button>
+        </div>
+
+        <div id="toggle-buttons-container" class="flex items-center gap-2 mb-4">
+            <button data-page="matchup" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                Matchup
+            </button>
+            <button data-page="lineups" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                Lineups
+            </button>
+            <button data-page="free-agents" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                Free Agents
+            </button>
+            <button data-page="goalie-planning" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                Goalie Planning
+            </button>
+            <button data-page="league-data" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                League Data
+            </button>
+            <script>
+                const isDevelopment = true; // Set to false for production
+                if (isDevelopment) {
+                    document.write(`
+                        <button data-page="db" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                            DB
+                        </button>
+                    `);
+                }
+            </script>
+        </div>
+
+        <!-- Page Content Area -->
+        <div id="page-content" class="bg-gray-800 border border-gray-700 rounded-lg p-4 min-h-[60vh]">
+            <!-- Content from other HTML files will be loaded here -->
+        </div>
+    </div>
+
+    <script src="home.js"></script>
+
+    <script>
+        const toggleButtons = document.querySelectorAll('.toggle-btn');
+        const pageContent = document.getElementById('page-content');
+
+        // Define the classes for each state
+        const activeClasses = ['bg-blue-600', 'text-white'];
+        const inactiveClasses = ['bg-gray-700', 'text-gray-300', 'hover:bg-gray-600'];
+
+        function setButtonState(button, isActive) {
+            if (isActive) {
+                button.classList.remove(...inactiveClasses);
+                button.classList.add(...activeClasses);
+            } else {
+                button.classList.remove(...activeClasses);
+                button.classList.add(...inactiveClasses);
+            }
+        }
+
+        async function loadPage(pageName) {
+            try {
+                // Add a loading state
+                pageContent.innerHTML = `<p class="text-gray-400">Loading ${pageName.replace(/-/g, ' ')}...</p>`;
+
+                const response = await fetch(`pages/${pageName}.html`);
+                if (!response.ok) {
+                    throw new Error(`Page not found: ${pageName}.html`);
+                }
+                const content = await response.text();
+                pageContent.innerHTML = content;
+
+                // Scripts inside the fetched HTML will be executed by the browser.
+            } catch (error) {
+                console.error('Error loading page:', error);
+                pageContent.innerHTML = `<p class="text-red-400">Error loading page content. Check the console for details.</p>`;
+            }
+        }
+
+        toggleButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const pageToLoad = button.getAttribute('data-page');
+
+                // Set all buttons to inactive first
+                toggleButtons.forEach(btn => setButtonState(btn, false));
+
+                // Then set the clicked button to active
+                setButtonState(button, true);
+
+                // Load the page content
+                loadPage(pageToLoad);
+            });
+        });
+
+        // Initial load on DOM content ready
+        document.addEventListener('DOMContentLoaded', () => {
+             // Set the first button as active by default and load its content
+            const firstButton = toggleButtons[0];
+            if (firstButton) {
+                // Set active/inactive classes for all buttons
+                toggleButtons.forEach((btn, index) => {
+                    setButtonState(btn, index === 0);
+                });
+                // Load the page for the first button
+                loadPage(firstButton.getAttribute('data-page'));
+            }
+        });
+    </script>
+</body>
+</html>
