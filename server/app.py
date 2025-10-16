@@ -261,6 +261,11 @@ def initialize_league():
         if not token_data:
             return jsonify({"status": "error", "message": "User not authenticated, cannot initialize."}), 401
 
+        # Ensure the 'guid' field is present for yfpy compatibility, just in case.
+        if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
+            token_data['guid'] = token_data['xoauth_yahoo_guid']
+            session['yahoo_token_data'] = token_data # Update session as well
+
         # Merge them. Token data from session takes precedence.
         combined_auth = {**creds, **token_data}
 
@@ -352,6 +357,11 @@ def refresh_league():
         token_data = session.get('yahoo_token_data')
         if not token_data:
             return jsonify({"status": "error", "message": "User not authenticated, cannot refresh."}), 401
+
+        # Ensure the 'guid' field is present for yfpy compatibility, just in case.
+        if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
+            token_data['guid'] = token_data['xoauth_yahoo_guid']
+            session['yahoo_token_data'] = token_data # Update session as well
 
         # Merge them. Token data from session takes precedence.
         combined_auth = {**creds, **token_data}
