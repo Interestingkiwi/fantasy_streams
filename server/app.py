@@ -33,7 +33,7 @@ class YahooDataFetcher:
         self.league_id = league_id
         # Use the root project directory for authentication credentials
         self.auth_dir = auth_dir
-        self.yq = YahooFantasySportsQuery(self.auth_dir, league_id)
+        self.yq = YahooFantasySportsQuery(self.auth_dir, league_id, game_code='nhl')
         self.num_teams = 0
         self.start_date = None
         self.end_date = None
@@ -229,9 +229,8 @@ def login():
     with open(private_json_path, 'w') as f:
         json.dump(credentials, f)
 
-    # Now, instantiate the query object. It will find and use the private.json.
-    # The incorrect keyword arguments have been removed.
-    query = YahooFantasySportsQuery(auth_dir)
+    # Now, instantiate the query object with the required game_code.
+    query = YahooFantasySportsQuery(auth_dir, game_code='nhl')
 
     return redirect(query.login())
 
@@ -261,7 +260,7 @@ def get_leagues():
         return jsonify({'error': 'Not authenticated'}), 401
     try:
         auth_dir = '.'
-        query = YahooFantasySportsQuery(auth_dir)
+        query = YahooFantasySportsQuery(auth_dir, game_code='nhl')
         leagues = query.get_leagues_by_game_code('nhl', 2025)
         leagues_data = [{'league_id': l.league_id, 'name': l.name} for l in leagues]
         return jsonify(leagues_data)
