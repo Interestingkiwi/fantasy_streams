@@ -43,8 +43,8 @@ def init_yfpy():
 
         # Initialize the query object, pointing to the directory with the auth file.
         # This assumes you are in an NHL league ('nhl'). Change 'game_code' if necessary.
-        # Using keyword arguments to avoid ambiguity.
-        yq = YahooFantasySportsQuery(auth_dir, league_id=league_id, game_code="nhl")
+        # Using only keyword arguments to remove ambiguity.
+        yq = YahooFantasySportsQuery(auth_dir=auth_dir, league_id=league_id, game_code="nhl")
         logging.info(f"Successfully connected to Yahoo Fantasy API for league {league_id}.")
 
     except Exception as e:
