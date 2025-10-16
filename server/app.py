@@ -72,24 +72,18 @@ def get_and_validate_token():
         return None
 
     token_data = session['yahoo_token_data']
-    print(f"\n--- [DEBUG] TOKEN VALIDATION START ---")
-    print(f"[DEBUG] Step 1: Initial token keys in session: {list(token_data.keys())}")
 
-    # 1. Ensure 'guid' is present.
+    # This logic remains as a fallback, but the main fix is in /callback
     guid_added = False
     if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
         token_data['guid'] = token_data['xoauth_yahoo_guid']
         guid_added = True
-        print(f"[DEBUG] Step 2: 'guid' was MISSING. Added it from 'xoauth_yahoo_guid'.")
-    else:
-        print(f"[DEBUG] Step 2: 'guid' check complete. Guid present: {'guid' in token_data}. Xoauth guid present: {'xoauth_yahoo_guid' in token_data}")
 
-    # 2. Check for expiration and refresh if needed.
+    # Check for expiration and refresh if needed.
     expires_in = token_data.get('expires_in', 3600)
     token_time = token_data.get('token_time', 0)
     refreshed = False
     if time.time() > token_time + expires_in - 300:  # 5-minute buffer
-        print("[DEBUG] Step 3: Token expired or nearing expiration. Attempting refresh.")
         try:
             original_guid = token_data.get('guid')
             oauth_for_refresh = OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data)
@@ -100,23 +94,15 @@ def get_and_validate_token():
                 token_data['guid'] = original_guid
 
             refreshed = True
-            print(f"[DEBUG] Step 3: Token refreshed successfully. New keys: {list(token_data.keys())}")
         except Exception as e:
-            print(f"[DEBUG] Step 3: FAILED to refresh access token: {e}")
+            print(f"[DEBUG] FAILED to refresh access token: {e}")
             session.clear()
             return None
-    else:
-        print("[DEBUG] Step 3: Token is valid, no refresh needed.")
 
-    # 3. Update the session if anything changed to ensure persistence.
     if guid_added or refreshed:
         session['yahoo_token_data'] = token_data
         session.modified = True
-        print("[DEBUG] Step 4: Session was modified and has been flagged for saving.")
-    else:
-        print("[DEBUG] Step 4: No changes to token, session not modified.")
 
-    print(f"--- [DEBUG] TOKEN VALIDATION END --- Returning token with keys: {list(session['yahoo_token_data'].keys())}\n")
     return session['yahoo_token_data']
 
 
@@ -129,7 +115,6 @@ def get_authenticated_oauth_client():
     if not token_data:
         return None, (jsonify({"error": "Authentication required. Please log in again."}), 401)
 
-    # Return a new client instance initialized with the validated token
     return OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data), None
 
 # --- Static Frontend Routes ---
@@ -171,12 +156,13 @@ def login():
 @app.route("/callback")
 def callback():
     """
-    Handles the callback from Yahoo, exchanging the code for a token.
+    Handles the callback from Yahoo, exchanging the code for a token AND fetching the user's GUID.
     """
     code = request.args.get('code')
     if not code:
         return "Authorization code not found in callback.", 400
     try:
+        # --- Step 1: Exchange authorization code for access token ---
         redirect_uri = url_for('callback', _external=True)
         with open(YAHOO_CREDENTIALS_FILE) as f:
             creds = json.load(f)
@@ -196,17 +182,31 @@ def callback():
         if 'access_token' not in token_data:
             return "Failed to retrieve access token from Yahoo.", 500
 
-        print(f"[DEBUG] CALLBACK: Initial token received from Yahoo. Keys: {list(token_data.keys())}")
+        # --- Step 2: Use the access token to fetch the User GUID ---
+        userinfo_url = 'https://api.login.yahoo.com/openid/v1/userinfo'
+        headers = {'Authorization': f'Bearer {token_data["access_token"]}'}
+        userinfo_response = requests.get(userinfo_url, headers=headers)
+        userinfo_response.raise_for_status()
+        userinfo_data = userinfo_response.json()
 
+        # The 'sub' field in the OIDC response is the user's unique ID (guid)
+        if 'sub' in userinfo_data:
+            token_data['guid'] = userinfo_data['sub']
+            print(f"[SUCCESS] Fetched and added guid to token data: {userinfo_data['sub']}")
+        else:
+            print("[WARNING] Could not find 'sub' (guid) in userinfo response.")
+            # Fallback for older API versions, just in case
+            if 'xoauth_yahoo_guid' in token_data:
+                 token_data['guid'] = token_data['xoauth_yahoo_guid']
+
+        # --- Step 3: Store the complete token in the session ---
         token_data['token_time'] = time.time()
         session['yahoo_token_data'] = token_data
         session.permanent = True
-        # Call once to process and ensure guid is stored
-        get_and_validate_token()
-        print("Successfully stored and validated token data in session.")
+        print("Successfully stored complete token data in session.")
 
     except requests.exceptions.RequestException as e:
-        print(f"Error during token exchange: {e.response.text if e.response else e}")
+        print(f"Error during token exchange/userinfo fetch: {e.response.text if e.response else e}")
         return "Authentication failed.", 400
     except Exception as e:
         print(f"Error in callback: {e}")
@@ -248,15 +248,14 @@ def _start_db_process(league_id):
     """Helper to create auth env var and start the background DB process."""
     token_data = get_and_validate_token()
     if not token_data:
-        print("[DEBUG] _start_db_process: User token not found in session for background process.")
+        print("[ERROR] _start_db_process: User token not found in session for background process.")
         return False, "User token not found in session."
 
     with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
         creds = json.load(f)
     full_auth_data = {**token_data, **creds}
 
-    # --- DEBUGGING STEP ---
-    print(f"[DEBUG] START_DB_PROCESS: Final auth data being sent to background process. Keys: {list(full_auth_data.keys())}")
+    print(f"[DEBUG] START_DB_PROCESS: Final auth data being sent. Keys: {list(full_auth_data.keys())}")
 
     auth_data_string = json.dumps(full_auth_data)
 
