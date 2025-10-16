@@ -217,15 +217,22 @@ def initialize_league_data_background(league_id, auth_dir):
 @app.route('/login')
 def login():
     """Redirects user to Yahoo for authentication."""
-    # The auth_dir is the project root, where private.json will be stored.
     auth_dir = '.'
-    # The league_id is not required for the initial authentication query.
-    # Removing league_id=None resolves the TypeError.
-    query = YahooFantasySportsQuery(
-        auth_dir,
-        consumer_key=YAHOO_CONSUMER_KEY,
-        consumer_secret=YAHOO_CONSUMER_SECRET
-    )
+
+    # Create the private.json file from environment variables for yfpy.
+    # This is necessary because yfpy reads credentials from this file.
+    private_json_path = os.path.join(auth_dir, 'private.json')
+    credentials = {
+        "consumer_key": YAHOO_CONSUMER_KEY,
+        "consumer_secret": YAHOO_CONSUMER_SECRET
+    }
+    with open(private_json_path, 'w') as f:
+        json.dump(credentials, f)
+
+    # Now, instantiate the query object. It will find and use the private.json.
+    # The incorrect keyword arguments have been removed.
+    query = YahooFantasySportsQuery(auth_dir)
+
     return redirect(query.login())
 
 @app.route('/logout')
