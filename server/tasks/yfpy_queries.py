@@ -12,7 +12,6 @@ import pathlib
 import sqlite3
 import unicodedata
 import re
-import json
 from datetime import datetime, timedelta, date
 from yfpy.query import YahooFantasySportsQuery
 
@@ -34,25 +33,30 @@ class YahooDataFetcher:
 
     def _refresh_yahoo_query(self):
         logger.debug("Refreshing Yahoo query")
-
-        # The yfpy library should automatically find private.json and token_cache.json
-        # in the project root when the script is run from there.
+        kwargs = {}
+        if (
+            self._yahoo_consumer_key is not None
+            and self._yahoo_consumer_secret is not None
+        ):
+            kwargs["yahoo_consumer_key"] = self._yahoo_consumer_key
+            kwargs["yahoo_consumer_secret"] = self._yahoo_consumer_secret
+            logger.debug("Refreshing with provided credentials")
+        else:
+            logger.debug("No credentials provided, yfpy will look for env variables or a token file.")
 
         # The game_id is needed for some queries.
         # We perform an initial query to get the game_id for the league.
-        yq_init = YahooFantasySportsQuery(league_id=self.league_id, game_code="nhl")
-
+        yq_init = YahooFantasySportsQuery(league_id=self.league_id, game_code="nhl", **kwargs)
         game_info = yq_init.get_current_game_info()
         game_id = game_info.game_id
 
         # Now we create the final query object with the game_id,
         # reusing the authentication token from the initial query.
+        kwargs['yahoo_access_token_json'] = yq_init._yahoo_access_token_dict
         self.yq = YahooFantasySportsQuery(
-            league_id=self.league_id,
-            game_code="nhl",
-            game_id=game_id,
-            yahoo_access_token_json=yq_init._yahoo_access_token_dict
+            league_id=self.league_id, game_code="nhl", game_id=game_id, **kwargs
         )
+
 
     def fetch_all_data(self):
         """
