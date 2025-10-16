@@ -39,7 +39,6 @@
             <div class="max-w-md mx-auto bg-gray-800 p-8 rounded-lg shadow-xl">
                 <h2 class="text-xl font-semibold mb-6 text-center">Connect to Yahoo Fantasy</h2>
 
-                <!-- Step 1: Credentials Form -->
                 <form id="credentials-form" class="space-y-4">
                     <div>
                         <label for="league_id" class="block mb-2 text-sm font-medium">League ID</label>
@@ -54,21 +53,9 @@
                         <input type="password" id="consumer_secret" class="form-input w-full p-2.5 rounded-md focus:ring-blue-500 focus:border-blue-500" required>
                     </div>
                     <button type="submit" class="w-full btn-primary font-medium rounded-md text-sm px-5 py-2.5 text-center transition-colors duration-200">
-                        Get Auth Link
+                        Connect with Yahoo
                     </button>
                 </form>
-
-                <!-- Step 2: Auth Link and Verifier Form -->
-                <div id="verifier-step" class="hidden mt-6 text-center">
-                    <p class="mb-4">Click the link below to authorize this application with Yahoo. After authorizing, Yahoo will give you a code. Paste that code here.</p>
-                    <a id="auth-link" href="#" target="_blank" class="text-blue-400 hover:underline break-all">Authorization Link</a>
-                    <form id="verifier-form" class="mt-4 space-y-4">
-                        <input type="text" id="verifier" class="form-input w-full p-2.5 rounded-md" placeholder="Enter Verifier Code" required>
-                        <button type="submit" class="w-full btn-primary font-medium rounded-md text-sm px-5 py-2.5 text-center">
-                            Verify & Connect
-                        </button>
-                    </form>
-                </div>
 
                 <div id="auth-error" class="mt-4 text-red-400 text-sm hidden"></div>
             </div>
@@ -88,20 +75,8 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // Views
-            const authView = document.getElementById('auth-view');
-            const terminalView = document.getElementById('terminal-view');
-
-            // Auth Step 1: Credentials
             const credentialsForm = document.getElementById('credentials-form');
-            const verifierStep = document.getElementById('verifier-step');
             const authError = document.getElementById('auth-error');
-
-            // Auth Step 2: Verifier
-            const authLink = document.getElementById('auth-link');
-            const verifierForm = document.getElementById('verifier-form');
-
-            // Terminal
             const terminalInput = document.getElementById('terminal-input');
             const terminalOutput = document.getElementById('terminal-output');
             const terminalOutputContainer = document.getElementById('terminal-output-container');
@@ -111,74 +86,40 @@
                 authError.classList.remove('hidden');
             };
 
-            // Handle Step 1: Submit credentials to get auth URL
-            credentialsForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                authError.classList.add('hidden');
-                const button = credentialsForm.querySelector('button');
-                button.textContent = 'Generating...';
-                button.disabled = true;
+            if (credentialsForm) {
+                credentialsForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    authError.classList.add('hidden');
+                    const button = credentialsForm.querySelector('button');
+                    button.textContent = 'Redirecting to Yahoo...';
+                    button.disabled = true;
 
-                try {
-                    const response = await fetch('/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            league_id: document.getElementById('league_id').value,
-                            consumer_key: document.getElementById('consumer_key').value,
-                            consumer_secret: document.getElementById('consumer_secret').value,
-                        })
-                    });
+                    try {
+                        const response = await fetch('/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                league_id: document.getElementById('league_id').value,
+                                consumer_key: document.getElementById('consumer_key').value,
+                                consumer_secret: document.getElementById('consumer_secret').value,
+                            })
+                        });
 
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Failed to get authorization URL.');
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Failed to start the login process.');
+                        }
+
+                        // Redirect the user to Yahoo for authorization
+                        window.location.href = data.auth_url;
+
+                    } catch (error) {
+                        showAuthError(error.message);
+                        button.textContent = 'Connect with Yahoo';
+                        button.disabled = false;
                     }
-
-                    authLink.href = data.auth_url;
-                    credentialsForm.classList.add('hidden');
-                    verifierStep.classList.remove('hidden');
-
-                } catch (error) {
-                    showAuthError(error.message);
-                } finally {
-                    button.textContent = 'Get Auth Link';
-                    button.disabled = false;
-                }
-            });
-
-            // Handle Step 2: Submit verifier to complete auth
-            verifierForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                authError.classList.add('hidden');
-                const button = verifierForm.querySelector('button');
-                button.textContent = 'Verifying...';
-                button.disabled = true;
-
-                try {
-                    const response = await fetch('/verify', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            verifier: document.getElementById('verifier').value
-                        })
-                    });
-
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Verification failed.');
-                    }
-
-                    // Success! Reload the page to show the terminal.
-                    window.location.reload();
-
-                } catch (error) {
-                    showAuthError(error.message);
-                } finally {
-                    button.textContent = 'Verify & Connect';
-                    button.disabled = false;
-                }
-            });
+                });
+            }
 
             const appendToTerminal = (text, type = 'output') => {
                 const line = document.createElement('div');
@@ -193,7 +134,6 @@
                 terminalOutputContainer.scrollTop = terminalOutputContainer.scrollHeight;
             };
 
-            // Handle terminal input
             if (terminalInput) {
                 terminalInput.addEventListener('keydown', async (e) => {
                     if (e.key === 'Enter') {
@@ -211,19 +151,14 @@
                             });
 
                             const data = await response.json();
-
                             if (response.status === 401) {
-                                // Handle session expiration
                                 appendToTerminal(`Error: ${data.error}`, 'error');
-                                appendToTerminal('Redirecting to login...', 'error');
                                 setTimeout(() => window.location.href = '/logout', 2000);
                                 return;
                             }
-
                             if (!response.ok) {
                                 throw new Error(data.error || 'An unknown error occurred.');
                             }
-
                             appendToTerminal(data.result);
                         } catch (error) {
                             appendToTerminal(`Error: ${error.message}`, 'error');

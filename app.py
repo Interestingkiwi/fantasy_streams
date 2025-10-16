@@ -1,21 +1,20 @@
 import os
 import json
 import logging
-from flask import Flask, render_template, request, jsonify, session, redirect
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from yfpy.query import YahooFantasySportsQuery
-from yahoo_oauth.oauth import OAuth2
+from requests_oauthlib import OAuth2Session
 
 # --- Flask App Configuration ---
 app = Flask(__name__)
 # A secret key is required for Flask to securely manage user sessions.
-# On Render, set this as an environment variable for security.
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-strong-dev-secret-key")
-
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-strong-dev-secret-key-for-local-testing")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# This global object will temporarily store the OAuth handler between auth steps.
-# In a multi-user app, this would be handled differently, but it's fine for a personal tool.
-oauth_handler = None
+# --- Yahoo OAuth2 Settings ---
+# These are the standard URLs for Yahoo's OAuth2 implementation
+authorization_base_url = 'https://api.login.yahoo.com/oauth2/request_auth'
+token_url = 'https://api.login.yahoo.com/oauth2/get_token'
 
 def model_to_dict(obj):
     """
@@ -38,8 +37,8 @@ def model_to_dict(obj):
 @app.route('/')
 def index():
     """
-    Renders the main page. It will show the login form or the query terminal
-    based on whether the user is authenticated in their session.
+    Renders the main page, showing either the login form or the query terminal
+    based on whether the user is authenticated.
     """
     is_authenticated = 'yahoo_token' in session
     return render_template('index.html', is_authenticated=is_authenticated)
@@ -47,10 +46,9 @@ def index():
 @app.route('/login', methods=['POST'])
 def login():
     """
-    Step 1 of Auth: Takes credentials from the user, generates an auth URL for Yahoo,
-    and returns it to the frontend.
+    Starts the OAuth2 login process. It generates Yahoo's authorization URL
+    and sends it to the frontend to redirect the user.
     """
-    global oauth_handler
     data = request.get_json()
     session['league_id'] = data.get('league_id')
     session['consumer_key'] = data.get('consumer_key')
@@ -59,76 +57,75 @@ def login():
     if not all([session['league_id'], session['consumer_key'], session['consumer_secret']]):
         return jsonify({"error": "League ID, Consumer Key, and Consumer Secret are all required."}), 400
 
-    try:
-        # We set store_file=False because we don't want to save private.json on the server.
-        # We will manage the token within the user's session instead.
-        oauth_handler = OAuth2(session['consumer_key'], session['consumer_secret'], store_file=False)
-        auth_url = oauth_handler.get_authorization_url()
-        return jsonify({"auth_url": auth_url})
-    except Exception as e:
-        logging.error(f"Error during auth URL generation: {e}", exc_info=True)
-        return jsonify({"error": "Failed to generate authentication URL. Please check your Consumer Key/Secret."}), 500
+    # The Redirect URI must match exactly what you've configured in your Yahoo App settings.
+    # We construct it dynamically to work in both local dev and on Render.
+    redirect_uri = url_for('callback', _external=True, _scheme='https')
 
-@app.route('/verify', methods=['POST'])
-def verify():
-    """
-    Step 2 of Auth: Takes the verifier code from the user, fetches the access token from Yahoo,
-    and stores the token securely in the user's session.
-    """
-    global oauth_handler
-    data = request.get_json()
-    verifier = data.get('verifier')
+    yahoo = OAuth2Session(session['consumer_key'], redirect_uri=redirect_uri)
+    authorization_url, state = yahoo.authorization_url(authorization_base_url)
 
-    if not oauth_handler:
-         return jsonify({"error": "Authentication process not started. Please login first."}), 400
-    if not verifier:
-        return jsonify({"error": "Verifier code is required."}), 400
+    session['oauth_state'] = state
+    return jsonify({'auth_url': authorization_url})
+
+@app.route('/callback')
+def callback():
+    """
+    This is the endpoint Yahoo redirects the user to after they authorize the app.
+    It exchanges the authorization code from Yahoo for a permanent access token.
+    """
+    if request.args.get('state') != session.get('oauth_state'):
+        return '<h1>Error: State mismatch. Please try logging in again.</h1>', 400
+
+    redirect_uri = url_for('callback', _external=True, _scheme='https')
+    yahoo = OAuth2Session(session['consumer_key'], state=session.get('oauth_state'), redirect_uri=redirect_uri)
 
     try:
-        token_json = oauth_handler.get_access_token(verifier)
-        session['yahoo_token'] = token_json
-        return jsonify({"success": True})
+        token = yahoo.fetch_token(
+            token_url,
+            client_secret=session['consumer_secret'],
+            authorization_response=request.url
+        )
+        session['yahoo_token'] = token
     except Exception as e:
-        logging.error(f"Error getting access token: {e}", exc_info=True)
-        return jsonify({"error": "Failed to get access token. The verifier code may have been incorrect or expired."}), 500
+        logging.error(f"Error fetching token in callback: {e}", exc_info=True)
+        return '<h1>Error: Could not fetch access token from Yahoo. Please try again.</h1>', 500
+
+    return redirect(url_for('index'))
 
 @app.route('/logout')
 def logout():
-    """ Clears the session to log the user out and redirects to the main page. """
+    """ Clears the session to log the user out. """
     session.clear()
     return redirect('/')
 
 @app.route('/query', methods=['POST'])
 def handle_query():
     """
-    Handles API requests from the terminal. It re-initializes the yfpy query object
-    using credentials from the session for each request.
+    Executes a yfpy query using the credentials stored in the user's session.
     """
-    # Check if user is authenticated
     if 'yahoo_token' not in session:
         return jsonify({"error": "User not authenticated. Please log in again."}), 401
 
-    # Re-create the query object on-the-fly using session credentials
     try:
+        auth_data = {
+            'consumer_key': session['consumer_key'],
+            'consumer_secret': session['consumer_secret'],
+            **session['yahoo_token']
+        }
         yq = YahooFantasySportsQuery(
             int(session['league_id']),
             game_code="nhl",
-            yahoo_consumer_key=session['consumer_key'],
-            yahoo_consumer_secret=session['consumer_secret'],
-            yahoo_access_token_json=session['yahoo_token']
+            yahoo_access_token_json=auth_data
         )
     except Exception as e:
         logging.error(f"Failed to re-initialize yfpy from session: {e}", exc_info=True)
-        return jsonify({"error": "Could not connect to Yahoo API using stored credentials. You may need to log out and log in again."}), 500
+        return jsonify({"error": "Could not connect to Yahoo API. Your session may have expired. Please log out and log in again."}), 500
 
-    data = request.get_json()
-    query_str = data.get('query')
-
+    query_str = request.get_json().get('query')
     if not query_str:
         return jsonify({"error": "No query was provided."}), 400
 
     logging.info(f"Executing query: {query_str}")
-
     try:
         result = eval(query_str, {"yq": yq})
         dict_result = model_to_dict(result)
@@ -136,10 +133,11 @@ def handle_query():
         return jsonify({"result": json_result})
     except Exception as e:
         logging.error(f"Error executing query '{query_str}': {e}", exc_info=True)
-        # Check if token may have expired.
         if 'token_expired' in str(e).lower():
              return jsonify({"error": f"Your session has expired. Please log out and log in again."}), 401
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 if __name__ == '__main__':
+    # Make sure to set FLASK_SECRET_KEY in your environment for local testing
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # Allows http for local dev
     app.run(debug=True, port=5001)
