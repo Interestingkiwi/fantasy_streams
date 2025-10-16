@@ -144,8 +144,11 @@ def login():
         consumer_key = creds.get('consumer_key')
         redirect_uri = url_for('callback', _external=True)
         params = {
-            'client_id': consumer_key, 'redirect_uri': redirect_uri,
-            'response_type': 'code', 'language': 'en-us'
+            'client_id': consumer_key,
+            'redirect_uri': redirect_uri,
+            'response_type': 'code',
+            'language': 'en-us',
+            'scope': 'openid fspt-w'  # Request OpenID Connect and Fantasy Sports Write permissions
         }
         auth_url = f"https://api.login.yahoo.com/oauth2/request_auth?{urlencode(params)}"
         return redirect(auth_url)
