@@ -33,7 +33,8 @@ class YahooDataFetcher:
         self.league_id = league_id
         # Use the root project directory for authentication credentials
         self.auth_dir = auth_dir
-        self.yq = YahooFantasySportsQuery(self.auth_dir, league_id, game_code='nhl')
+        # Use keyword arguments for clarity and to avoid positional errors
+        self.yq = YahooFantasySportsQuery(auth_dir=self.auth_dir, league_id=self.league_id, game_code='nhl')
         self.num_teams = 0
         self.start_date = None
         self.end_date = None
@@ -219,15 +220,13 @@ def login():
     """Redirects user to Yahoo for authentication."""
     auth_dir = '.'
 
-    # yfpy requires auth_dir and a league_id (can be None for login) as positional arguments.
-    # We then pass the credentials from environment variables as keyword arguments.
-    # This avoids creating a temporary private.json file.
+    # Use keyword arguments to avoid positional argument errors.
+    # The library expects 'yahoo_consumer_key' and 'yahoo_consumer_secret'.
     query = YahooFantasySportsQuery(
-        auth_dir,
-        None,
+        auth_dir=auth_dir,
         game_code='nhl',
-        consumer_key=YAHOO_CONSUMER_KEY,
-        consumer_secret=YAHOO_CONSUMER_SECRET
+        yahoo_consumer_key=YAHOO_CONSUMER_KEY,
+        yahoo_consumer_secret=YAHOO_CONSUMER_SECRET
     )
 
     return redirect(query.login())
@@ -265,9 +264,9 @@ def get_leagues():
         return jsonify({'error': 'Not authenticated'}), 401
     try:
         auth_dir = '.'
-        # After login, private.json exists with tokens, so we don't need to pass credentials.
-        # We still provide None for league_id to satisfy the positional argument.
-        query = YahooFantasySportsQuery(auth_dir, None, game_code='nhl')
+        # After login, private.json contains credentials, so we don't pass them.
+        # Use keywords for clarity.
+        query = YahooFantasySportsQuery(auth_dir=auth_dir, game_code='nhl')
         leagues = query.get_leagues_by_game_code('nhl', 2025)
         leagues_data = [{'league_id': l.league_id, 'name': l.name} for l in leagues]
         return jsonify(leagues_data)
