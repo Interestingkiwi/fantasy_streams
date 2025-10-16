@@ -28,9 +28,13 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 # Use the DATABASE_DIR from environment variables if it exists (for production on Render).
 # Otherwise, fall back to a local directory within the project (for staging/local).
 DATABASE_DIR = os.environ.get('DATABASE_DIR', os.path.join(os.getcwd(), 'server', 'tasks'))
-# Ensure the directory exists, especially for local/staging runs
+TASKS_DIR = os.path.join(os.getcwd(), 'server', 'tasks')
+
+# Ensure the directories exist
 if not os.path.exists(DATABASE_DIR):
     os.makedirs(DATABASE_DIR)
+if not os.path.exists(TASKS_DIR):
+    os.makedirs(TASKS_DIR)
 
 # Keep track of background processes
 background_processes = {}
@@ -48,23 +52,23 @@ atexit.register(cleanup_processes)
 # --- Credential Handling for Render ---
 
 # This block writes the environment variable to a file on the fly.
-# The 'yahoo-oauth' library requires a file to read credentials from.
-YAHOO_CREDENTIALS_FILE = 'private.json'
+# The 'yahoo-oauth' and 'yfpy' libraries require a file to read credentials from.
+# We write it to the /tasks directory where the background script will run.
+YAHOO_CREDENTIALS_FILE = os.path.join(TASKS_DIR, 'private.json')
 private_content = os.environ.get('YAHOO_PRIVATE_JSON')
 if private_content:
-    print("YAHOO_PRIVATE_JSON environment variable found. Writing to file.")
+    print(f"YAHOO_PRIVATE_JSON environment variable found. Writing to {YAHOO_CREDENTIALS_FILE}.")
     with open(YAHOO_CREDENTIALS_FILE, 'w') as f:
         f.write(private_content)
 else:
-    print("YAHOO_PRIVATE_JSON not found. Assuming local private.json file exists for development.")
-
+    # Also write a local copy for the main app if not on Render
+    if not os.path.exists('private.json'):
+         print("YAHOO_PRIVATE_JSON not found. Assuming local private.json file exists for development.")
 
 # --- Centralized Authentication Helper ---
-
 def get_and_validate_token():
     """
-    Single source of truth for getting a valid token.
-    Retrieves from session, validates guid, and refreshes if needed.
+    Retrieves token from session, ensures GUID is present, and refreshes if needed.
     Returns a complete, valid token dictionary, or None.
     """
     if 'yahoo_token_data' not in session:
@@ -72,80 +76,76 @@ def get_and_validate_token():
 
     token_data = session['yahoo_token_data']
 
-    guid_added = False
-    if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
-        token_data['guid'] = token_data['xoauth_yahoo_guid']
-        guid_added = True
+    # Ensure GUID is present (essential for yfpy)
+    if 'guid' not in token_data:
+        if 'xoauth_yahoo_guid' in token_data:
+            token_data['guid'] = token_data['xoauth_yahoo_guid']
+            session.modified = True
+        else:
+            # If no guid is found at all, we might need to fetch it, but for now, we rely on the callback.
+            print("[WARNING] GUID not found in token data during validation.")
 
+    # Refresh token if it's expired or about to expire
     expires_in = token_data.get('expires_in', 3600)
     token_time = token_data.get('token_time', 0)
-    refreshed = False
-    if time.time() > token_time + expires_in - 300:
+    if time.time() > token_time + expires_in - 300: # 5-minute buffer
         try:
-            original_guid = token_data.get('guid')
-            oauth_for_refresh = OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data)
+            print("Token is expiring. Attempting to refresh.")
+            # Use a throwaway OAuth2 object to perform the refresh
+            # It needs the original token data to know which refresh_token to use
+            creds_file_for_main_app = 'private.json' if os.path.exists('private.json') else YAHOO_CREDENTIALS_FILE
+            oauth_for_refresh = OAuth2(None, None, from_file=creds_file_for_main_app, **token_data)
             oauth_for_refresh.refresh_access_token()
 
+            # The library updates its internal token_data, which we can now use
             token_data = oauth_for_refresh.token_data
-            if original_guid and 'guid' not in token_data:
-                token_data['guid'] = original_guid
-
-            refreshed = True
+            session['yahoo_token_data'] = token_data
+            session.modified = True
+            print("Token refreshed and session updated successfully.")
         except Exception as e:
             print(f"FAILED to refresh access token: {e}")
-            session.clear()
+            session.clear() # Clear session on failure to force re-login
             return None
 
-    if guid_added or refreshed:
-        session['yahoo_token_data'] = token_data
-        session.modified = True
-
-    return session['yahoo_token_data']
-
+    return token_data
 
 def get_authenticated_oauth_client():
     """
     Uses the centralized helper to get a valid token and returns an
-    authenticated OAuth2 client object.
+    authenticated OAuth2 client object for use by the main app.
     """
     token_data = get_and_validate_token()
     if not token_data:
         return None, (jsonify({"error": "Authentication required. Please log in again."}), 401)
 
-    return OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data), None
+    # The main app uses the local private.json or the one in /tasks
+    creds_file_for_main_app = 'private.json' if os.path.exists('private.json') else YAHOO_CREDENTIALS_FILE
+    return OAuth2(None, None, from_file=creds_file_for_main_app, **token_data), None
 
 # --- Static Frontend Routes ---
 @app.route("/")
 def serve_index():
-    """Serves the frontend's index.html file."""
     return send_from_directory(app.static_folder, 'index.html')
 
 @app.route("/home")
 def serve_home():
-    """Serves the new home.html file."""
     return send_from_directory(app.static_folder, 'home.html')
 
-
 # --- API & OAuth Routes ---
-
 @app.route("/login")
 def login():
-    """
-    Initiates the Yahoo login process.
-    """
-    if not os.path.exists(YAHOO_CREDENTIALS_FILE):
+    creds_file_for_main_app = 'private.json' if os.path.exists('private.json') else YAHOO_CREDENTIALS_FILE
+    if not os.path.exists(creds_file_for_main_app):
         return "OAuth credentials not configured on the server.", 500
     try:
-        with open(YAHOO_CREDENTIALS_FILE) as f:
+        with open(creds_file_for_main_app) as f:
             creds = json.load(f)
         consumer_key = creds.get('consumer_key')
         redirect_uri = url_for('callback', _external=True)
         params = {
-            'client_id': consumer_key,
-            'redirect_uri': redirect_uri,
-            'response_type': 'code',
-            'language': 'en-us',
-            'scope': 'openid fspt-w'  # Request OpenID Connect and Fantasy Sports Write permissions
+            'client_id': consumer_key, 'redirect_uri': redirect_uri,
+            'response_type': 'code', 'language': 'en-us',
+            'scope': 'fspt-w' # Only need fantasy sports write permissions
         }
         auth_url = f"https://api.login.yahoo.com/oauth2/request_auth?{urlencode(params)}"
         return redirect(auth_url)
@@ -155,24 +155,20 @@ def login():
 
 @app.route("/callback")
 def callback():
-    """
-    Handles the callback from Yahoo, exchanging the code for a token AND fetching the user's GUID.
-    """
     code = request.args.get('code')
     if not code:
         return "Authorization code not found in callback.", 400
     try:
-        # --- Step 1: Exchange authorization code for access token ---
+        creds_file_for_main_app = 'private.json' if os.path.exists('private.json') else YAHOO_CREDENTIALS_FILE
         redirect_uri = url_for('callback', _external=True)
-        with open(YAHOO_CREDENTIALS_FILE) as f:
+        with open(creds_file_for_main_app) as f:
             creds = json.load(f)
-        consumer_key = creds.get('consumer_key')
-        consumer_secret = creds.get('consumer_secret')
+        consumer_key, consumer_secret = creds.get('consumer_key'), creds.get('consumer_secret')
+
         token_url = 'https://api.login.yahoo.com/oauth2/get_token'
         payload = {
             'client_id': consumer_key, 'client_secret': consumer_secret,
-            'redirect_uri': redirect_uri, 'code': code,
-            'grant_type': 'authorization_code'
+            'redirect_uri': redirect_uri, 'code': code, 'grant_type': 'authorization_code'
         }
         auth = HTTPBasicAuth(consumer_key, consumer_secret)
         response = requests.post(token_url, data=payload, auth=auth)
@@ -182,30 +178,10 @@ def callback():
         if 'access_token' not in token_data:
             return "Failed to retrieve access token from Yahoo.", 500
 
-        # --- Step 2: Use the access token to fetch the User GUID ---
-        try:
-            userinfo_url = 'https://api.login.yahoo.com/openid/v1/userinfo'
-            headers = {'Authorization': f'Bearer {token_data["access_token"]}'}
-            userinfo_response = requests.get(userinfo_url, headers=headers)
+        # Add the guid if it exists in the response
+        if 'xoauth_yahoo_guid' in token_data:
+            token_data['guid'] = token_data['xoauth_yahoo_guid']
 
-            if userinfo_response.status_code == 200:
-                userinfo_data = userinfo_response.json()
-                if 'sub' in userinfo_data:
-                    token_data['guid'] = userinfo_data['sub']
-                    print(f"[SUCCESS] Fetched and added guid to token data: {userinfo_data['sub']}")
-            else:
-                print(f"\n[WARNING] Could not fetch userinfo (status code: {userinfo_response.status_code}).")
-                print("[ACTION REQUIRED] Please go to your app on the Yahoo Developer Network and ensure 'OpenID Connect' permissions are enabled with the 'Profile (Read)' scope checked.\n")
-
-        except Exception as e:
-            print(f"[WARNING] An exception occurred while trying to fetch userinfo: {e}. This is likely a permission issue in your Yahoo App settings.")
-
-        # Fallback for older API versions or if userinfo fails
-        if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
-             token_data['guid'] = token_data['xoauth_yahoo_guid']
-             print(f"[INFO] Found guid in the main token response as a fallback.")
-
-        # --- Step 3: Store the complete token in the session ---
         token_data['token_time'] = time.time()
         session['yahoo_token_data'] = token_data
         session.permanent = True
@@ -223,57 +199,52 @@ def callback():
 
 @app.route("/api/user")
 def get_user():
-    """Checks if the user has a valid token in their session."""
     if 'yahoo_token_data' in session:
         return jsonify({"loggedIn": True})
     return jsonify({"loggedIn": False})
 
 @app.route("/api/leagues")
 def get_leagues():
-    """ Fetches the user's fantasy leagues."""
     oauth, error = get_authenticated_oauth_client()
     if error: return error
     try:
         gm = yfa.Game(oauth, 'nhl')
         leagues_data = gm.league_ids(year=2025)
-        leagues_list = []
-        for league_id in leagues_data:
-            try:
-                lg = gm.to_league(league_id)
-                settings = lg.settings()
-                leagues_list.append({'league_id': settings['league_id'], 'name': settings['name']})
-            except Exception as e:
-                print(f"Could not fetch info for league {league_id}: {e}")
+        leagues_list = [{'league_id': lid, 'name': gm.to_league(lid).settings()['name']} for lid in leagues_data]
         print(f"--- Final result: Returning {len(leagues_list)} league(s) to the frontend. ---")
         return jsonify(leagues_list)
     except Exception as e:
         print(f"Error fetching leagues from Yahoo API: {e}")
+        # Check for specific auth error messages
+        if 'token' in str(e).lower():
+             session.clear()
+             return jsonify({"error": "Authentication error. Please log in again.", "reauth": True}), 401
         return jsonify({"error": "Failed to fetch data from Yahoo API."}), 500
 
 def _start_db_process(league_id):
-    """Helper to create auth env var and start the background DB process."""
+    """Writes the token to a file and starts the background DB process."""
     token_data = get_and_validate_token()
     if not token_data:
-        print("[ERROR] _start_db_process: User token not found in session for background process.")
+        print("[ERROR] _start_db_process: User token not found in session.")
         return False, "User token not found in session."
 
-    with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
-        creds = json.load(f)
-    full_auth_data = {**token_data, **creds}
-
-    print(f"[DEBUG] START_DB_PROCESS: Final auth data being sent. Keys: {list(full_auth_data.keys())}")
-
-    auth_data_string = json.dumps(full_auth_data)
+    # Write the current user's token to token_cache.json in the tasks directory
+    token_cache_path = os.path.join(TASKS_DIR, 'token_cache.json')
+    try:
+        with open(token_cache_path, 'w') as f:
+            json.dump(token_data, f)
+        print(f"Successfully wrote user token to {token_cache_path}")
+    except Exception as e:
+        print(f"[ERROR] Failed to write token cache file: {e}")
+        return False, "Failed to prepare authentication for background process."
 
     if league_id in background_processes and background_processes[league_id].poll() is None:
         return True, "already_running"
 
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
-    proc_env = os.environ.copy()
-    proc_env['DATABASE_DIR'] = DATABASE_DIR
-    proc_env['YAHOO_FULL_AUTH'] = auth_data_string
-
-    process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
+    # The Popen command will execute from the project root, but the script itself
+    # needs to know where its files are. We set the working directory to TASKS_DIR.
+    process = subprocess.Popen(['python', script_path, str(league_id)], cwd=TASKS_DIR)
     background_processes[league_id] = process
     session['current_league_id'] = league_id
     return True, "started"
@@ -307,17 +278,21 @@ def league_status(league_id):
     process = background_processes.get(league_id)
 
     if os.path.exists(db_path):
-        if process and process.poll() is not None:
-            del background_processes[league_id]
+        # If the file exists, the process is done. Clean it up if it's still tracked.
+        if league_id in background_processes:
+             if process.poll() is not None:
+                  del background_processes[league_id]
         timestamp = os.path.getmtime(db_path)
         return jsonify({"status": "complete", "timestamp": timestamp})
 
     if process and process.poll() is None:
         return jsonify({"status": "initializing"})
     elif process and process.poll() is not None:
+        # The process finished but the file doesn't exist = error
         del background_processes[league_id]
         return jsonify({"status": "error", "message": "Database initialization failed."})
 
+    # No process and no file
     return jsonify({"status": "not_found"})
 
 @app.route("/api/get_league_timestamp")

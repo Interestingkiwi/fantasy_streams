@@ -1,114 +1,82 @@
 import argparse
-import contextlib
-import logging
-import os
 import sqlite3
+import os
 import sys
-import json
+import logging
 
-# Add the parent directory to the path to allow imports from other folders
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-from tasks.yfpy_queries import YahooDataFetcher
-from tasks.yfa_queries import YfaDataFetcher
-from tasks.finalize_db import DataProcessor
+# Add the parent directory of 'tasks' to the Python path
+# This allows us to import yfpy_queries and yfa_queries
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tasks')))
 
+try:
+    from yfpy_queries import YahooDataFetcher
+    from yfa_queries import YahooFantasyApiData
+except ImportError as e:
+    logging.critical(f"Failed to import data fetcher modules: {e}")
+    sys.exit(1)
 
-logger = logging.getLogger(__name__)
-
-# --- Database Path Configuration ---
-DATABASE_DIR = os.environ.get('DATABASE_DIR', os.path.dirname(__file__))
-
-def run():
-    """Main function to fetch data and populate the database."""
-    args = _get_parsed_args(*sys.argv[1:])
-    _configure_logging(True) # Always debug for background task
-
-    # Database and schema paths
-    db_path = os.path.join(DATABASE_DIR, f"yahoo-nhl-{args.league_id}-custom.db")
-    schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
-    projections_db_path = os.path.join(os.path.dirname(__file__), "projections.db")
-
-    # Read auth data from the environment variable.
-    auth_data_string = os.environ.get('YAHOO_FULL_AUTH')
-    if not auth_data_string:
-        logger.error("YAHOO_FULL_AUTH environment variable not found.")
-        sys.exit(1)
-
+def run(league_id, db_path):
+    """
+    Initializes the fantasy sports database for a given league.
+    """
     try:
-        auth_data = json.loads(auth_data_string)
-        logger.info(f"Successfully loaded auth data from environment. Keys: {auth_data.keys()}")
-    except json.JSONDecodeError:
-        logger.error("Failed to parse auth data from YAHOO_FULL_AUTH environment variable.")
-        sys.exit(1)
+        logging.info(f"Database initialization started for league_id: {league_id} at path: {db_path}")
 
+        # Connect to the SQLite database. It will be created if it doesn't exist.
+        con = sqlite3.connect(db_path)
 
-    try:
-        with open(schema_path, "r") as f:
-            schema = f.read()
+        # Read the schema.sql file and execute it to create the database tables.
+        schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
+        if not os.path.exists(schema_path):
+            logging.critical("schema.sql not found!")
+            con.close()
+            return
 
-        with _get_db_connection(db_path) as con:
-            con.executescript(schema)
-            con.commit()
-            logger.info("Custom DB tables created from schema.sql")
+        with open(schema_path) as f:
+            con.executescript(f.read())
+        logging.info("Custom DB tables created from schema.sql")
 
-            # --- Run yfpy queries ---
-            logger.info("--- Running yfpy queries ---")
-            fetcher = YahooDataFetcher(con, args.league_id, auth_data=auth_data)
-            fetcher.fetch_all_data()
+        # --- Data Fetching ---
+        # The authentication should be handled automatically by the libraries
+        # finding private.json and token_cache.json in the current working directory.
 
-            # --- Run yfa_queries ---
-            logger.info("--- Running yfa_queries ---")
-            yfa_fetcher = YfaDataFetcher(con=con, league_id=args.league_id, auth_data=auth_data)
-            yfa_fetcher.fetch_free_agents()
-            yfa_fetcher.fetch_waivers()
-            yfa_fetcher.fetch_rostered_players()
+        # Initialize and run yfpy queries to populate player and team data.
+        logging.info("--- Running yfpy queries ---")
+        fetcher = YahooDataFetcher(con, league_id)
+        fetcher.fetch_all_data()
+        logging.info("--- yfpy queries completed ---")
 
-            # --- Run finalize_db ---
-            logger.info("--- Running finalize_db ---")
-            processor = DataProcessor(args.league_id, db_dir=DATABASE_DIR)
-            if processor.con:
-                processor.process_with_projections(projections_db_path)
-                processor.close_connection()
+        # Initialize and run yfa_queries to populate matchup data.
+        logging.info("--- Running yfa queries ---")
+        yfa_data = YahooFantasyApiData(con, league_id)
+        yfa_data.get_matchups()
+        logging.info("--- yfa queries completed ---")
 
-
-            logger.info("Database initialization complete. Exiting...")
-
-    except Exception:
-        logger.critical("Fatal error during DB initialization. Aborting.", exc_info=True)
-        # Clean up failed db file
+    except Exception as e:
+        logging.critical(f"Fatal error during DB initialization. Aborting. Error: {e}", exc_info=True)
+        # Optionally, clean up the partially created DB file on error
+        if con:
+            con.close()
         if os.path.exists(db_path):
             os.remove(db_path)
-        sys.exit(1)
-
-
-def _get_parsed_args(*args):
-    parser = argparse.ArgumentParser(
-        prog="db-initializer",
-        description="A script to create and populate the fantasy league database.",
-    )
-    parser.add_argument("league_id", type=int, help="Yahoo league id to import")
-    return parser.parse_args(args)
-
-
-def _configure_logging(debug):
-    level = logging.INFO
-    if debug:
-        level = logging.DEBUG
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(levelname)s - %(name)s:%(lineno)d - %(message)s",
-    )
-
-
-@contextlib.contextmanager
-def _get_db_connection(db_path):
-    con = sqlite3.connect(db_path)
-    try:
-        yield con
+        sys.exit(1) # Exit with an error code
     finally:
-        con.close()
+        # Ensure the database connection is closed.
+        if con:
+            con.close()
+            logging.info(f"Database connection closed. Initialization for league {league_id} is complete.")
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Initialize the fantasy sports database.")
+    parser.add_argument("league_id", type=str, help="The Yahoo Fantasy Sports league ID.")
+    args = parser.parse_args()
 
-if __name__ == "__main__":
-    run()
+    # Determine the database path based on the script's location
+    db_dir = os.path.dirname(os.path.abspath(__file__))
+    db_filename = f"yahoo-nhl-{args.league_id}-custom.db"
+    full_db_path = os.path.join(db_dir, db_filename)
+
+    run(args.league_id, full_db_path)

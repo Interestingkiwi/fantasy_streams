@@ -1,150 +1,56 @@
-"""
-Queries to update fantasy hockey optimizer database using yahoo_fantasy_api.
-
-This file provides a class-based approach to fetching data from the Yahoo
-Fantasy Sports API and storing it in a SQLite database.
-"""
-
-import logging
-from yahoo_fantasy_api import league
+import yahoo_fantasy_api as yfa
 from yahoo_oauth import OAuth2
-import os
+import sqlite3
+import logging
 
-logger = logging.getLogger(__name__)
-
-
-class YfaDataFetcher:
-    """
-    A class to fetch data from Yahoo Fantasy Sports and store it in a database.
-    """
-    def __init__(self, con, league_id, auth_data=None):
-        """
-        Initializes the YfaDataFetcher.
-
-        Args:
-            con: A sqlite3 database connection object.
-            league_id (str): The Yahoo Fantasy league ID.
-            auth_data (dict): A dictionary containing all required auth credentials.
-        """
+class YahooFantasyApiData:
+    def __init__(self, con, league_id):
         self.con = con
         self.league_id = league_id
-        self._auth_data = auth_data
-        self.lg = self._authenticate_and_get_league()
-
-    def _authenticate_and_get_league(self):
-        """
-        Authenticates with Yahoo and returns a League object using the provided auth_data.
-        """
-        logger.debug("Authenticating with Yahoo and getting league object...")
-        if not self._auth_data:
-            raise ValueError("Authentication data was not provided to YfaDataFetcher.")
-
+        # Authentication is handled automatically by the library
+        # It looks for 'private.json' and 'token_cache.json' in the CWD
         try:
-            # The OAuth2 object will use the provided dictionary for authentication.
-            sc = OAuth2(None, None, **self._auth_data)
-            if not sc.token_is_valid():
-                 logger.warning("YFA token is not valid on initial check.")
-                 # The library should handle refresh automatically if refresh_token is present
-
-            lg = league.League(sc, self.league_id)
-            logger.info("Authentication successful with yfa.")
-            return lg
+            self.oauth = OAuth2(None, None, from_file='private.json')
+            if not self.oauth.token_is_valid():
+                self.oauth.refresh_access_token()
         except Exception as e:
-            logger.error(f"Failed to authenticate or get league with yfa: {e}", exc_info=True)
-            raise
+            logging.error(f"yfa_queries: Failed to authenticate: {e}", exc_info=True)
+            raise  # Re-raise the exception to stop the process
 
-    def fetch_free_agents(self):
+    def get_matchups(self):
         """
-        Writes all current free agents to free agent table
+        Fetches all weekly matchups for the league and inserts them into the database.
         """
-        logging.info("Fetching free agent info...")
-
         try:
-            logging.info("Clearing existing data from free_agents table.")
+            gm = yfa.Game(self.oauth, 'nhl')
+            lg = gm.to_league(self.league_id)
+
+            # Fetch all matchups for the entire season
+            matchups = lg.matchups()
+
             cursor = self.con.cursor()
-            cursor.execute("DELETE FROM free_agents")
+
+            for week, matchup_data in matchups['fantasy_content']['league'][1]['scoreboard']['0']['matchups'].items():
+                if not week.isdigit():
+                    continue  # Skip non-week entries like 'count'
+
+                for i in range(matchup_data['count']):
+                    matchup_details = matchup_data[str(i)]['matchup']
+
+                    # Ensure teams data exists and is in the expected format
+                    if '0' not in matchup_details or 'teams' not in matchup_details['0'] or matchup_details['0']['teams']['count'] < 2:
+                        continue # Skip if matchup doesn't have at least two teams
+
+                    team1_name = matchup_details['0']['teams']['0']['team'][0][2]['name']
+                    team2_name = matchup_details['0']['teams']['1']['team'][0][2]['name']
+
+                    # Insert the matchup into the database
+                    cursor.execute("INSERT INTO matchups (week, team1, team2) VALUES (?, ?, ?)",
+                                   (int(week), team1_name, team2_name))
+
             self.con.commit()
+            logging.info(f"Successfully inserted all matchups for league {self.league_id}.")
+
         except Exception as e:
-            logging.error("Failed to clear free_agents table.", exc_info=True)
-            self.con.rollback()
-
-        free_agents_to_insert = []
-        for pos in ['C', 'LW', 'RW', 'D', 'G']:
-            try:
-                print(f"Fetching free agents for position: {pos}")
-                fas = self.lg.free_agents(pos)
-                for player in fas:
-                    player_id = player['player_id']
-                    free_agents_to_insert.append((player_id, 'FA'))
-            except Exception as e:
-                print(f"Could not fetch FAs for position {pos}: {e}")
-
-        sql = "INSERT OR IGNORE INTO free_agents (player_id, status) VALUES (?, ?)"
-        self.con.executemany(sql, free_agents_to_insert)
-        self.con.commit()
-
-        logger.info(f"Successfully inserted data for {len(free_agents_to_insert)} players into free_agents.")
-
-
-    def fetch_waivers(self):
-        """
-        Writes all current waiver players to waiver_players table
-        """
-        logging.info("Fetching waiver info...")
-
-        try:
-            logging.info("Clearing existing data from waiver_players table.")
-            cursor = self.con.cursor()
-            cursor.execute("DELETE FROM waiver_players")
-            self.con.commit()
-        except Exception as e:
-            logging.error("Failed to clear waiver_players table.", exc_info=True)
-            self.con.rollback()
-
-        waiver_players_to_insert = []
-        try:
-            print(f"Fetching all waiver players")
-            wvp = self.lg.waivers()
-            for player in wvp:
-                player_id = player['player_id']
-                waiver_players_to_insert.append((player_id, 'W'))
-        except Exception as e:
-            print(f"Could not fetch waiver players: {e}")
-
-        sql = "INSERT OR IGNORE INTO waiver_players (player_id, status) VALUES (?, ?)"
-        self.con.executemany(sql, waiver_players_to_insert)
-        self.con.commit()
-
-        logger.info(f"Successfully inserted data for {len(waiver_players_to_insert)} players into waiver_players.")
-
-
-    def fetch_rostered_players(self):
-        """
-        Writes all currently rostered players to rostered_players table
-        """
-        logging.info("Fetching rostered player info...")
-
-        try:
-            logging.info("Clearing existing data from rostered_players table.")
-            cursor = self.con.cursor()
-            cursor.execute("DELETE FROM rostered_players")
-            self.con.commit()
-        except Exception as e:
-            logging.error("Failed to clear rostered_players table.", exc_info=True)
-            self.con.rollback()
-
-        rostered_players_to_insert = []
-        try:
-            print(f"Fetching all rostered players")
-            tkp = self.lg.taken_players()
-            for player in tkp:
-                player_id = player['player_id']
-                rostered_players_to_insert.append((player_id, 'R'))
-        except Exception as e:
-            print(f"Could not fetch rostered players: {e}")
-
-        sql = "INSERT OR IGNORE INTO rostered_players (player_id, status) VALUES (?, ?)"
-        self.con.executemany(sql, rostered_players_to_insert)
-        self.con.commit()
-
-        logger.info(f"Successfully inserted data for {len(rostered_players_to_insert)} players into rostered_players.")
+            logging.error(f"An error occurred while fetching matchups: {e}", exc_info=True)
+            self.con.rollback() # Rollback any partial inserts
