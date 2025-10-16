@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from flask import Flask, render_template, request, send_file, jsonify
 
-from yfpy import YahooFantasy
+from yfpy import YahooFantasySportsQuery
 import queries  # Import the queries from queries.py
 
 app = Flask(__name__)
@@ -44,7 +44,7 @@ def generate_db():
         # --- Start of yfpy data fetching logic ---
 
         # Authenticate with yfpy using the temporary auth directory
-        session = YahooFantasy(auth_dir=str(auth_dir), league_id=str(league_id))
+        session = YahooFantasySportsQuery(auth_dir=str(auth_dir), league_id=str(league_id))
 
         # Connect to the SQLite database and create the schema
         con = sqlite3.connect(db_path)
