@@ -78,12 +78,19 @@ def get_authenticated_oauth_client():
     if time.time() > token_time + expires_in - 300:
         print("Token expired or nearing expiration, attempting to refresh...")
         try:
+            # Preserve the guid before refreshing, as the refresh process might drop it.
+            guid = token_data.get('guid') or token_data.get('xoauth_yahoo_guid')
+
             # Create the client with the expired token data to access the refresh method
             oauth = OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data)
             oauth.refresh_access_token()
 
-            # The library updates its internal token_data upon refresh
-            session['yahoo_token_data'] = oauth.token_data
+            # The library updates its internal token_data. We need to manually add the guid back.
+            new_token_data = oauth.token_data
+            if guid and 'guid' not in new_token_data:
+                new_token_data['guid'] = guid
+
+            session['yahoo_token_data'] = new_token_data
             print("Successfully refreshed access token and updated session.")
             return oauth, None
         except Exception as e:
