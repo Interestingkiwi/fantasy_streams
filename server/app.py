@@ -171,6 +171,10 @@ def callback():
         if 'access_token' not in token_data:
             return "Failed to retrieve access token from Yahoo.", 500
 
+        # Ensure the 'guid' field is present for yfpy compatibility
+        if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
+            token_data['guid'] = token_data['xoauth_yahoo_guid']
+
         # Store the entire token dictionary and set the session to be permanent
         token_data['token_time'] = time.time()
         session['yahoo_token_data'] = token_data
