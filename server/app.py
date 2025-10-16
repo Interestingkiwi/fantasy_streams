@@ -59,14 +59,31 @@ else:
     print("YAHOO_PRIVATE_JSON not found. Assuming local private.json file exists for development.")
 
 
-# --- Helper function to get an authenticated API object ---
+# --- Helper functions ---
+
+def _get_valid_token_from_session():
+    """
+    Gets the token data from the session and ensures the 'guid' field is present.
+    Returns the token data or None if not found.
+    """
+    token_data = session.get('yahoo_token_data')
+    if not token_data:
+        return None
+
+    # Ensure guid is present for yfpy compatibility, which is needed by the background script.
+    if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
+        token_data['guid'] = token_data['xoauth_yahoo_guid']
+        # Update the session with the corrected data
+        session['yahoo_token_data'] = token_data
+
+    return token_data
 
 def get_authenticated_oauth_client():
     """
     Checks for a token in the session, refreshes it if needed,
-    and returns an authenticated OAuth2 object.
+    and returns an authenticated OAuth2 object. This also preserves the 'guid'.
     """
-    token_data = session.get('yahoo_token_data')
+    token_data = _get_valid_token_from_session()
     if not token_data:
         return None, (jsonify({"error": "User not authenticated"}), 401)
 
@@ -78,17 +95,17 @@ def get_authenticated_oauth_client():
     if time.time() > token_time + expires_in - 300:
         print("Token expired or nearing expiration, attempting to refresh...")
         try:
-            # Preserve the guid before refreshing, as the refresh process might drop it.
-            guid = token_data.get('guid') or token_data.get('xoauth_yahoo_guid')
+            # Preserve the original guid during refresh
+            original_guid = token_data.get('guid') or token_data.get('xoauth_yahoo_guid')
 
             # Create the client with the expired token data to access the refresh method
             oauth = OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data)
             oauth.refresh_access_token()
 
-            # The library updates its internal token_data. We need to manually add the guid back.
+            # The library updates its internal token_data upon refresh. Add guid back if it was dropped.
             new_token_data = oauth.token_data
-            if guid and 'guid' not in new_token_data:
-                new_token_data['guid'] = guid
+            if original_guid and 'guid' not in new_token_data:
+                new_token_data['guid'] = original_guid
 
             session['yahoo_token_data'] = new_token_data
             print("Successfully refreshed access token and updated session.")
@@ -204,7 +221,7 @@ def get_user():
     """Checks if the user has a valid token in their session."""
     if 'yahoo_token_data' in session:
         return jsonify({"loggedIn": True})
-        return jsonify({"loggedIn": False})
+    return jsonify({"loggedIn": False})
 
 @app.route("/api/leagues")
 def get_leagues():
@@ -254,19 +271,19 @@ def initialize_league():
     db_path = os.path.join(DATABASE_DIR, db_filename)
 
     # --- Write credential files for the background process ---
-    # 1. private.json (consumer key/secret) is already handled by app startup.
-    # 2. Write token_cache.json from the user's session.
-    token_data = session.get('yahoo_token_data')
+    token_data = _get_valid_token_from_session()
     if token_data:
-        # Ensure guid is present for yfpy compatibility.
-        if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
-            token_data['guid'] = token_data['xoauth_yahoo_guid']
+        # Combine app credentials with user token for the background process.
+        with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
+            creds = json.load(f)
 
-        # This is the file that yahoo-oauth looks for by default.
-        token_cache_path = 'token_cache.json'
-        app.logger.info(f"Writing token data with keys: {token_data.keys()} to {token_cache_path}")
-        with open(token_cache_path, 'w') as f:
-            json.dump(token_data, f)
+        full_auth_data = {**token_data, **creds}
+
+        # The background script will read this file.
+        auth_file_path = 'private.json'
+        app.logger.info(f"Writing full auth data to {auth_file_path}")
+        with open(auth_file_path, 'w') as f:
+            json.dump(full_auth_data, f)
     else:
         app.logger.error("User token not found in session during initialize_league.")
         return jsonify({"error": "User token not found in session."}), 500
@@ -276,21 +293,15 @@ def initialize_league():
         session['current_league_id'] = league_id
         return jsonify({"status": "exists", "message": "Database already exists."})
 
-    # Check if a process for this league is already running
     if league_id in background_processes and background_processes[league_id].poll() is None:
         return jsonify({"status": "initializing", "message": "Database initialization is already in progress."})
 
-    # Run the db_initializer.py script as a background process
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
-
-    # Pass credentials AND the database directory to the subprocess environment
     proc_env = os.environ.copy()
-    proc_env['YAHOO_PRIVATE_JSON'] = private_content or ""
-    proc_env['DATABASE_DIR'] = DATABASE_DIR # Pass the directory to the subprocess
+    proc_env['DATABASE_DIR'] = DATABASE_DIR
 
     process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
     background_processes[league_id] = process
-
     session['current_league_id'] = league_id
 
     return jsonify({"status": "initializing", "message": "Initializing league database, this may take a few minutes."})
@@ -352,38 +363,28 @@ def refresh_league():
     if not league_id:
         return jsonify({"error": "No league selected in session"}), 400
 
-@app.route("/api/refresh_league", methods=['POST'])
-def refresh_league():
-    """Triggers a background process to update the database for the current league."""
-    league_id = session.get('current_league_id')
-    if not league_id:
-        return jsonify({"error": "No league selected in session"}), 400
-
     # --- Write credential files for the background process ---
-    token_data = session.get('yahoo_token_data')
+    token_data = _get_valid_token_from_session()
     if token_data:
-        # Ensure guid is present for yfpy compatibility.
-        if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
-            token_data['guid'] = token_data['xoauth_yahoo_guid']
+        # Combine app credentials with user token for the background process.
+        with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
+            creds = json.load(f)
 
-        token_cache_path = 'token_cache.json'
-        app.logger.info(f"Writing token data with keys: {token_data.keys()} to {token_cache_path} for refresh.")
-        with open(token_cache_path, 'w') as f:
-            json.dump(token_data, f)
+        full_auth_data = {**token_data, **creds}
+
+        auth_file_path = 'private.json'
+        app.logger.info(f"Writing full auth data to {auth_file_path} for refresh.")
+        with open(auth_file_path, 'w') as f:
+            json.dump(full_auth_data, f)
     else:
         app.logger.error("User token not found in session during refresh_league.")
         return jsonify({"error": "User token not found in session."}), 500
 
-    # Check if a process for this league is already running
     if league_id in background_processes and background_processes[league_id].poll() is None:
         return jsonify({"status": "refreshing", "message": "A refresh is already in progress."})
 
-    # Run the db_initializer.py script, which will now handle updates.
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
-
-    # Pass credentials and DB directory to the subprocess environment
     proc_env = os.environ.copy()
-    proc_env['YAHOO_PRIVATE_JSON'] = private_content or ""
     proc_env['DATABASE_DIR'] = DATABASE_DIR
 
     process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
