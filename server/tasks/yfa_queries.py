@@ -33,13 +33,11 @@ class YfaDataFetcher:
         """
         Authenticates with Yahoo and returns a League object.
 
-        It looks for an authentication file (private.json) in the specified
-        directory. If not found, it will initiate the OAuth2 flow.
+        It looks for an authentication file (private.json) in the project root.
         """
         logger.debug("Authenticating with Yahoo and getting league object...")
         try:
-            # The OAuth2 object will now look for private.json in the current working directory,
-            # which is the project root when the subprocess is called from app.py.
+            # The OAuth2 object will look for private.json in the current directory
             sc = OAuth2(None, None, from_file="private.json")
             lg = league.League(sc, self.league_id)
             logger.info("Authentication successful with yfa.")
