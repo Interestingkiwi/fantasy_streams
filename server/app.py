@@ -219,9 +219,10 @@ def login():
     """Redirects user to Yahoo for authentication."""
     # The auth_dir is the project root, where private.json will be stored.
     auth_dir = '.'
+    # The league_id is not required for the initial authentication query.
+    # Removing league_id=None resolves the TypeError.
     query = YahooFantasySportsQuery(
         auth_dir,
-        league_id=None,
         consumer_key=YAHOO_CONSUMER_KEY,
         consumer_secret=YAHOO_CONSUMER_SECRET
     )
