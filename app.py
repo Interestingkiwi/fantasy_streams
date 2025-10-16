@@ -25,8 +25,6 @@ def model_to_dict(obj):
     if isinstance(obj, list):
         return [model_to_dict(i) for i in obj]
 
-    # ** FIX **
-    # If the object is a bytes object, decode it to a string.
     if isinstance(obj, bytes):
         # Decode using utf-8, ignoring any errors.
         return obj.decode('utf-8', 'ignore')
@@ -59,11 +57,17 @@ def login():
     """
     data = request.get_json()
     session['league_id'] = data.get('league_id')
-    session['consumer_key'] = data.get('consumer_key')
-    session['consumer_secret'] = data.get('consumer_secret')
+
+    # Get credentials from environment variables instead of user input
+    session['consumer_key'] = os.environ.get("YAHOO_CONSUMER_KEY")
+    session['consumer_secret'] = os.environ.get("YAHOO_CONSUMER_SECRET")
 
     if not all([session['league_id'], session['consumer_key'], session['consumer_secret']]):
-        return jsonify({"error": "League ID, Consumer Key, and Consumer Secret are all required."}), 400
+        # Provide a more specific error if the env vars are missing
+        if not session['consumer_key'] or not session['consumer_secret']:
+            logging.error("YAHOO_CONSUMER_KEY or YAHOO_CONSUMER_SECRET environment variables not set on the server.")
+            return jsonify({"error": "Server is not configured correctly. Missing API credentials."}), 500
+        return jsonify({"error": "League ID is required."}), 400
 
     # The Redirect URI must match exactly what you've configured in your Yahoo App settings.
     # We construct it dynamically to work in both local dev and on Render.
