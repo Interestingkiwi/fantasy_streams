@@ -35,25 +35,12 @@ class YahooDataFetcher:
     def _refresh_yahoo_query(self):
         logger.debug("Refreshing Yahoo query")
 
-        # Manually load credentials to pass them directly to the query object.
-        # This is more reliable in a subprocess environment.
-        try:
-            with open('private.json', 'r') as f:
-                creds = json.load(f)
-            consumer_key = creds.get('consumer_key')
-            consumer_secret = creds.get('consumer_secret')
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error(f"Could not read credentials from private.json: {e}")
-            raise
+        # The yfpy library should automatically find private.json and token_cache.json
+        # in the project root when the script is run from there.
 
         # The game_id is needed for some queries.
         # We perform an initial query to get the game_id for the league.
-        yq_init = YahooFantasySportsQuery(
-            league_id=self.league_id,
-            game_code="nhl",
-            yahoo_consumer_key=consumer_key,
-            yahoo_consumer_secret=consumer_secret
-        )
+        yq_init = YahooFantasySportsQuery(league_id=self.league_id, game_code="nhl")
 
         game_info = yq_init.get_current_game_info()
         game_id = game_info.game_id
@@ -64,8 +51,6 @@ class YahooDataFetcher:
             league_id=self.league_id,
             game_code="nhl",
             game_id=game_id,
-            yahoo_consumer_key=consumer_key,
-            yahoo_consumer_secret=consumer_secret,
             yahoo_access_token_json=yq_init._yahoo_access_token_dict
         )
 

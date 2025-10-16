@@ -250,6 +250,12 @@ def initialize_league():
     if league_id in background_processes and background_processes[league_id].poll() is None:
         return jsonify({"status": "initializing", "message": "Database initialization is already in progress."})
 
+    # Write the token from the session to a file for the subprocess to use.
+    token_data = session.get('yahoo_token_data')
+    if token_data:
+        with open('token_cache.json', 'w') as f:
+            json.dump(token_data, f)
+
     # Run the db_initializer.py script as a background process
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
 
@@ -325,6 +331,12 @@ def refresh_league():
     # Check if a process for this league is already running
     if league_id in background_processes and background_processes[league_id].poll() is None:
         return jsonify({"status": "refreshing", "message": "A refresh is already in progress."})
+
+    # Write the token from the session to a file for the subprocess to use.
+    token_data = session.get('yahoo_token_data')
+    if token_data:
+        with open('token_cache.json', 'w') as f:
+            json.dump(token_data, f)
 
     # Run the db_initializer.py script, which will now handle updates.
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
