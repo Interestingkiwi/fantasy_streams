@@ -20,10 +20,12 @@ def init_yfpy():
     """
     global yq
     try:
-        league_id = os.environ.get("LEAGUE_ID")
-        if not league_id:
+        league_id_str = os.environ.get("LEAGUE_ID")
+        if not league_id_str:
             logging.error("FATAL: LEAGUE_ID environment variable not set.")
             return
+        # Convert league_id to integer as the library expects
+        league_id = int(league_id_str)
 
         private_json_content = os.environ.get("PRIVATE_JSON_CONTENT")
         if not private_json_content:
@@ -31,20 +33,18 @@ def init_yfpy():
             logging.error("Please run a yfpy script locally once to generate the private.json file, then copy its content to this environment variable on your hosting provider.")
             return
 
-        # yfpy needs to read from a file, so we create one at runtime in an 'auth' directory.
-        auth_dir = os.path.join(os.path.dirname(__file__), "auth")
-        os.makedirs(auth_dir, exist_ok=True)
-        private_json_path = os.path.join(auth_dir, "private.json")
+        # yfpy automatically looks for "private.json" in the current working directory.
+        # We just need to create the file there.
+        private_json_path = "private.json"
 
         with open(private_json_path, "w") as f:
             f.write(private_json_content)
 
-        logging.info("Successfully created auth/private.json for yfpy.")
+        logging.info("Successfully created private.json for yfpy.")
 
-        # Initialize the query object, pointing to the directory with the auth file.
-        # This assumes you are in an NHL league ('nhl'). Change 'game_code' if necessary.
-        # The auth_dir is a positional argument, while the others are keywords.
-        yq = YahooFantasySportsQuery(auth_dir, league_id=league_id, game_code="nhl")
+        # Initialize the query object. yfpy will find the private.json file automatically.
+        # The first argument must be the league_id.
+        yq = YahooFantasySportsQuery(league_id, game_code="nhl")
         logging.info(f"Successfully connected to Yahoo Fantasy API for league {league_id}.")
 
     except Exception as e:
