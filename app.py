@@ -4,6 +4,7 @@ import logging
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from yfpy.query import YahooFantasySportsQuery
 from requests_oauthlib import OAuth2Session
+import time
 
 # --- Flask App Configuration ---
 app = Flask(__name__)
@@ -73,6 +74,11 @@ def callback():
     This is the endpoint Yahoo redirects the user to after they authorize the app.
     It exchanges the authorization code from Yahoo for a permanent access token.
     """
+    if 'error' in request.args:
+        error_msg = request.args.get('error_description', 'An unknown error occurred during Yahoo authentication.')
+        logging.error(f"Yahoo OAuth Error: {request.args.get('error')} - {error_msg}")
+        return f'<h1>Error: {error_msg}</h1><p>Please try logging in again.</p>', 400
+
     if request.args.get('state') != session.get('oauth_state'):
         return '<h1>Error: State mismatch. Please try logging in again.</h1>', 400
 
@@ -80,10 +86,11 @@ def callback():
     yahoo = OAuth2Session(session['consumer_key'], state=session.get('oauth_state'), redirect_uri=redirect_uri)
 
     try:
+        # The 'code' is the authorization code from Yahoo
         token = yahoo.fetch_token(
             token_url,
             client_secret=session['consumer_secret'],
-            authorization_response=request.url
+            code=request.args.get('code')
         )
         session['yahoo_token'] = token
     except Exception as e:
@@ -107,11 +114,20 @@ def handle_query():
         return jsonify({"error": "User not authenticated. Please log in again."}), 401
 
     try:
+        # ** FIX **
+        # Manually construct the auth dictionary in the exact format yfpy expects,
+        # translating from the standard OAuth2 session token.
+        token = session['yahoo_token']
         auth_data = {
             'consumer_key': session['consumer_key'],
             'consumer_secret': session['consumer_secret'],
-            **session['yahoo_token']
+            'access_token': token.get('access_token'),
+            'refresh_token': token.get('refresh_token'),
+            'token_type': token.get('token_type', 'bearer'),
+            # yfpy expects 'token_time', not 'expires_at'. They are both Unix timestamps.
+            'token_time': token.get('expires_at', time.time() + token.get('expires_in', 3600))
         }
+
         yq = YahooFantasySportsQuery(
             int(session['league_id']),
             game_code="nhl",
@@ -131,6 +147,10 @@ def handle_query():
         dict_result = model_to_dict(result)
         json_result = json.dumps(dict_result, indent=2)
         return jsonify({"result": json_result})
+    except SystemExit:
+        # Catch the SystemExit from yfpy and return a user-friendly error
+        logging.error("yfpy triggered a SystemExit, likely due to an auth issue.")
+        return jsonify({"error": "Authentication failed with yfpy. Your session may be invalid. Please log out and log in again."}), 401
     except Exception as e:
         logging.error(f"Error executing query '{query_str}': {e}", exc_info=True)
         if 'token_expired' in str(e).lower():
