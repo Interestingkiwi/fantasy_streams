@@ -40,7 +40,7 @@ class YahooDataFetcher:
 
         # The game_id is needed for some queries.
         # We perform an initial query to get the game_id for the league.
-        yq_init = YahooFantasySportsQuery(auth_dir, league_id=self.league_id, game_code="nhl")
+        yq_init = YahooFantasySportsQuery(auth_dir=auth_dir, league_id=self.league_id, game_code="nhl")
 
         game_info = yq_init.get_current_game_info()
         game_id = game_info.game_id
@@ -48,7 +48,7 @@ class YahooDataFetcher:
         # Now we create the final query object with the game_id,
         # reusing the authentication token from the initial query.
         self.yq = YahooFantasySportsQuery(
-            auth_dir,
+            auth_dir=auth_dir,
             league_id=self.league_id,
             game_code="nhl",
             game_id=game_id,
