@@ -273,15 +273,15 @@ def initialize_league():
     # --- Write credential files for the background process ---
     token_data = _get_valid_token_from_session()
     if token_data:
-        # Combine app credentials with user token for the background process.
+        # The background script will read this file from the same directory.
+        auth_file_path = os.path.join(DATABASE_DIR, 'auth.json')
+        app.logger.info(f"Writing full auth data to {auth_file_path}")
+
+        # Merge app credentials with the user's session token.
         with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
             creds = json.load(f)
-
         full_auth_data = {**token_data, **creds}
 
-        # The background script will read this file.
-        auth_file_path = 'private.json'
-        app.logger.info(f"Writing full auth data to {auth_file_path}")
         with open(auth_file_path, 'w') as f:
             json.dump(full_auth_data, f)
     else:
@@ -366,14 +366,13 @@ def refresh_league():
     # --- Write credential files for the background process ---
     token_data = _get_valid_token_from_session()
     if token_data:
-        # Combine app credentials with user token for the background process.
+        auth_file_path = os.path.join(DATABASE_DIR, 'auth.json')
+        app.logger.info(f"Writing full auth data to {auth_file_path} for refresh.")
+
         with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
             creds = json.load(f)
-
         full_auth_data = {**token_data, **creds}
 
-        auth_file_path = 'private.json'
-        app.logger.info(f"Writing full auth data to {auth_file_path} for refresh.")
         with open(auth_file_path, 'w') as f:
             json.dump(full_auth_data, f)
     else:

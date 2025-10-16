@@ -12,56 +12,45 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# --- DEBUGGING ---
-# Check what files are in the current directory when the script runs.
-try:
-    cwd_files = os.listdir('.')
-    logger.info(f"Files in current directory (yfa): {cwd_files}")
-    if 'private.json' in cwd_files:
-        logger.info("'private.json' found by yfa.")
-    else:
-        logger.warning("'private.json' NOT found by yfa.")
-    if 'token_cache.json' in cwd_files:
-        logger.info("'token_cache.json' found by yfa.")
-    else:
-        logger.warning("'token_cache.json' NOT found by yfa.")
-except Exception as e:
-    logger.error(f"Could not list files in current directory (yfa): {e}")
-# --- END DEBUGGING ---
-
 
 class YfaDataFetcher:
     """
     A class to fetch data from Yahoo Fantasy Sports and store it in a database.
     """
-    def __init__(self, con, league_id):
+    def __init__(self, con, league_id, auth_data=None):
         """
         Initializes the YfaDataFetcher.
 
         Args:
             con: A sqlite3 database connection object.
             league_id (str): The Yahoo Fantasy league ID.
+            auth_data (dict): A dictionary containing all required auth credentials.
         """
         self.con = con
         self.league_id = league_id
+        self._auth_data = auth_data
         self.lg = self._authenticate_and_get_league()
 
     def _authenticate_and_get_league(self):
         """
-        Authenticates with Yahoo and returns a League object.
-
-        It looks for an authentication file (private.json) in the specified
-        directory. If not found, it will initiate the OAuth2 flow.
+        Authenticates with Yahoo and returns a League object using the provided auth_data.
         """
         logger.debug("Authenticating with Yahoo and getting league object...")
+        if not self._auth_data:
+            raise ValueError("Authentication data was not provided to YfaDataFetcher.")
+
         try:
-            # The OAuth2 object will look for private.json and token_cache.json
-            sc = OAuth2(None, None)
+            # The OAuth2 object will use the provided dictionary for authentication.
+            sc = OAuth2(None, None, **self._auth_data)
+            if not sc.token_is_valid():
+                 logger.warning("YFA token is not valid on initial check.")
+                 # The library should handle refresh automatically if refresh_token is present
+
             lg = league.League(sc, self.league_id)
             logger.info("Authentication successful with yfa.")
             return lg
         except Exception as e:
-            logger.error(f"Failed to authenticate or get league with yfa: {e}")
+            logger.error(f"Failed to authenticate or get league with yfa: {e}", exc_info=True)
             raise
 
     def fetch_free_agents(self):

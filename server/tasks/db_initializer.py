@@ -28,10 +28,24 @@ def run():
     db_path = os.path.join(DATABASE_DIR, f"yahoo-nhl-{args.league_id}-custom.db")
     schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
     projections_db_path = os.path.join(os.path.dirname(__file__), "projections.db")
+    auth_file_path = os.path.join(DATABASE_DIR, 'auth.json')
+
+    # --- DEBUGGING: Check for auth file ---
+    if os.path.exists(auth_file_path):
+        logger.info(f"Auth file found at: {auth_file_path}")
+        with open(auth_file_path, 'r') as f:
+            auth_data_check = json.load(f)
+            logger.info(f"Auth file contains keys: {auth_data_check.keys()}")
+    else:
+        logger.error(f"Auth file NOT found at: {auth_file_path}")
+        sys.exit(1) # Exit if auth file is missing
 
     try:
         with open(schema_path, "r") as f:
             schema = f.read()
+
+        with open(auth_file_path, 'r') as f:
+            auth_data = json.load(f)
 
         with _get_db_connection(db_path) as con:
             con.executescript(schema)
@@ -40,13 +54,12 @@ def run():
 
             # --- Run yfpy queries ---
             logger.info("--- Running yfpy queries ---")
-            # The fetcher will now find the credential files on its own
-            fetcher = YahooDataFetcher(con, args.league_id)
+            fetcher = YahooDataFetcher(con, args.league_id, auth_data=auth_data)
             fetcher.fetch_all_data()
 
             # --- Run yfa_queries ---
             logger.info("--- Running yfa_queries ---")
-            yfa_fetcher = YfaDataFetcher(con=con, league_id=args.league_id)
+            yfa_fetcher = YfaDataFetcher(con=con, league_id=args.league_id, auth_data=auth_data)
             yfa_fetcher.fetch_free_agents()
             yfa_fetcher.fetch_waivers()
             yfa_fetcher.fetch_rostered_players()
