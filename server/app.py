@@ -31,7 +31,8 @@ class YahooDataFetcher:
         self.con = con
         self.league_id = league_id
         self.auth_dir = auth_dir
-        self.yq = YahooFantasySportsQuery(auth_dir=self.auth_dir, league_id=self.league_id, game_code='nhl')
+        # auth_dir and league_id are positional arguments
+        self.yq = YahooFantasySportsQuery(self.auth_dir, self.league_id, game_code='nhl')
         self.num_teams = 0
         self.start_date = None
         self.end_date = None
@@ -208,12 +209,9 @@ def initialize_league_data_background(league_id, auth_dir):
 def login():
     """Redirects user to Yahoo for authentication."""
     auth_dir = '.'
-    query = YahooFantasySportsQuery(
-        auth_dir=auth_dir,
-        game_code='nhl',
-        yahoo_consumer_key=YAHOO_CONSUMER_KEY,
-        yahoo_consumer_secret=YAHOO_CONSUMER_SECRET
-    )
+    # auth_dir is a positional argument. The library finds credentials in env vars.
+    # A league_id is not required for the initial login flow.
+    query = YahooFantasySportsQuery(auth_dir, league_id=None, game_code='nhl')
     return redirect(query.login())
 
 @app.route('/logout')
@@ -275,7 +273,7 @@ def get_current_league_id():
 
 @app.route('/api/matchups')
 def get_matchups():
-    league_id = session.get('league_id')
+    league_id = session._get('league_id')
     if not league_id:
         return jsonify({"error": "No league selected"}), 400
     try:
