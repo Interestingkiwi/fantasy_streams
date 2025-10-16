@@ -48,6 +48,16 @@
             <button data-page="league-data" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
                 League Data
             </button>
+            <script>
+                const isDevelopment = true; // Set to false for production
+                if (isDevelopment) {
+                    document.write(`
+                        <button data-page="db" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                            DB
+                        </button>
+                    `);
+                }
+            </script>
         </div>
 
         <!-- Page Content Area -->

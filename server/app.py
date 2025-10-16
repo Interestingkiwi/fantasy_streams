@@ -369,6 +369,65 @@ def get_matchups():
         print(f"Error fetching matchups from database: {e}")
         return jsonify({"error": "Failed to fetch matchups from the database."}), 500
 
+@app.route("/api/download_db")
+def download_db():
+    """Downloads the current league's database file."""
+    if os.environ.get("FLASK_ENV") != "development":
+        return jsonify({"error": "This feature is only available in development mode."}), 403
+
+    league_id = session.get('current_league_id')
+    if not league_id:
+        return jsonify({"error": "No league selected"}), 400
+
+    db_filename = f"yahoo-nhl-{league_id}-custom.db"
+    db_path = os.path.join(DATABASE_DIR, db_filename)
+
+    if not os.path.exists(db_path):
+        return jsonify({"error": "Database not found for this league"}), 404
+
+    return send_from_directory(DATABASE_DIR, db_filename, as_attachment=True)
+
+
+@app.route("/api/db")
+def get_db_data():
+    """Fetches all tables and their content from the database."""
+    if os.environ.get("FLASK_ENV") != "development":
+        return jsonify({"error": "This feature is only available in development mode."}), 403
+
+    league_id = session.get('current_league_id')
+    if not league_id:
+        return jsonify({"error": "No league selected"}), 400
+
+    db_filename = f"yahoo-nhl-{league_id}-custom.db"
+    db_path = os.path.join(DATABASE_DIR, db_filename)
+
+    if not os.path.exists(db_path):
+        return jsonify({"error": "Database not found for this league"}), 404
+
+    try:
+        con = sqlite3.connect(db_path)
+        cursor = con.cursor()
+
+        # Get all table names
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [row[0] for row in cursor.fetchall()]
+
+        db_data = {}
+        for table in tables:
+            cursor.execute(f"PRAGMA table_info({table})")
+            headers = [description[1] for description in cursor.fetchall()]
+
+            cursor.execute(f"SELECT * FROM {table}")
+            rows = cursor.fetchall()
+
+            db_data[table] = [headers] + rows
+
+        con.close()
+        return jsonify(db_data)
+
+    except Exception as e:
+        print(f"Error fetching db data: {e}")
+        return jsonify({"error": "Failed to fetch data from the database."}), 500
 
 @app.route("/logout")
 def logout():
@@ -376,6 +435,5 @@ def logout():
     session.clear()
     return jsonify({"message": "Successfully logged out."})
 
-# This allows the script to be run directly for local testing
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
