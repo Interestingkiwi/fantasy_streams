@@ -59,63 +59,59 @@ else:
     print("YAHOO_PRIVATE_JSON not found. Assuming local private.json file exists for development.")
 
 
-# --- Helper functions ---
+# --- Centralized Authentication Helper ---
 
-def _get_valid_token_from_session():
+def get_and_validate_token():
     """
-    Gets the token data from the session and ensures the 'guid' field is present.
-    Returns the token data or None if not found.
+    Single source of truth for getting a valid token.
+    Retrieves from session, validates guid, and refreshes if needed.
+    Returns a complete, valid token dictionary, or None.
     """
     token_data = session.get('yahoo_token_data')
     if not token_data:
+        app.logger.warning("No token data found in session.")
         return None
 
-    # Ensure guid is present for yfpy compatibility, which is needed by the background script.
+    # 1. Ensure 'guid' is present.
     if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
         token_data['guid'] = token_data['xoauth_yahoo_guid']
-        # Update the session with the corrected data
-        session['yahoo_token_data'] = token_data
+        app.logger.debug("Added 'guid' to token data from 'xoauth_yahoo_guid'.")
 
+    # 2. Check for expiration and refresh if needed.
+    expires_in = token_data.get('expires_in', 3600)
+    token_time = token_data.get('token_time', 0)
+    if time.time() > token_time + expires_in - 300:  # 5-minute buffer
+        app.logger.info("Token is expired or nearing expiration. Attempting refresh.")
+        try:
+            original_guid = token_data.get('guid')
+            oauth_for_refresh = OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data)
+            oauth_for_refresh.refresh_access_token()
+
+            # Update token_data with the new data from the library
+            token_data = oauth_for_refresh.token_data
+            if original_guid and 'guid' not in token_data:
+                token_data['guid'] = original_guid
+            app.logger.info("Token refreshed successfully.")
+        except Exception as e:
+            app.logger.error(f"Failed to refresh access token: {e}")
+            session.clear()  # Clear session on refresh failure
+            return None
+
+    # 3. Update the session with the potentially modified/refreshed token and return it.
+    session['yahoo_token_data'] = token_data
     return token_data
+
 
 def get_authenticated_oauth_client():
     """
-    Checks for a token in the session, refreshes it if needed,
-    and returns an authenticated OAuth2 object. This also preserves the 'guid'.
+    Uses the centralized helper to get a valid token and returns an
+    authenticated OAuth2 client object.
     """
-    token_data = _get_valid_token_from_session()
+    token_data = get_and_validate_token()
     if not token_data:
-        return None, (jsonify({"error": "User not authenticated"}), 401)
+        return None, (jsonify({"error": "Authentication required. Please log in again."}), 401)
 
-    # Manually check if the token is expired or close to expiring
-    expires_in = token_data.get('expires_in', 3600)
-    token_time = token_data.get('token_time', 0)
-
-    # Refresh if less than 5 minutes remain
-    if time.time() > token_time + expires_in - 300:
-        print("Token expired or nearing expiration, attempting to refresh...")
-        try:
-            # Preserve the original guid during refresh
-            original_guid = token_data.get('guid') or token_data.get('xoauth_yahoo_guid')
-
-            # Create the client with the expired token data to access the refresh method
-            oauth = OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data)
-            oauth.refresh_access_token()
-
-            # The library updates its internal token_data upon refresh. Add guid back if it was dropped.
-            new_token_data = oauth.token_data
-            if original_guid and 'guid' not in new_token_data:
-                new_token_data['guid'] = original_guid
-
-            session['yahoo_token_data'] = new_token_data
-            print("Successfully refreshed access token and updated session.")
-            return oauth, None
-        except Exception as e:
-            print(f"Failed to refresh access token: {e}")
-            session.clear()
-            return None, (jsonify({"error": "Failed to refresh token, please log in again."}), 401)
-
-    # If token is valid, just return a new client instance with it
+    # Return a new client instance initialized with the validated token
     return OAuth2(None, None, from_file=YAHOO_CREDENTIALS_FILE, **token_data), None
 
 # --- Static Frontend Routes ---
@@ -135,59 +131,46 @@ def serve_home():
 @app.route("/login")
 def login():
     """
-    Initiates the Yahoo login process by manually constructing the authorization
-    URL and redirecting the user to Yahoo's auth page.
+    Initiates the Yahoo login process.
     """
     if not os.path.exists(YAHOO_CREDENTIALS_FILE):
-        return "OAuth credentials not configured on the server. Set YAHOO_PRIVATE_JSON env var.", 500
-
+        return "OAuth credentials not configured on the server.", 500
     try:
         with open(YAHOO_CREDENTIALS_FILE) as f:
             creds = json.load(f)
         consumer_key = creds.get('consumer_key')
-
-        # Use url_for to generate the correct callback URL, respecting proxy headers
         redirect_uri = url_for('callback', _external=True)
-
         params = {
-            'client_id': consumer_key,
-            'redirect_uri': redirect_uri,
-            'response_type': 'code',
-            'language': 'en-us'
+            'client_id': consumer_key, 'redirect_uri': redirect_uri,
+            'response_type': 'code', 'language': 'en-us'
         }
         auth_url = f"https://api.login.yahoo.com/oauth2/request_auth?{urlencode(params)}"
         return redirect(auth_url)
-
     except Exception as e:
         print(f"Error during login initiation: {e}")
-        return "Failed to start login process. Check server logs.", 500
+        return "Failed to start login process.", 500
 
 @app.route("/callback")
 def callback():
     """
-    Handles the callback from Yahoo, manually exchanging the code for a token.
+    Handles the callback from Yahoo, exchanging the code for a token.
     """
     code = request.args.get('code')
     if not code:
         return "Authorization code not found in callback.", 400
-
     try:
         redirect_uri = url_for('callback', _external=True)
         with open(YAHOO_CREDENTIALS_FILE) as f:
             creds = json.load(f)
         consumer_key = creds.get('consumer_key')
         consumer_secret = creds.get('consumer_secret')
-
         token_url = 'https://api.login.yahoo.com/oauth2/get_token'
         payload = {
-            'client_id': consumer_key,
-            'client_secret': consumer_secret,
-            'redirect_uri': redirect_uri,
-            'code': code,
+            'client_id': consumer_key, 'client_secret': consumer_secret,
+            'redirect_uri': redirect_uri, 'code': code,
             'grant_type': 'authorization_code'
         }
         auth = HTTPBasicAuth(consumer_key, consumer_secret)
-
         response = requests.post(token_url, data=payload, auth=auth)
         response.raise_for_status()
         token_data = response.json()
@@ -195,26 +178,22 @@ def callback():
         if 'access_token' not in token_data:
             return "Failed to retrieve access token from Yahoo.", 500
 
-        # Ensure the 'guid' field is present for yfpy compatibility
-        if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
-            token_data['guid'] = token_data['xoauth_yahoo_guid']
+        # --- DEBUGGING ---
+        app.logger.info(f"Initial token data received from Yahoo. Keys: {token_data.keys()}")
 
-        # Store the entire token dictionary and set the session to be permanent
         token_data['token_time'] = time.time()
         session['yahoo_token_data'] = token_data
-        session.permanent = True # This respects the app.permanent_session_lifetime
-        print("Successfully stored token data in session.")
-        app.logger.info(f"Token data from Yahoo contains keys: {token_data.keys()}")
-
+        session.permanent = True
+        get_and_validate_token() # Call once to process and ensure guid is stored
+        print("Successfully stored and validated token data in session.")
 
     except requests.exceptions.RequestException as e:
         print(f"Error during token exchange: {e.response.text if e.response else e}")
-        return "Authentication failed: Could not exchange code for token.", 400
+        return "Authentication failed.", 400
     except Exception as e:
         print(f"Error in callback: {e}")
-        return "Authentication failed due to an unexpected server error.", 500
+        return "Authentication failed.", 500
 
-    # Redirect to the main frontend page after successful login
     return redirect(url_for('serve_index'))
 
 
@@ -227,63 +206,46 @@ def get_user():
 
 @app.route("/api/leagues")
 def get_leagues():
-    """
-    Fetches the user's fantasy leagues for the 2025 season using yfa.
-    """
+    """ Fetches the user's fantasy leagues."""
     oauth, error = get_authenticated_oauth_client()
-    if error:
-        return error
-
+    if error: return error
     try:
-        # The 'yfa.Game' object is the entry point for the yahoo_fantasy_api library
         gm = yfa.Game(oauth, 'nhl')
-
-        # The library uses the integer year to find game keys
         leagues_data = gm.league_ids(year=2025)
-
         leagues_list = []
         for league_id in leagues_data:
             try:
                 lg = gm.to_league(league_id)
-                lg_settings = lg.settings()
-                league_name = lg_settings['name']
-                league_id_only = lg_settings['league_id']
-                leagues_list.append({
-                                    'league_id': league_id_only,
-                                    'name': league_name
-                                })
+                settings = lg.settings()
+                leagues_list.append({'league_id': settings['league_id'], 'name': settings['name']})
             except Exception as e:
                 print(f"Could not fetch info for league {league_id}: {e}")
-                continue # Skip leagues that fail, but continue with others
-
         print(f"--- Final result: Returning {len(leagues_list)} league(s) to the frontend. ---")
         return jsonify(leagues_list)
-
     except Exception as e:
         print(f"Error fetching leagues from Yahoo API: {e}")
         return jsonify({"error": "Failed to fetch data from Yahoo API."}), 500
 
 def _start_db_process(league_id):
     """Helper to create auth env var and start the background DB process."""
-    token_data = _get_valid_token_from_session()
+    token_data = get_and_validate_token()
     if not token_data:
-        app.logger.error("User token not found in session.")
+        app.logger.error("User token not found in session for background process.")
         return False, "User token not found in session."
 
-    # Merge app credentials with user token.
     with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
         creds = json.load(f)
     full_auth_data = {**token_data, **creds}
 
-    # Serialize the full auth data to a JSON string.
+    # --- ADDED DEBUGGING ---
+    app.logger.info(f"Auth data prepared for background process. Keys: {full_auth_data.keys()}")
+
     auth_data_string = json.dumps(full_auth_data)
 
     if league_id in background_processes and background_processes[league_id].poll() is None:
         return True, "already_running"
 
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
-
-    # Pass the auth data string as an environment variable.
     proc_env = os.environ.copy()
     proc_env['DATABASE_DIR'] = DATABASE_DIR
     proc_env['YAHOO_FULL_AUTH'] = auth_data_string
@@ -319,18 +281,13 @@ def initialize_league():
 def league_status(league_id):
     db_filename = f"yahoo-nhl-{league_id}-custom.db"
     db_path = os.path.join(DATABASE_DIR, db_filename)
-
     process = background_processes.get(league_id)
 
     if os.path.exists(db_path):
-        if process:
-            if process.poll() is not None:
-                del background_processes[league_id]
-                timestamp = os.path.getmtime(db_path)
-                return jsonify({"status": "complete", "timestamp": timestamp})
-        else:
-             timestamp = os.path.getmtime(db_path)
-             return jsonify({"status": "complete", "timestamp": timestamp})
+        if process and process.poll() is not None:
+            del background_processes[league_id]
+        timestamp = os.path.getmtime(db_path)
+        return jsonify({"status": "complete", "timestamp": timestamp})
 
     if process and process.poll() is None:
         return jsonify({"status": "initializing"})
@@ -343,134 +300,82 @@ def league_status(league_id):
 @app.route("/api/get_league_timestamp")
 def get_league_timestamp():
     league_id = session.get('current_league_id')
-    if not league_id:
-        return jsonify({"error": "No league selected"}), 400
-
-    db_filename = f"yahoo-nhl-{league_id}-custom.db"
-    db_path = os.path.join(DATABASE_DIR, db_filename)
-
+    if not league_id: return jsonify({"error": "No league selected"}), 400
+    db_path = os.path.join(DATABASE_DIR, f"yahoo-nhl-{league_id}-custom.db")
     if os.path.exists(db_path):
-        timestamp = os.path.getmtime(db_path)
-        return jsonify({"timestamp": timestamp})
-    else:
-        return jsonify({"error": "Database not found"}), 404
+        return jsonify({"timestamp": os.path.getmtime(db_path)})
+    return jsonify({"error": "Database not found"}), 404
 
 @app.route("/api/get_current_league_id")
 def get_current_league_id():
-    """Gets the currently selected league ID from the session."""
     league_id = session.get('current_league_id')
-    if league_id:
-        return jsonify({"league_id": league_id})
+    if league_id: return jsonify({"league_id": league_id})
     return jsonify({"error": "No league selected in session"}), 400
 
 @app.route("/api/refresh_league", methods=['POST'])
 def refresh_league():
-    """Triggers a background process to update the database for the current league."""
     league_id = session.get('current_league_id')
-    if not league_id:
-        return jsonify({"error": "No league selected in session"}), 400
-
+    if not league_id: return jsonify({"error": "No league selected in session"}), 400
     success, status = _start_db_process(league_id)
-    if not success:
-        return jsonify({"error": status}), 500
+    if not success: return jsonify({"error": status}), 500
     if status == "already_running":
         return jsonify({"status": "refreshing", "message": "A refresh is already in progress."})
-
     return jsonify({"status": "refreshing", "message": "Refreshing league database, this may take a few minutes."})
 
 @app.route("/api/matchups")
 def get_matchups():
-    """Fetches the matchups for the current league from its database."""
     league_id = session.get('current_league_id')
-    if not league_id:
-        return jsonify({"error": "No league selected"}), 400
-
-    db_filename = f"yahoo-nhl-{league_id}-custom.db"
-    db_path = os.path.join(DATABASE_DIR, db_filename)
-
-    if not os.path.exists(db_path):
-        return jsonify({"error": "Database not found for this league"}), 404
-
+    if not league_id: return jsonify({"error": "No league selected"}), 400
+    db_path = os.path.join(DATABASE_DIR, f"yahoo-nhl-{league_id}-custom.db")
+    if not os.path.exists(db_path): return jsonify({"error": "Database not found"}), 404
     try:
         con = sqlite3.connect(db_path)
-        con.row_factory = sqlite3.Row # This allows accessing columns by name
-        cursor = con.cursor()
-        cursor.execute("SELECT week, team1, team2 FROM matchups")
-        rows = cursor.fetchall()
+        con.row_factory = sqlite3.Row
+        rows = con.execute("SELECT week, team1, team2 FROM matchups").fetchall()
         con.close()
-
-        # Convert rows to a list of dictionaries
-        matchups = [dict(row) for row in rows]
-
-        return jsonify(matchups)
-
+        return jsonify([dict(row) for row in rows])
     except Exception as e:
         print(f"Error fetching matchups from database: {e}")
-        return jsonify({"error": "Failed to fetch matchups from the database."}), 500
+        return jsonify({"error": "Failed to fetch matchups."}), 500
 
 @app.route("/api/download_db")
 def download_db():
-    """Downloads the current league's database file."""
     if os.environ.get("FLASK_ENV") != "development":
-        return jsonify({"error": "This feature is only available in development mode."}), 403
-
+        return jsonify({"error": "Feature only available in development."}), 403
     league_id = session.get('current_league_id')
-    if not league_id:
-        return jsonify({"error": "No league selected"}), 400
-
-    db_filename = f"yahoo-nhl-{league_id}-custom.db"
-    db_path = os.path.join(DATABASE_DIR, db_filename)
-
-    if not os.path.exists(db_path):
-        return jsonify({"error": "Database not found for this league"}), 404
-
-    return send_from_directory(DATABASE_DIR, db_filename, as_attachment=True)
-
+    if not league_id: return jsonify({"error": "No league selected"}), 400
+    db_path = os.path.join(DATABASE_DIR, f"yahoo-nhl-{league_id}-custom.db")
+    if not os.path.exists(db_path): return jsonify({"error": "Database not found"}), 404
+    return send_from_directory(DATABASE_DIR, f"yahoo-nhl-{league_id}-custom.db", as_attachment=True)
 
 @app.route("/api/db")
 def get_db_data():
-    """Fetches all tables and their content from the database."""
     if os.environ.get("FLASK_ENV") != "development":
-        return jsonify({"error": "This feature is only available in development mode."}), 403
-
+        return jsonify({"error": "Feature only available in development."}), 403
     league_id = session.get('current_league_id')
-    if not league_id:
-        return jsonify({"error": "No league selected"}), 400
-
-    db_filename = f"yahoo-nhl-{league_id}-custom.db"
-    db_path = os.path.join(DATABASE_DIR, db_filename)
-
-    if not os.path.exists(db_path):
-        return jsonify({"error": "Database not found for this league"}), 404
-
+    if not league_id: return jsonify({"error": "No league selected"}), 400
+    db_path = os.path.join(DATABASE_DIR, f"yahoo-nhl-{league_id}-custom.db")
+    if not os.path.exists(db_path): return jsonify({"error": "Database not found"}), 404
     try:
         con = sqlite3.connect(db_path)
         cursor = con.cursor()
-
-        # Get all table names
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = [row[0] for row in cursor.fetchall()]
-
         db_data = {}
         for table in tables:
             cursor.execute(f"PRAGMA table_info({table})")
-            headers = [description[1] for description in cursor.fetchall()]
-
+            headers = [d[1] for d in cursor.fetchall()]
             cursor.execute(f"SELECT * FROM {table}")
             rows = cursor.fetchall()
-
             db_data[table] = [headers] + rows
-
         con.close()
         return jsonify(db_data)
-
     except Exception as e:
         print(f"Error fetching db data: {e}")
         return jsonify({"error": "Failed to fetch data from the database."}), 500
 
 @app.route("/logout")
 def logout():
-    """Logs the user out by clearing their session."""
     session.clear()
     return jsonify({"message": "Successfully logged out."})
 
