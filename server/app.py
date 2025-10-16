@@ -204,6 +204,8 @@ def callback():
         session['yahoo_token_data'] = token_data
         session.permanent = True # This respects the app.permanent_session_lifetime
         print("Successfully stored token data in session.")
+        app.logger.info(f"Token data from Yahoo contains keys: {token_data.keys()}")
+
 
     except requests.exceptions.RequestException as e:
         print(f"Error during token exchange: {e.response.text if e.response else e}")
@@ -261,6 +263,31 @@ def get_leagues():
         print(f"Error fetching leagues from Yahoo API: {e}")
         return jsonify({"error": "Failed to fetch data from Yahoo API."}), 500
 
+def _start_db_process(league_id):
+    """Helper to write auth files and start the background DB process."""
+    token_data = _get_valid_token_from_session()
+    if not token_data:
+        app.logger.error("User token not found in session.")
+        return False, "User token not found in session."
+
+    # Write the token cache file to the root directory where the script runs.
+    token_cache_path = 'token_cache.json'
+    app.logger.info(f"Writing token data with keys: {token_data.keys()} to {token_cache_path}")
+    with open(token_cache_path, 'w') as f:
+        json.dump(token_data, f)
+
+    if league_id in background_processes and background_processes[league_id].poll() is None:
+        return True, "already_running"
+
+    script_path = os.path.join('server', 'tasks', 'db_initializer.py')
+    proc_env = os.environ.copy()
+    proc_env['DATABASE_DIR'] = DATABASE_DIR
+
+    process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
+    background_processes[league_id] = process
+    session['current_league_id'] = league_id
+    return True, "started"
+
 @app.route("/api/initialize_league", methods=['POST'])
 def initialize_league():
     league_id = request.json.get('league_id')
@@ -270,41 +297,18 @@ def initialize_league():
     db_filename = f"yahoo-nhl-{league_id}-custom.db"
     db_path = os.path.join(DATABASE_DIR, db_filename)
 
-    # --- Write credential files for the background process ---
-    token_data = _get_valid_token_from_session()
-    if token_data:
-        # The background script will read this file from the same directory.
-        auth_file_path = os.path.join(DATABASE_DIR, 'auth.json')
-        app.logger.info(f"Writing full auth data to {auth_file_path}")
-
-        # Merge app credentials with the user's session token.
-        with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
-            creds = json.load(f)
-        full_auth_data = {**token_data, **creds}
-
-        with open(auth_file_path, 'w') as f:
-            json.dump(full_auth_data, f)
-    else:
-        app.logger.error("User token not found in session during initialize_league.")
-        return jsonify({"error": "User token not found in session."}), 500
-
-
     if os.path.exists(db_path):
         session['current_league_id'] = league_id
         return jsonify({"status": "exists", "message": "Database already exists."})
 
-    if league_id in background_processes and background_processes[league_id].poll() is None:
+    success, status = _start_db_process(league_id)
+    if not success:
+        return jsonify({"error": status}), 500
+    if status == "already_running":
         return jsonify({"status": "initializing", "message": "Database initialization is already in progress."})
 
-    script_path = os.path.join('server', 'tasks', 'db_initializer.py')
-    proc_env = os.environ.copy()
-    proc_env['DATABASE_DIR'] = DATABASE_DIR
-
-    process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
-    background_processes[league_id] = process
-    session['current_league_id'] = league_id
-
     return jsonify({"status": "initializing", "message": "Initializing league database, this may take a few minutes."})
+
 
 @app.route("/api/league_status/<league_id>")
 def league_status(league_id):
@@ -315,20 +319,18 @@ def league_status(league_id):
 
     if os.path.exists(db_path):
         if process:
-            # If the file exists and the process is done, it's complete.
             if process.poll() is not None:
-                del background_processes[league_id] # Clean up
+                del background_processes[league_id]
                 timestamp = os.path.getmtime(db_path)
                 return jsonify({"status": "complete", "timestamp": timestamp})
-        else: # Process not found, but file exists.
+        else:
              timestamp = os.path.getmtime(db_path)
              return jsonify({"status": "complete", "timestamp": timestamp})
 
-
     if process and process.poll() is None:
         return jsonify({"status": "initializing"})
-    elif process and process.poll() is not None: # Process finished but file not found
-        del background_processes[league_id] # Clean up
+    elif process and process.poll() is not None:
+        del background_processes[league_id]
         return jsonify({"status": "error", "message": "Database initialization failed."})
 
     return jsonify({"status": "not_found"})
@@ -363,31 +365,11 @@ def refresh_league():
     if not league_id:
         return jsonify({"error": "No league selected in session"}), 400
 
-    # --- Write credential files for the background process ---
-    token_data = _get_valid_token_from_session()
-    if token_data:
-        auth_file_path = os.path.join(DATABASE_DIR, 'auth.json')
-        app.logger.info(f"Writing full auth data to {auth_file_path} for refresh.")
-
-        with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
-            creds = json.load(f)
-        full_auth_data = {**token_data, **creds}
-
-        with open(auth_file_path, 'w') as f:
-            json.dump(full_auth_data, f)
-    else:
-        app.logger.error("User token not found in session during refresh_league.")
-        return jsonify({"error": "User token not found in session."}), 500
-
-    if league_id in background_processes and background_processes[league_id].poll() is None:
+    success, status = _start_db_process(league_id)
+    if not success:
+        return jsonify({"error": status}), 500
+    if status == "already_running":
         return jsonify({"status": "refreshing", "message": "A refresh is already in progress."})
-
-    script_path = os.path.join('server', 'tasks', 'db_initializer.py')
-    proc_env = os.environ.copy()
-    proc_env['DATABASE_DIR'] = DATABASE_DIR
-
-    process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
-    background_processes[league_id] = process
 
     return jsonify({"status": "refreshing", "message": "Refreshing league database, this may take a few minutes."})
 
