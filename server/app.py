@@ -72,10 +72,15 @@ def get_and_validate_token():
         app.logger.warning("No token data found in session.")
         return None
 
+    # --- ADDED DEBUGGING ---
+    app.logger.info(f"Token validation started. Keys before processing: {token_data.keys()}")
+
     # 1. Ensure 'guid' is present.
     if 'guid' not in token_data and 'xoauth_yahoo_guid' in token_data:
         token_data['guid'] = token_data['xoauth_yahoo_guid']
-        app.logger.debug("Added 'guid' to token data from 'xoauth_yahoo_guid'.")
+        app.logger.info("Added 'guid' to token data from 'xoauth_yahoo_guid'.")
+        # Explicitly mark the session as modified to ensure this change is saved.
+        session.modified = True
 
     # 2. Check for expiration and refresh if needed.
     expires_in = token_data.get('expires_in', 3600)
@@ -99,7 +104,11 @@ def get_and_validate_token():
 
     # 3. Update the session with the potentially modified/refreshed token and return it.
     session['yahoo_token_data'] = token_data
-    return token_data
+
+    # --- ADDED DEBUGGING ---
+    app.logger.info(f"Token validation finished. Keys after processing: {session['yahoo_token_data'].keys()}")
+
+    return session['yahoo_token_data']
 
 
 def get_authenticated_oauth_client():
@@ -178,9 +187,6 @@ def callback():
         if 'access_token' not in token_data:
             return "Failed to retrieve access token from Yahoo.", 500
 
-        # --- DEBUGGING ---
-        app.logger.info(f"Initial token data received from Yahoo. Keys: {token_data.keys()}")
-
         token_data['token_time'] = time.time()
         session['yahoo_token_data'] = token_data
         session.permanent = True
@@ -236,9 +242,6 @@ def _start_db_process(league_id):
     with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
         creds = json.load(f)
     full_auth_data = {**token_data, **creds}
-
-    # --- ADDED DEBUGGING ---
-    app.logger.info(f"Auth data prepared for background process. Keys: {full_auth_data.keys()}")
 
     auth_data_string = json.dumps(full_auth_data)
 
