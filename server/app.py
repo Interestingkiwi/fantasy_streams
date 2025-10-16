@@ -16,14 +16,13 @@ YAHOO_CONSUMER_KEY = os.environ.get("YAHOO_CONSUMER_KEY")
 YAHOO_CONSUMER_SECRET = os.environ.get("YAHOO_CONSUMER_SECRET")
 
 # --- App Initialization ---
-# The static_folder is now relative to the server directory
 app = Flask(__name__, static_folder='../client')
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a_super_secret_key_for_dev")
 logging.basicConfig(level=logging.INFO)
 
 league_initialization_status = {}
 
-# --- Database Fetcher Class (Adapted from your queries.py) ---
+# --- Database Fetcher Class ---
 class YahooDataFetcher:
     """
     Handles fetching data from Yahoo Fantasy API and populating a SQLite database.
@@ -31,9 +30,7 @@ class YahooDataFetcher:
     def __init__(self, con, league_id, auth_dir='.'):
         self.con = con
         self.league_id = league_id
-        # Use the root project directory for authentication credentials
         self.auth_dir = auth_dir
-        # Use keyword arguments for clarity and to avoid positional errors
         self.yq = YahooFantasySportsQuery(auth_dir=self.auth_dir, league_id=self.league_id, game_code='nhl')
         self.num_teams = 0
         self.start_date = None
@@ -170,23 +167,19 @@ class YahooDataFetcher:
 
 # --- Helper Functions ---
 def get_db_path(league_id):
-    """Constructs the path for a league's database in the root directory."""
     return f"yahoo-nhl-{league_id}-custom.db"
 
 def get_db_connection(league_id):
-    """Returns a connection to the specified league's database."""
     db_path = get_db_path(league_id)
     return sqlite3.connect(db_path, check_same_thread=False)
 
 def create_database(league_id):
-    """Creates a new SQLite database for a league using the schema."""
     db_path = get_db_path(league_id)
     if os.path.exists(db_path):
         logging.info(f"Database for league {league_id} already exists.")
         return
     logging.info(f"Creating new database for league {league_id}...")
     try:
-        # Path to schema is now inside the server/tasks folder
         with open("server/tasks/schema.sql", "r") as f:
             schema = f.read()
         con = sqlite3.connect(db_path)
@@ -198,10 +191,6 @@ def create_database(league_id):
         logging.error(f"Failed to create database for league {league_id}: {e}")
 
 def initialize_league_data_background(league_id, auth_dir):
-    """
-    Background task to create and populate the database for a league.
-    Updates the global status dictionary.
-    """
     global league_initialization_status
     try:
         create_database(league_id)
@@ -219,21 +208,16 @@ def initialize_league_data_background(league_id, auth_dir):
 def login():
     """Redirects user to Yahoo for authentication."""
     auth_dir = '.'
-
-    # Use keyword arguments to avoid positional argument errors.
-    # The library expects 'yahoo_consumer_key' and 'yahoo_consumer_secret'.
     query = YahooFantasySportsQuery(
         auth_dir=auth_dir,
         game_code='nhl',
         yahoo_consumer_key=YAHOO_CONSUMER_KEY,
         yahoo_consumer_secret=YAHOO_CONSUMER_SECRET
     )
-
     return redirect(query.login())
 
 @app.route('/logout')
 def logout():
-    """Clears the session and token file."""
     session.clear()
     token_file = 'private.json'
     if os.path.exists(token_file):
@@ -243,9 +227,8 @@ def logout():
 # --- API Routes ---
 @app.route('/api/user')
 def user_status():
-    """Checks if the user is logged in by looking for private.json in the root."""
+    """Checks if the user has a valid token file."""
     token_file = 'private.json'
-    # Check for the access_token within the file to be sure
     if os.path.exists(token_file):
         try:
             with open(token_file, 'r') as f:
@@ -253,30 +236,12 @@ def user_status():
                 if 'access_token' in data:
                     return jsonify({'loggedIn': True})
         except (IOError, json.JSONDecodeError):
-            pass # File might exist but be empty/corrupt, treat as logged out
+            pass
     return jsonify({'loggedIn': False})
-
-@app.route('/api/leagues')
-def get_leagues():
-    """Fetches the user's fantasy leagues for the current year."""
-    token_file = 'private.json'
-    if not os.path.exists(token_file):
-        return jsonify({'error': 'Not authenticated'}), 401
-    try:
-        auth_dir = '.'
-        # After login, private.json contains credentials, so we don't pass them.
-        # Use keywords for clarity.
-        query = YahooFantasySportsQuery(auth_dir=auth_dir, game_code='nhl')
-        leagues = query.get_leagues_by_game_code('nhl', 2025)
-        leagues_data = [{'league_id': l.league_id, 'name': l.name} for l in leagues]
-        return jsonify(leagues_data)
-    except Exception as e:
-        logging.error(f"Error fetching leagues: {e}", exc_info=True)
-        return jsonify({'error': 'Failed to fetch leagues from Yahoo. Your token might be expired.'}), 500
 
 @app.route('/api/initialize_league', methods=['POST'])
 def initialize_league():
-    """Initializes a league's database in the background."""
+    """Initializes a league's database using a manually entered ID."""
     global league_initialization_status
     data = request.get_json()
     league_id = data.get('league_id')
@@ -298,13 +263,11 @@ def initialize_league():
 
 @app.route('/api/league_status/<league_id>')
 def get_league_status(league_id):
-    """Polls for the status of league database initialization."""
-    status_info = league_initialization_status.get(league_id, {'status': 'unknown'})
+    status_info = league_initialization_status.get(str(league_id), {'status': 'unknown'})
     return jsonify(status_info)
 
 @app.route('/api/get_current_league_id')
 def get_current_league_id():
-    """Returns the league_id stored in the session."""
     league_id = session.get('league_id')
     if not league_id:
         return jsonify({'error': 'No league selected'}), 404
@@ -329,7 +292,6 @@ def get_matchups():
 
 @app.route('/api/download_db')
 def download_db():
-    """Allows downloading the league's database file."""
     league_id = session.get('league_id')
     if not league_id:
         return "No league selected.", 400
@@ -339,23 +301,18 @@ def download_db():
     return send_file(db_path, as_attachment=True)
 
 # --- Frontend Serving Routes ---
-# Note: The paths for send_from_directory are now relative to the server folder
 @app.route('/')
 def index():
-    """Serves the main login page from the client folder."""
     return send_from_directory('../client', 'index.html')
 
 @app.route('/home')
 def home():
-    """Serves the main application page after a league is selected."""
     if 'league_id' not in session:
         return redirect(url_for('index'))
     return send_from_directory('../client', 'home.html')
 
 @app.route('/<path:path>')
 def serve_static(path):
-    """Serves other static files from the client directory."""
-    # This is a general catch-all, be careful with production security
     return send_from_directory('../client', path)
 
 # --- Main Execution ---
