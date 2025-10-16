@@ -24,17 +24,6 @@ def run():
     args = _get_parsed_args(*sys.argv[1:])
     _configure_logging(True) # Always debug for background task
 
-    # Manually load credentials to pass to the fetcher classes.
-    try:
-        with open('private.json', 'r') as f:
-            creds = json.load(f)
-        consumer_key = creds.get('consumer_key')
-        consumer_secret = creds.get('consumer_secret')
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logger.critical(f"Fatal: Could not read credentials from private.json: {e}", exc_info=True)
-        sys.exit(1)
-
-
     # Database and schema paths
     db_path = os.path.join(DATABASE_DIR, f"yahoo-nhl-{args.league_id}-custom.db")
     schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
@@ -58,12 +47,7 @@ def run():
 
             # --- Run yfpy queries ---
             logger.info("--- Running yfpy queries ---")
-            fetcher = YahooDataFetcher(
-                con,
-                args.league_id,
-                yahoo_consumer_key=consumer_key,
-                yahoo_consumer_secret=consumer_secret
-            )
+            fetcher = YahooDataFetcher(con, args.league_id)
             fetcher.fetch_all_data()
 
             # --- Run yfa_queries ---

@@ -21,40 +21,30 @@ logger = logging.getLogger(__name__)
 
 class YahooDataFetcher:
     def __init__(
-        self, con, league_id, *, yahoo_consumer_key=None, yahoo_consumer_secret=None, yahoo_access_token_json=None
+        self, con, league_id
     ):
         self.con = con
         self.league_id = league_id
-        self._yahoo_consumer_key = yahoo_consumer_key
-        self._yahoo_consumer_secret = yahoo_consumer_secret
-        self._yahoo_access_token_json = yahoo_access_token_json
         self.yq = None
         self._refresh_yahoo_query()
 
 
     def _refresh_yahoo_query(self):
         logger.debug("Refreshing Yahoo query")
-        kwargs = {}
-        if self._yahoo_consumer_key and self._yahoo_consumer_secret:
-            kwargs["yahoo_consumer_key"] = self._yahoo_consumer_key
-            kwargs["yahoo_consumer_secret"] = self._yahoo_consumer_secret
-            logger.debug("Refreshing with provided credentials.")
 
-        if self._yahoo_access_token_json:
-            kwargs["yahoo_access_token_json"] = self._yahoo_access_token_json
-            logger.debug("Refreshing with provided access token.")
-
-        # The game_id is needed for some queries.
-        # We perform an initial query to get the game_id for the league.
-        yq_init = YahooFantasySportsQuery(league_id=self.league_id, game_code="nhl", **kwargs)
+        # The yfpy library will now automatically find and use the private.json
+        # file, which contains both credentials and the user's access token.
+        yq_init = YahooFantasySportsQuery(league_id=self.league_id, game_code="nhl")
         game_info = yq_init.get_current_game_info()
         game_id = game_info.game_id
 
         # Now we create the final query object with the game_id,
         # reusing the authentication token from the initial query.
-        kwargs['yahoo_access_token_json'] = yq_init._yahoo_access_token_dict
         self.yq = YahooFantasySportsQuery(
-            league_id=self.league_id, game_code="nhl", game_id=game_id, **kwargs
+            league_id=self.league_id,
+            game_code="nhl",
+            game_id=game_id,
+            yahoo_access_token_json=yq_init._yahoo_access_token_dict
         )
 
 

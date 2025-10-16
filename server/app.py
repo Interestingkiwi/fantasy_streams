@@ -250,14 +250,22 @@ def initialize_league():
     if league_id in background_processes and background_processes[league_id].poll() is None:
         return jsonify({"status": "initializing", "message": "Database initialization is already in progress."})
 
-    # Write the token from the session to a file for the subprocess to use.
-    token_data = session.get('yahoo_token_data')
-    if token_data:
-        with open('token_cache.json', 'w') as f:
-            json.dump(token_data, f)
-    else:
-        # If there's no token, we can't proceed.
-        return jsonify({"status": "error", "message": "User not authenticated, cannot initialize."}), 401
+    # Write the combined credentials and token to private.json for the subprocess to use.
+    try:
+        creds = json.loads(private_content) if private_content else {}
+        token_data = session.get('yahoo_token_data')
+        if not token_data:
+            return jsonify({"status": "error", "message": "User not authenticated, cannot initialize."}), 401
+
+        # Merge them. Token data from session takes precedence.
+        combined_auth = {**creds, **token_data}
+
+        with open(YAHOO_CREDENTIALS_FILE, 'w') as f:
+            json.dump(combined_auth, f)
+
+    except Exception as e:
+        print(f"Error creating combined auth file for subprocess: {e}")
+        return jsonify({"status": "error", "message": "Failed to prepare authentication for background task."}), 500
 
     # Run the db_initializer.py script as a background process
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
@@ -335,13 +343,22 @@ def refresh_league():
     if league_id in background_processes and background_processes[league_id].poll() is None:
         return jsonify({"status": "refreshing", "message": "A refresh is already in progress."})
 
-    # Write the token from the session to a file for the subprocess to use.
-    token_data = session.get('yahoo_token_data')
-    if token_data:
-        with open('token_cache.json', 'w') as f:
-            json.dump(token_data, f)
-    else:
-        return jsonify({"status": "error", "message": "User not authenticated, cannot refresh."}), 401
+    # Write the combined credentials and token to private.json for the subprocess to use.
+    try:
+        creds = json.loads(private_content) if private_content else {}
+        token_data = session.get('yahoo_token_data')
+        if not token_data:
+            return jsonify({"status": "error", "message": "User not authenticated, cannot refresh."}), 401
+
+        # Merge them. Token data from session takes precedence.
+        combined_auth = {**creds, **token_data}
+
+        with open(YAHOO_CREDENTIALS_FILE, 'w') as f:
+            json.dump(combined_auth, f)
+
+    except Exception as e:
+        print(f"Error creating combined auth file for subprocess: {e}")
+        return jsonify({"status": "error", "message": "Failed to prepare authentication for background task."}), 500
 
 
     # Run the db_initializer.py script, which will now handle updates.
