@@ -48,12 +48,12 @@ class YahooDataFetcher:
         game_id = game_info.game_id
 
         # Now we create the final query object with the game_id,
-        # reusing the authentication token from the initial query.
+        # reusing the full authentication data.
         self.yq = YahooFantasySportsQuery(
             league_id=self.league_id,
             game_code="nhl",
             game_id=game_id,
-            yahoo_access_token_json=yq_init._yahoo_access_token_dict
+            yahoo_access_token_json=self._auth_data
         )
 
 
