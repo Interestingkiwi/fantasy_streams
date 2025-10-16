@@ -27,20 +27,20 @@ class YfaDataFetcher:
         """
         self.con = con
         self.league_id = league_id
-        self.auth_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # server directory
         self.lg = self._authenticate_and_get_league()
 
     def _authenticate_and_get_league(self):
         """
         Authenticates with Yahoo and returns a League object.
 
-        It looks for an authentication file (private.json) in the specified
-        directory. If not found, it will initiate the OAuth2 flow.
+        It looks for an authentication file (private.json) in the current
+        working directory. If not found, it will fail.
         """
         logger.debug("Authenticating with Yahoo and getting league object...")
         try:
-            # The OAuth2 object will look for private.json in the specified auth_dir
-            sc = OAuth2(None, None, from_file=os.path.join(self.auth_dir, "private.json"))
+            # The OAuth2 object will look for private.json in the current working directory
+            # when run from the app.py script.
+            sc = OAuth2(None, None, from_file="private.json")
             lg = league.League(sc, self.league_id)
             logger.info("Authentication successful with yfa.")
             return lg
