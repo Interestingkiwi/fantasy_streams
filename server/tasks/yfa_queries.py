@@ -12,6 +12,23 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# --- DEBUGGING ---
+# Check what files are in the current directory when the script runs.
+try:
+    cwd_files = os.listdir('.')
+    logger.info(f"Files in current directory (yfa): {cwd_files}")
+    if 'private.json' in cwd_files:
+        logger.info("'private.json' found by yfa.")
+    else:
+        logger.warning("'private.json' NOT found by yfa.")
+    if 'token_cache.json' in cwd_files:
+        logger.info("'token_cache.json' found by yfa.")
+    else:
+        logger.warning("'token_cache.json' NOT found by yfa.")
+except Exception as e:
+    logger.error(f"Could not list files in current directory (yfa): {e}")
+# --- END DEBUGGING ---
+
 
 class YfaDataFetcher:
     """
@@ -27,8 +44,6 @@ class YfaDataFetcher:
         """
         self.con = con
         self.league_id = league_id
-        # The auth file is in the project root, so we go up two directories from the current script
-        self.auth_dir = os.path.join(os.path.dirname(__file__), '..', '..')
         self.lg = self._authenticate_and_get_league()
 
     def _authenticate_and_get_league(self):
@@ -40,8 +55,8 @@ class YfaDataFetcher:
         """
         logger.debug("Authenticating with Yahoo and getting league object...")
         try:
-            # The OAuth2 object will look for private.json in the specified auth_dir
-            sc = OAuth2(None, None, from_file=os.path.join(self.auth_dir, "private.json"))
+            # The OAuth2 object will look for private.json and token_cache.json
+            sc = OAuth2(None, None)
             lg = league.League(sc, self.league_id)
             logger.info("Authentication successful with yfa.")
             return lg

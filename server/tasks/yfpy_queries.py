@@ -14,20 +14,34 @@ import unicodedata
 import re
 from datetime import datetime, timedelta, date
 from yfpy.query import YahooFantasySportsQuery
-from yahoo_oauth import OAuth2
-import time
 
 
 logger = logging.getLogger(__name__)
 
+# --- DEBUGGING ---
+# Check what files are in the current directory when the script runs.
+try:
+    cwd_files = os.listdir('.')
+    logger.info(f"Files in current directory (yfpy): {cwd_files}")
+    if 'private.json' in cwd_files:
+        logger.info("'private.json' found by yfpy.")
+    else:
+        logger.warning("'private.json' NOT found by yfpy.")
+    if 'token_cache.json' in cwd_files:
+        logger.info("'token_cache.json' found by yfpy.")
+    else:
+        logger.warning("'token_cache.json' NOT found by yfpy.")
+except Exception as e:
+    logger.error(f"Could not list files in current directory (yfpy): {e}")
+# --- END DEBUGGING ---
+
 
 class YahooDataFetcher:
     def __init__(
-        self, con, league_id, *, auth_data=None
+        self, con, league_id
     ):
         self.con = con
         self.league_id = league_id
-        self._auth_data = auth_data
         self.yq = None
         self._refresh_yahoo_query()
 
@@ -35,53 +49,20 @@ class YahooDataFetcher:
     def _refresh_yahoo_query(self):
         logger.debug("Refreshing Yahoo query")
 
-        if not self._auth_data:
-            raise ValueError("Authentication data was not provided to YahooDataFetcher.")
-
-        # Manually handle token refresh to preserve the non-standard 'guid' field.
-        token_data = self._auth_data
-        expires_in = token_data.get('expires_in', 3600)
-        token_time = token_data.get('token_time', 0)
-
-        if time.time() > token_time + expires_in - 300:
-            logger.debug("yfpy_queries: Token is expired or nearing expiration, refreshing manually.")
-            try:
-                # Preserve the guid before refreshing.
-                guid = token_data.get('guid') or token_data.get('xoauth_yahoo_guid')
-
-                # Use the full credentials from private.json to perform the refresh.
-                oauth = OAuth2(None, None, from_file='private.json', **token_data)
-                oauth.refresh_access_token()
-
-                new_token_data = oauth.token_data
-                if guid and 'guid' not in new_token_data:
-                    new_token_data['guid'] = guid
-
-                self._auth_data = new_token_data  # Use the newly refreshed token data.
-                logger.debug("yfpy_queries: Token refreshed successfully.")
-
-            except Exception as e:
-                logger.error(f"Failed to refresh token within yfpy_queries: {e}")
-                raise
-
-        # The game_id is needed for some queries.
-        # We perform an initial query to get the game_id for the league.
-        yq_init = YahooFantasySportsQuery(
-            league_id=self.league_id,
-            game_code="nhl",
-            yahoo_access_token_json=self._auth_data
-        )
+        # The yfpy library will automatically find private.json and token_cache.json
+        # in the project root, because we are not passing any auth arguments.
+        yq_init = YahooFantasySportsQuery(league_id=self.league_id, game_code="nhl")
 
         game_info = yq_init.get_current_game_info()
         game_id = game_info.game_id
 
         # Now we create the final query object with the game_id,
-        # reusing the (potentially refreshed) full authentication data.
+        # reusing the authentication token from the initial query.
         self.yq = YahooFantasySportsQuery(
             league_id=self.league_id,
             game_code="nhl",
             game_id=game_id,
-            yahoo_access_token_json=self._auth_data
+            yahoo_access_token_json=yq_init._yahoo_access_token_dict
         )
 
 

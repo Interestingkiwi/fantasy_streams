@@ -29,13 +29,6 @@ def run():
     schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
     projections_db_path = os.path.join(os.path.dirname(__file__), "projections.db")
 
-
-    # Handle existing database file
-    #removed to allow for refresh data button functionality
-#    if os.path.isfile(db_path):
-#        logger.info(f"Database {db_path} already exists. Skipping creation.")
-#        sys.exit(0)
-
     try:
         with open(schema_path, "r") as f:
             schema = f.read()
@@ -45,26 +38,10 @@ def run():
             con.commit()
             logger.info("Custom DB tables created from schema.sql")
 
-            # Read all auth data from the generated private.json
-            auth_data = None
-            # The auth file is in the project root, so we go up two directories from the current script
-            auth_file_path = os.path.join(os.path.dirname(__file__), '..', '..', 'private.json')
-            if os.path.exists(auth_file_path):
-                with open(auth_file_path, 'r') as f:
-                    auth_data = json.load(f)
-
-            if not auth_data:
-                logger.critical("Could not find or load auth data from private.json")
-                sys.exit(1)
-
-
             # --- Run yfpy queries ---
             logger.info("--- Running yfpy queries ---")
-            fetcher = YahooDataFetcher(
-                con,
-                args.league_id,
-                auth_data=auth_data
-            )
+            # The fetcher will now find the credential files on its own
+            fetcher = YahooDataFetcher(con, args.league_id)
             fetcher.fetch_all_data()
 
             # --- Run yfa_queries ---
