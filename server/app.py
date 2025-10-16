@@ -264,24 +264,29 @@ def get_leagues():
         return jsonify({"error": "Failed to fetch data from Yahoo API."}), 500
 
 def _start_db_process(league_id):
-    """Helper to write auth files and start the background DB process."""
+    """Helper to create auth env var and start the background DB process."""
     token_data = _get_valid_token_from_session()
     if not token_data:
         app.logger.error("User token not found in session.")
         return False, "User token not found in session."
 
-    # Write the token cache file to the root directory where the script runs.
-    token_cache_path = 'token_cache.json'
-    app.logger.info(f"Writing token data with keys: {token_data.keys()} to {token_cache_path}")
-    with open(token_cache_path, 'w') as f:
-        json.dump(token_data, f)
+    # Merge app credentials with user token.
+    with open(YAHOO_CREDENTIALS_FILE, 'r') as f:
+        creds = json.load(f)
+    full_auth_data = {**token_data, **creds}
+
+    # Serialize the full auth data to a JSON string.
+    auth_data_string = json.dumps(full_auth_data)
 
     if league_id in background_processes and background_processes[league_id].poll() is None:
         return True, "already_running"
 
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
+
+    # Pass the auth data string as an environment variable.
     proc_env = os.environ.copy()
     proc_env['DATABASE_DIR'] = DATABASE_DIR
+    proc_env['YAHOO_FULL_AUTH'] = auth_data_string
 
     process = subprocess.Popen(['python', script_path, str(league_id)], env=proc_env)
     background_processes[league_id] = process

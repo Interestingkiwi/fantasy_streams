@@ -28,24 +28,24 @@ def run():
     db_path = os.path.join(DATABASE_DIR, f"yahoo-nhl-{args.league_id}-custom.db")
     schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
     projections_db_path = os.path.join(os.path.dirname(__file__), "projections.db")
-    auth_file_path = os.path.join(DATABASE_DIR, 'auth.json')
 
-    # --- DEBUGGING: Check for auth file ---
-    if os.path.exists(auth_file_path):
-        logger.info(f"Auth file found at: {auth_file_path}")
-        with open(auth_file_path, 'r') as f:
-            auth_data_check = json.load(f)
-            logger.info(f"Auth file contains keys: {auth_data_check.keys()}")
-    else:
-        logger.error(f"Auth file NOT found at: {auth_file_path}")
-        sys.exit(1) # Exit if auth file is missing
+    # Read auth data from the environment variable.
+    auth_data_string = os.environ.get('YAHOO_FULL_AUTH')
+    if not auth_data_string:
+        logger.error("YAHOO_FULL_AUTH environment variable not found.")
+        sys.exit(1)
+
+    try:
+        auth_data = json.loads(auth_data_string)
+        logger.info(f"Successfully loaded auth data from environment. Keys: {auth_data.keys()}")
+    except json.JSONDecodeError:
+        logger.error("Failed to parse auth data from YAHOO_FULL_AUTH environment variable.")
+        sys.exit(1)
+
 
     try:
         with open(schema_path, "r") as f:
             schema = f.read()
-
-        with open(auth_file_path, 'r') as f:
-            auth_data = json.load(f)
 
         with _get_db_connection(db_path) as con:
             con.executescript(schema)
