@@ -1,7 +1,0 @@
-Flask>=2.0
-requests
-requests-oauthlib
-gunicorn>=20.0
-yfpy>=2.0
-yahoo-oauth
-yahoo_fantasy_api
