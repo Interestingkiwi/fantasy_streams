@@ -242,7 +242,7 @@ def initialize_league():
     db_filename = f"yahoo-nhl-{league_id}-custom.db"
     db_path = os.path.join(DATABASE_DIR, db_filename) # Use the configured directory
 
-        if os.path.exists(db_path):
+    if os.path.exists(db_path):
         session['current_league_id'] = league_id
         return jsonify({"status": "exists", "message": "Database already exists."})
 
@@ -261,7 +261,7 @@ def initialize_league():
 
     # Run the db_initializer.py script as a background process
     script_path = os.path.join('server', 'tasks', 'db_initializer.py')
-    
+
     # Pass credentials AND the database directory to the subprocess environment
     proc_env = os.environ.copy()
     proc_env['YAHOO_PRIVATE_JSON'] = private_content or ""
