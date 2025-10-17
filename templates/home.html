@@ -32,22 +32,37 @@
             </button>
         </div>
 
-        <div id="toggle-buttons-container" class="flex items-center gap-2">
-            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+        <div id="toggle-buttons-container" class="flex items-center gap-2 mb-4">
+            <button data-page="matchup" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
                 Matchup
             </button>
-            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+            <button data-page="lineups" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
                 Lineups
             </button>
-            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+            <button data-page="free-agents" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
                 Free Agents
             </button>
-            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+            <button data-page="goalie-planning" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
                 Goalie Planning
             </button>
-            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
-                League Data
+            <button data-page="league-data" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                League Data Query
             </button>
+            <script>
+                const isDevelopment = true; // Set to false for production
+                if (isDevelopment) {
+                    document.write(`
+                        <button data-page="db" class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                            DB
+                        </button>
+                    `);
+                }
+            </script>
+        </div>
+
+        <!-- Page Content Area -->
+        <div id="page-content" class="bg-gray-800 border border-gray-700 rounded-lg p-4 min-h-[60vh]">
+            <!-- Content from other HTML files will be loaded here -->
         </div>
     </div>
 
@@ -55,6 +70,7 @@
 
     <script>
         const toggleButtons = document.querySelectorAll('.toggle-btn');
+        const pageContent = document.getElementById('page-content');
 
         // Define the classes for each state
         const activeClasses = ['bg-blue-600', 'text-white'];
@@ -70,16 +86,52 @@
             }
         }
 
-        toggleButtons.forEach((button, index) => {
-            // Set the first button as active by default
-            setButtonState(button, index === 0);
+        async function loadPage(pageName) {
+            try {
+                // Add a loading state
+                pageContent.innerHTML = `<p class="text-gray-400">Loading ${pageName.replace(/-/g, ' ')}...</p>`;
 
+                const response = await fetch(`pages/${pageName}.html`);
+                if (!response.ok) {
+                    throw new Error(`Page not found: ${pageName}.html`);
+                }
+                const content = await response.text();
+                pageContent.innerHTML = content;
+
+                // Scripts inside the fetched HTML will be executed by the browser.
+            } catch (error) {
+                console.error('Error loading page:', error);
+                pageContent.innerHTML = `<p class="text-red-400">Error loading page content. Check the console for details.</p>`;
+            }
+        }
+
+        toggleButtons.forEach((button) => {
             button.addEventListener('click', () => {
+                const pageToLoad = button.getAttribute('data-page');
+
                 // Set all buttons to inactive first
                 toggleButtons.forEach(btn => setButtonState(btn, false));
+
                 // Then set the clicked button to active
                 setButtonState(button, true);
+
+                // Load the page content
+                loadPage(pageToLoad);
             });
+        });
+
+        // Initial load on DOM content ready
+        document.addEventListener('DOMContentLoaded', () => {
+             // Set the first button as active by default and load its content
+            const firstButton = toggleButtons[0];
+            if (firstButton) {
+                // Set active/inactive classes for all buttons
+                toggleButtons.forEach((btn, index) => {
+                    setButtonState(btn, index === 0);
+                });
+                // Load the page for the first button
+                loadPage(firstButton.getAttribute('data-page'));
+            }
         });
     </script>
 </body>
