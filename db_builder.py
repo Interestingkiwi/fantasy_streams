@@ -58,7 +58,10 @@ def update_league_db(yq, league_id, data_dir):
         # First, get league metadata to determine the correct filename
         logging.info("Fetching league metadata to determine filename...")
         league_metadata = yq.get_league_metadata()
-        sanitized_name = re.sub(r'[\\/*?:"<>|]', "", league_metadata.name)
+
+        # Decode league_metadata.name to a string before using it with re.sub
+        league_name_str = league_metadata.name.decode('utf-8', 'ignore')
+        sanitized_name = re.sub(r'[\\/*?:"<>|]', "", league_name_str)
 
         # Clean up any old database files for this league ID
         for f in os.listdir(data_dir):
