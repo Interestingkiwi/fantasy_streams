@@ -19,6 +19,14 @@ def _create_tables(cursor):
             value TEXT
         )
     ''')
+    # Table for teams
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS teams (
+            team_id TEXT PRIMARY KEY,
+            name TEXT,
+            manager_nickname TEXT
+        )
+    ''')
     # --- Add other CREATE TABLE statements for future queries here ---
 
 
@@ -37,6 +45,37 @@ def _update_league_info(yq, cursor, league_id, league_name):
                    ('league_id', league_id))
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
                    ('league_name', league_name))
+
+
+def _update_teams_info(yq, cursor):
+    """
+    Fetches team data and updates the teams table.
+
+    Args:
+        yq: An authenticated yfpy query object.
+        cursor: A sqlite3 cursor object.
+    """
+    logging.info("Updating teams table...")
+    try:
+        teams = yq.get_league_teams()
+
+        teams_data_to_insert = []
+        for team in teams:
+            # Extract team data.
+            team_id = team.team_id
+            team_name = team.name
+
+            manager_nickname = None  # Default to None
+            if team.managers and team.managers[0].nickname:
+                manager_nickname = team.managers[0].nickname
+
+            teams_data_to_insert.append((team_id, team_name, manager_nickname))
+
+        sql = "INSERT OR IGNORE INTO teams (team_id, name, manager_nickname) VALUES (?, ?, ?)"
+        cursor.executemany(sql, teams_data_to_insert)
+        logging.info(f"Successfully inserted or ignored data for {len(teams_data_to_insert)} teams.")
+    except Exception as e:
+        logging.error(f"Failed to update teams info: {e}", exc_info=True)
 
 
 def update_league_db(yq, league_id, data_dir):
@@ -82,6 +121,7 @@ def update_league_db(yq, league_id, data_dir):
         # --- Call functions to build/update the database ---
         _create_tables(cursor)
         _update_league_info(yq, cursor, league_id, sanitized_name)
+        _update_teams_info(yq, cursor)
         # --- As you add more queries, you will call their functions here ---
 
         conn.commit()
