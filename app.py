@@ -43,11 +43,19 @@ def model_to_dict(obj):
 @app.route('/')
 def index():
     """
-    Renders the main page, showing either the login form or the query terminal
-    based on whether the user is authenticated.
+    Renders the login page if the user is not authenticated, otherwise
+    redirects them to the main home page.
     """
-    is_authenticated = 'yahoo_token' in session
-    return render_template('index.html', is_authenticated=is_authenticated)
+    if 'yahoo_token' in session:
+        return redirect(url_for('home'))
+    return render_template('index.html')
+
+@app.route('/home')
+def home():
+    """ Renders the main application page if authenticated, otherwise redirects to login. """
+    if 'yahoo_token' not in session:
+        return redirect(url_for('index'))
+    return render_template('home.html')
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -108,7 +116,7 @@ def callback():
         logging.error(f"Error fetching token in callback: {e}", exc_info=True)
         return '<h1>Error: Could not fetch access token from Yahoo. Please try again.</h1>', 500
 
-    return redirect(url_for('index'))
+    return redirect(url_for('home'))
 
 @app.route('/logout')
 def logout():

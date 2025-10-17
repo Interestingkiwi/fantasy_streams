@@ -1,4 +1,81 @@
 <div class="space-y-4">
-    <h2 class="text-xl font-bold text-white">League Data</h2>
-    <p class="text-gray-400">League Data page content will go here.</p>
+    <h2 class="text-xl font-bold text-white">League Data Query</h2>
+    <p class="text-gray-400">Use the terminal below to execute live queries against the Yahoo Fantasy API using the <a href="https://github.com/spilchen/yfpy" target="_blank" class="text-blue-400 hover:underline">yfpy</a> library. The `yq` object is already initialized for your league.</p>
+
+    <!-- TERMINAL VIEW -->
+    <div id="terminal-view">
+         <div class="terminal w-full h-[60vh] p-4 rounded-lg shadow-inner overflow-y-auto" id="terminal-output-container">
+            <div id="terminal-output" class="terminal-output">Welcome! Type a yfpy query and press Enter. Example: yq.get_league_teams()</div>
+        </div>
+        <div class="mt-4 flex">
+            <span class="p-2 text-gray-400">$</span>
+            <input type="text" id="terminal-input" class="terminal w-full p-2 rounded-lg focus:outline-none" placeholder="yq.get_league_metadata()">
+        </div>
+    </div>
 </div>
+
+<script>
+    // This script runs when the league-data.html content is loaded into the home page.
+    (function() {
+        const terminalInput = document.getElementById('terminal-input');
+        const terminalOutput = document.getElementById('terminal-output');
+        const terminalOutputContainer = document.getElementById('terminal-output-container');
+
+        // Check if the elements exist to avoid errors if this page is not loaded
+        if (!terminalInput || !terminalOutput || !terminalOutputContainer) {
+            console.error("Terminal elements not found. The script might be running in the wrong context.");
+            return;
+        }
+
+        const appendToTerminal = (text, type = 'output') => {
+            const line = document.createElement('div');
+            if (type === 'input') {
+                line.innerHTML = `<span class="text-gray-500 mr-2">$</span>${text}`;
+            } else if (type === 'error') {
+                line.innerHTML = `<span class="text-red-400">${text}</span>`;
+            } else {
+                line.textContent = text;
+            }
+            terminalOutput.appendChild(line);
+            terminalOutputContainer.scrollTop = terminalOutputContainer.scrollHeight;
+        };
+
+        const handleTerminalInput = async (e) => {
+            if (e.key === 'Enter') {
+                const query = terminalInput.value;
+                if (!query) return;
+
+                appendToTerminal(query, 'input');
+                terminalInput.value = '';
+
+                try {
+                    const response = await fetch('/query', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: query })
+                    });
+
+                    const data = await response.json();
+                    if (response.status === 401) {
+                        appendToTerminal(`Error: ${data.error}`, 'error');
+                        setTimeout(() => window.location.href = '/logout', 2000);
+                        return;
+                    }
+                    if (!response.ok) {
+                        throw new Error(data.error || 'An unknown error occurred.');
+                    }
+                    appendToTerminal(data.result);
+                } catch (error) {
+                    appendToTerminal(`Error: ${error.message}`, 'error');
+                }
+            }
+        };
+
+        // We need to check if the event listener is already attached to avoid duplicates
+        // when the user navigates back and forth between tabs.
+        // A simple way is to remove it before adding it.
+        terminalInput.removeEventListener('keydown', handleTerminalInput);
+        terminalInput.addEventListener('keydown', handleTerminalInput);
+
+    })();
+</script>
