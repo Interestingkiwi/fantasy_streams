@@ -180,6 +180,12 @@ def serve_pages(path):
     """Serves the HTML pages from the templates/pages directory."""
     return send_from_directory('templates/pages', path)
 
+# Add a new route to serve static files like CSS and JS
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('static', filename)
+
+
 if __name__ == '__main__':
     # Make sure to set FLASK_SECRET_KEY in your environment for local testing
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # Allows http for local dev

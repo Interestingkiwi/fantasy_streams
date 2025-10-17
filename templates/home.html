@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body class="bg-gray-900 text-white">
 
@@ -66,7 +66,7 @@
         </div>
     </div>
 
-    <script src="home.js"></script>
+    <script src="{{ url_for('static', filename='home.js') }}"></script>
 
     <script>
         const toggleButtons = document.querySelectorAll('.toggle-btn');
@@ -91,19 +91,37 @@
                 // Add a loading state
                 pageContent.innerHTML = `<p class="text-gray-400">Loading ${pageName.replace(/-/g, ' ')}...</p>`;
 
-                const response = await fetch(`pages/${pageName}.html`);
+                const response = await fetch(`/pages/${pageName}.html`);
                 if (!response.ok) {
                     throw new Error(`Page not found: ${pageName}.html`);
                 }
                 const content = await response.text();
                 pageContent.innerHTML = content;
 
-                // Scripts inside the fetched HTML will be executed by the browser.
+                // After setting the innerHTML, find and execute the script
+                const scriptElement = pageContent.querySelector('script');
+                if (scriptElement) {
+                    const newScript = document.createElement('script');
+                    // If the script has a 'src' attribute, load it
+                    if (scriptElement.src) {
+                        newScript.src = scriptElement.src;
+                        newScript.onload = () => console.log(`${pageName}.js loaded from src`);
+                        document.body.appendChild(newScript);
+                    } else {
+                        // Otherwise, execute its inline content
+                        newScript.innerHTML = scriptElement.innerHTML;
+                        document.body.appendChild(newScript);
+                    }
+                    // The original script tag from the fetched HTML is not executed,
+                    // so we don't need to remove it.
+                }
+
             } catch (error) {
                 console.error('Error loading page:', error);
                 pageContent.innerHTML = `<p class="text-red-400">Error loading page content. Check the console for details.</p>`;
             }
         }
+
 
         toggleButtons.forEach((button) => {
             button.addEventListener('click', () => {
