@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>yfpy Web Terminal</title>
+    <title>H2H Fantasy Analyser</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
@@ -26,7 +26,7 @@
 <body class="bg-gray-900 text-gray-200 flex flex-col min-h-screen">
 
     <header class="bg-gray-800 shadow-md p-4 flex justify-between items-center">
-        <h1 class="text-2xl font-bold text-white">yfpy Web Terminal</h1>
+        <h1 class="text-2xl font-bold text-white">H2H Fantasy Analyser</h1>
         {% if is_authenticated %}
             <a href="/logout" class="btn-secondary py-2 px-4 rounded-md transition-colors duration-200">Logout</a>
         {% endif %}
@@ -40,9 +40,16 @@
 
                 <div id="credentials-view">
                     <h2 class="text-xl font-semibold mb-6 text-center">Enter League ID</h2>
+                    <p class="text-gray-300 text-center mt-6">
+                        In order to access the tool, please enter the ID for the league you'd like to analyse.
+                    </p>
+                    <hr class="my-4 border-gray-700">
+                    <p class="text-gray-300 text-center">
+                        To find your league ID, go to <a href="https://hockey.fantasysports.yahoo.com/hockey/" target="_blank" class="text-blue-400 hover:underline">Yahoo Fantasy</a>, hover over League, and click settings. League ID is the first value shown.
+                    </p>
                     <form id="credentials-form" class="space-y-4">
                         <div>
-                            <label for="league_id" class="block mb-2 text-sm font-medium">League ID</label>
+                            <label for="league_id" class="block mb-2 text-sm font-medium"></label>
                             <input type="text" id="league_id" class="form-input w-full p-2.5 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 12345" required>
                         </div>
                         <button type="submit" class="w-full btn-primary font-medium rounded-md text-sm px-5 py-2.5 text-center transition-colors duration-200">
