@@ -1,7 +1,9 @@
 <div class="space-y-4">
     <h2 class="text-xl font-bold text-white">League Database</h2>
-    <p class="text-gray-400">Your league: [league_name if file initialized already OR [Unknown]]'s data is up to date as of: [timestamp of when the db was last updated OR please initialize Db]</p>
-    <button id="terminal-submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
-        Initialize Database / Update Database
+    <p id="db-status-text" class="text-gray-400">Checking database status...</p>
+    <button id="db-action-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 opacity-50 cursor-not-allowed" disabled>
+        Loading...
     </button>
 </div>
+
+<script src="{{ url_for('static', filename='league-database.js') }}"></script>
