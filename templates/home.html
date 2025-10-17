@@ -71,6 +71,7 @@
     <script>
         const toggleButtons = document.querySelectorAll('.toggle-btn');
         const pageContent = document.getElementById('page-content');
+        let currentPageScript = null; // Keep track of the current page's script
 
         // Define the classes for each state
         const activeClasses = ['bg-blue-600', 'text-white'];
@@ -88,6 +89,12 @@
 
         async function loadPage(pageName) {
             try {
+                // Remove the old page's script to prevent duplicate event listeners
+                if (currentPageScript) {
+                    currentPageScript.remove();
+                    currentPageScript = null;
+                }
+
                 // Add a loading state
                 pageContent.innerHTML = `<p class="text-gray-400">Loading ${pageName.replace(/-/g, ' ')}...</p>`;
 
@@ -102,18 +109,16 @@
                 const scriptElement = pageContent.querySelector('script');
                 if (scriptElement) {
                     const newScript = document.createElement('script');
-                    // If the script has a 'src' attribute, load it
                     if (scriptElement.src) {
                         newScript.src = scriptElement.src;
                         newScript.onload = () => console.log(`${pageName}.js loaded from src`);
                         document.body.appendChild(newScript);
                     } else {
-                        // Otherwise, execute its inline content
                         newScript.innerHTML = scriptElement.innerHTML;
                         document.body.appendChild(newScript);
                     }
-                    // The original script tag from the fetched HTML is not executed,
-                    // so we don't need to remove it.
+                    currentPageScript = newScript; // Store the new script
+                    scriptElement.remove(); // Remove the original script from the page content
                 }
 
             } catch (error) {
@@ -140,14 +145,14 @@
 
         // Initial load on DOM content ready
         document.addEventListener('DOMContentLoaded', () => {
-             // Set the first button as active by default and load its content
-            const firstButton = toggleButtons[0];
+             // Re-query toggleButtons inside DOMContentLoaded to include the DB button
+            const allToggleButtons = document.querySelectorAll('.toggle-btn');
+            const firstButton = allToggleButtons[0];
+
             if (firstButton) {
-                // Set active/inactive classes for all buttons
-                toggleButtons.forEach((btn, index) => {
+                allToggleButtons.forEach((btn, index) => {
                     setButtonState(btn, index === 0);
                 });
-                // Load the page for the first button
                 loadPage(firstButton.getAttribute('data-page'));
             }
         });
