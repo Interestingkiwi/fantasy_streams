@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from yfpy.query import YahooFantasySportsQuery
 from requests_oauthlib import OAuth2Session
 import time
@@ -174,6 +174,11 @@ def handle_query():
         if 'token_expired' in str(e).lower():
              return jsonify({"error": f"Your session has expired. Please log out and log in again."}), 401
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+@app.route('/pages/<path:path>')
+def serve_pages(path):
+    """Serves the HTML pages from the templates/pages directory."""
+    return send_from_directory('templates/pages', path)
 
 if __name__ == '__main__':
     # Make sure to set FLASK_SECRET_KEY in your environment for local testing
