@@ -4,7 +4,7 @@ body {
 }
 
 /* Terminal Styles */
-.terminal {
+.terminal, input.terminal { /* Target both divs and inputs with this class */
     background-color: #1E1E1E;
     color: #D4D4D4;
     font-family: 'Courier New', Courier, monospace;

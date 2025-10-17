@@ -114,7 +114,7 @@
                             newScript.onload = () => console.log(`${pageName}.js loaded from src`);
                             document.body.appendChild(newScript);
                         } else {
-                            newScript.innerHTML = scriptElement.innerHTML;
+                            newScript.textContent = scriptElement.textContent; // Use textContent for security
                             document.body.appendChild(newScript);
                         }
                         currentPageScript = newScript; // Store the new script
