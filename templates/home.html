@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - H2H Fantasy Optimizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-900 text-white">
+
+    <div class="p-4">
+        <div class="flex justify-between items-start mb-4">
+            <div class="flex items-center gap-4">
+                <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+                    League Home
+                </h1>
+                <main class="bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-2 w-fit">
+                    <p id="timestamp-text" class="text-gray-400 text-xs">Loading league data...</p>
+                    <p class="text-gray-400 text-xs">Projection data is sourced by reddit user: <a href="https://www.reddit.com/r/fantasyhockey/comments/1n1wsqc/dtz_20252026_nhl_projections/" target="_blank" class="text-blue-400 hover:underline">Datsyuktozetterberg</a></p>
+                </main>
+                <button id="refresh-data-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-2 text-xs rounded-lg transition duration-300 ease-in-out">
+                    Refresh League Data
+                </button>
+            </div>
+
+            <button id="logout-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 ease-in-out">
+                Logout
+            </button>
+        </div>
+
+        <div id="toggle-buttons-container" class="flex items-center gap-2">
+            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                Matchup
+            </button>
+            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                Lineups
+            </button>
+            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                Free Agents
+            </button>
+            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                Goalie Planning
+            </button>
+            <button class="toggle-btn px-4 py-2 text-sm font-medium rounded-lg transition">
+                League Data
+            </button>
+        </div>
+    </div>
+
+    <script src="home.js"></script>
+
+    <script>
+        const toggleButtons = document.querySelectorAll('.toggle-btn');
+
+        // Define the classes for each state
+        const activeClasses = ['bg-blue-600', 'text-white'];
+        const inactiveClasses = ['bg-gray-700', 'text-gray-300', 'hover:bg-gray-600'];
+
+        function setButtonState(button, isActive) {
+            if (isActive) {
+                button.classList.remove(...inactiveClasses);
+                button.classList.add(...activeClasses);
+            } else {
+                button.classList.remove(...activeClasses);
+                button.classList.add(...inactiveClasses);
+            }
+        }
+
+        toggleButtons.forEach((button, index) => {
+            // Set the first button as active by default
+            setButtonState(button, index === 0);
+
+            button.addEventListener('click', () => {
+                // Set all buttons to inactive first
+                toggleButtons.forEach(btn => setButtonState(btn, false));
+                // Then set the clicked button to active
+                setButtonState(button, true);
+            });
+        });
+    </script>
+</body>
+</html>
