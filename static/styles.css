@@ -2,3 +2,16 @@
 body {
     font-family: 'Inter', sans-serif;
 }
+
+/* Terminal Styles */
+.terminal {
+    background-color: #1E1E1E;
+    color: #D4D4D4;
+    font-family: 'Courier New', Courier, monospace;
+    border: 1px solid #4a5568; /* Added a subtle border */
+}
+
+.terminal-output {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}

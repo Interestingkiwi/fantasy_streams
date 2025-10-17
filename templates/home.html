@@ -69,86 +69,84 @@
     <script src="{{ url_for('static', filename='home.js') }}"></script>
 
     <script>
-        const toggleButtons = document.querySelectorAll('.toggle-btn');
-        const pageContent = document.getElementById('page-content');
-        let currentPageScript = null; // Keep track of the current page's script
-
-        // Define the classes for each state
-        const activeClasses = ['bg-blue-600', 'text-white'];
-        const inactiveClasses = ['bg-gray-700', 'text-gray-300', 'hover:bg-gray-600'];
-
-        function setButtonState(button, isActive) {
-            if (isActive) {
-                button.classList.remove(...inactiveClasses);
-                button.classList.add(...activeClasses);
-            } else {
-                button.classList.remove(...activeClasses);
-                button.classList.add(...inactiveClasses);
-            }
-        }
-
-        async function loadPage(pageName) {
-            try {
-                // Remove the old page's script to prevent duplicate event listeners
-                if (currentPageScript) {
-                    currentPageScript.remove();
-                    currentPageScript = null;
-                }
-
-                // Add a loading state
-                pageContent.innerHTML = `<p class="text-gray-400">Loading ${pageName.replace(/-/g, ' ')}...</p>`;
-
-                const response = await fetch(`/pages/${pageName}.html`);
-                if (!response.ok) {
-                    throw new Error(`Page not found: ${pageName}.html`);
-                }
-                const content = await response.text();
-                pageContent.innerHTML = content;
-
-                // After setting the innerHTML, find and execute the script
-                const scriptElement = pageContent.querySelector('script');
-                if (scriptElement) {
-                    const newScript = document.createElement('script');
-                    if (scriptElement.src) {
-                        newScript.src = scriptElement.src;
-                        newScript.onload = () => console.log(`${pageName}.js loaded from src`);
-                        document.body.appendChild(newScript);
-                    } else {
-                        newScript.innerHTML = scriptElement.innerHTML;
-                        document.body.appendChild(newScript);
-                    }
-                    currentPageScript = newScript; // Store the new script
-                    scriptElement.remove(); // Remove the original script from the page content
-                }
-
-            } catch (error) {
-                console.error('Error loading page:', error);
-                pageContent.innerHTML = `<p class="text-red-400">Error loading page content. Check the console for details.</p>`;
-            }
-        }
-
-
-        toggleButtons.forEach((button) => {
-            button.addEventListener('click', () => {
-                const pageToLoad = button.getAttribute('data-page');
-
-                // Set all buttons to inactive first
-                toggleButtons.forEach(btn => setButtonState(btn, false));
-
-                // Then set the clicked button to active
-                setButtonState(button, true);
-
-                // Load the page content
-                loadPage(pageToLoad);
-            });
-        });
-
-        // Initial load on DOM content ready
         document.addEventListener('DOMContentLoaded', () => {
-             // Re-query toggleButtons inside DOMContentLoaded to include the DB button
-            const allToggleButtons = document.querySelectorAll('.toggle-btn');
-            const firstButton = allToggleButtons[0];
+            const pageContent = document.getElementById('page-content');
+            let currentPageScript = null; // Keep track of the current page's script
 
+            // Define the classes for each state
+            const activeClasses = ['bg-blue-600', 'text-white'];
+            const inactiveClasses = ['bg-gray-700', 'text-gray-300', 'hover:bg-gray-600'];
+
+            function setButtonState(button, isActive) {
+                if (isActive) {
+                    button.classList.remove(...inactiveClasses);
+                    button.classList.add(...activeClasses);
+                } else {
+                    button.classList.remove(...activeClasses);
+                    button.classList.add(...inactiveClasses);
+                }
+            }
+
+            async function loadPage(pageName) {
+                try {
+                    // Remove the old page's script to prevent duplicate event listeners
+                    if (currentPageScript) {
+                        currentPageScript.remove();
+                        currentPageScript = null;
+                    }
+
+                    // Add a loading state
+                    pageContent.innerHTML = `<p class="text-gray-400">Loading ${pageName.replace(/-/g, ' ')}...</p>`;
+
+                    const response = await fetch(`/pages/${pageName}.html`);
+                    if (!response.ok) {
+                        throw new Error(`Page not found: ${pageName}.html`);
+                    }
+                    const content = await response.text();
+                    pageContent.innerHTML = content;
+
+                    // After setting the innerHTML, find and execute the script
+                    const scriptElement = pageContent.querySelector('script');
+                    if (scriptElement) {
+                        const newScript = document.createElement('script');
+                        if (scriptElement.src) {
+                            newScript.src = scriptElement.src;
+                            newScript.onload = () => console.log(`${pageName}.js loaded from src`);
+                            document.body.appendChild(newScript);
+                        } else {
+                            newScript.innerHTML = scriptElement.innerHTML;
+                            document.body.appendChild(newScript);
+                        }
+                        currentPageScript = newScript; // Store the new script
+                        scriptElement.remove(); // Remove the original script from the page content
+                    }
+
+                } catch (error) {
+                    console.error('Error loading page:', error);
+                    pageContent.innerHTML = `<p class="text-red-400">Error loading page content. Check the console for details.</p>`;
+                }
+            }
+
+            // This needs to be done inside DOMContentLoaded to ensure all buttons exist
+            const allToggleButtons = document.querySelectorAll('.toggle-btn');
+
+            allToggleButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    const pageToLoad = button.getAttribute('data-page');
+
+                    // Set all buttons to inactive first
+                    allToggleButtons.forEach(btn => setButtonState(btn, false));
+
+                    // Then set the clicked button to active
+                    setButtonState(button, true);
+
+                    // Load the page content
+                    loadPage(pageToLoad);
+                });
+            });
+
+            // Initial load
+            const firstButton = allToggleButtons[0];
             if (firstButton) {
                 allToggleButtons.forEach((btn, index) => {
                     setButtonState(btn, index === 0);
