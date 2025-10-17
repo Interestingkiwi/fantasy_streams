@@ -26,10 +26,11 @@
         try {
             const response = await fetch('/api/db_status');
             const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to fetch status');
             updateStatus(data);
         } catch (error) {
             console.error('Error fetching DB status:', error);
-            statusText.textContent = 'Could not determine database status.';
+            statusText.textContent = `Could not determine database status. ${error.message}`;
             actionButton.textContent = 'Error';
         } finally {
             actionButton.disabled = false;
@@ -42,27 +43,30 @@
         actionButton.classList.add('opacity-50', 'cursor-not-allowed');
         const originalText = actionButton.textContent;
         actionButton.textContent = 'Processing...';
-        statusText.textContent = 'Running query and updating database... this may take a moment.';
+        // Set temporary text while the database is being built
+        statusText.textContent = 'Building database file, this may take a few minutes.';
 
         try {
             const response = await fetch('/api/update_db', { method: 'POST' });
             const data = await response.json();
 
             if (!response.ok || !data.success) {
-                throw new Error(data.error || 'An unknown error occurred.');
+                throw new Error(data.error || 'An unknown error occurred during the update.');
             }
 
-            // Update UI with new data from the server
-            updateStatus(data);
+            // Instead of manually updating, just re-fetch the status from the server
+            // This ensures the UI is correctly updated with the new timestamp.
+            await fetchStatus();
 
         } catch (error) {
             console.error('Error performing DB action:', error);
             statusText.textContent = `Error: ${error.message}`;
             actionButton.textContent = originalText; // Revert button text on error
-        } finally {
+            // Re-enable the button on failure
             actionButton.disabled = false;
             actionButton.classList.remove('opacity-50', 'cursor-not-allowed');
         }
+        // The finally block in fetchStatus will re-enable the button on success.
     };
 
     actionButton.addEventListener('click', handleDbAction);

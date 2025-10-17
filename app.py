@@ -171,6 +171,29 @@ def update_db_route():
     else:
         return jsonify(result), 500
 
+@app.route('/api/download_db')
+def download_db():
+    league_id = session.get('league_id')
+    if not league_id:
+        return jsonify({'error': 'Not logged in or session expired.'}), 401
+
+    db_filename = None
+    # Find the database file associated with the user's league_id
+    for filename in os.listdir(DATA_DIR):
+        if filename.startswith(f"yahoo-{league_id}-") and filename.endswith(".db"):
+            db_filename = filename
+            break
+
+    if not db_filename:
+        # If no file is found, inform the user
+        return jsonify({'error': 'Database file not found. Please create it on the "League Database" page first.'}), 404
+
+    try:
+        # Use send_from_directory to securely send the file for download
+        return send_from_directory(DATA_DIR, db_filename, as_attachment=True)
+    except Exception as e:
+        logging.error(f"Error sending database file: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while trying to download the file.'}), 500
 
 @app.route('/pages/<path:page_name>')
 def serve_page(page_name):
