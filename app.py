@@ -1,19 +1,26 @@
 import os
 import json
 import logging
+import sqlite3
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from yfpy.query import YahooFantasySportsQuery
 from requests_oauthlib import OAuth2Session
 import time
+import re
+# Import the new database builder module
+import db_builder
 
 # --- Flask App Configuration ---
+# Assume a 'data' directory exists for storing database files
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
 app = Flask(__name__)
-# A secret key is required for Flask to securely manage user sessions.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-strong-dev-secret-key-for-local-testing")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Yahoo OAuth2 Settings ---
-# These are the standard URLs for Yahoo's OAuth2 implementation
 authorization_base_url = 'https://api.login.yahoo.com/oauth2/request_auth'
 token_url = 'https://api.login.yahoo.com/oauth2/get_token'
 
@@ -38,6 +45,33 @@ def model_to_dict(obj):
             result[key] = model_to_dict(value)
     return result
 
+def get_yfpy_instance():
+    """Helper function to get an authenticated yfpy instance."""
+    if 'yahoo_token' not in session:
+        return None
+
+    token = session['yahoo_token']
+    auth_data = {
+        'consumer_key': session['consumer_key'],
+        'consumer_secret': session['consumer_secret'],
+        'access_token': token.get('access_token'),
+        'refresh_token': token.get('refresh_token'),
+        'token_type': token.get('token_type', 'bearer'),
+        'token_time': token.get('expires_at', time.time() + token.get('expires_in', 3600)),
+        'guid': token.get('xoauth_yahoo_guid')
+    }
+    try:
+        yq = YahooFantasySportsQuery(
+            int(session['league_id']),
+            game_code="nhl",
+            yahoo_access_token_json=auth_data
+        )
+        return yq
+    except Exception as e:
+        logging.error(f"Failed to init yfpy: {e}", exc_info=True)
+        return None
+
+
 @app.route('/')
 def index():
     if 'yahoo_token' in session:
@@ -59,8 +93,8 @@ def login():
 
     if not all([session['league_id'], session['consumer_key'], session['consumer_secret']]):
         if not session['consumer_key'] or not session['consumer_secret']:
-            logging.error("YAHOO_CONSUMER_KEY or YAHOO_CONSUMER_SECRET environment variables not set on the server.")
-            return jsonify({"error": "Server is not configured correctly. Missing API credentials."}), 500
+            logging.error("YAHOO_CONSUMER_KEY or YAHOO_CONSUMER_SECRET not set.")
+            return jsonify({"error": "Server is not configured correctly."}), 500
         return jsonify({"error": "League ID is required."}), 400
 
     redirect_uri = url_for('callback', _external=True, _scheme='https')
@@ -73,11 +107,10 @@ def login():
 def callback():
     if 'error' in request.args:
         error_msg = request.args.get('error_description', 'An unknown error occurred.')
-        logging.error(f"Yahoo OAuth Error: {request.args.get('error')} - {error_msg}")
-        return f'<h1>Error: {error_msg}</h1><p>Please try logging in again.</p>', 400
+        return f'<h1>Error: {error_msg}</h1>', 400
 
     if request.args.get('state') != session.get('oauth_state'):
-        return '<h1>Error: State mismatch. Please try logging in again.</h1>', 400
+        return '<h1>Error: State mismatch.</h1>', 400
 
     redirect_uri = url_for('callback', _external=True, _scheme='https')
     yahoo = OAuth2Session(session['consumer_key'], state=session.get('oauth_state'), redirect_uri=redirect_uri)
@@ -90,8 +123,8 @@ def callback():
         )
         session['yahoo_token'] = token
     except Exception as e:
-        logging.error(f"Error fetching token in callback: {e}", exc_info=True)
-        return '<h1>Error: Could not fetch access token from Yahoo.</h1>', 500
+        logging.error(f"Error fetching token: {e}", exc_info=True)
+        return '<h1>Error: Could not fetch access token.</h1>', 500
 
     return redirect(url_for('home'))
 
@@ -102,32 +135,13 @@ def logout():
 
 @app.route('/query', methods=['POST'])
 def handle_query():
-    if 'yahoo_token' not in session:
-        return jsonify({"error": "User not authenticated. Please log in again."}), 401
-
-    try:
-        token = session['yahoo_token']
-        auth_data = {
-            'consumer_key': session['consumer_key'],
-            'consumer_secret': session['consumer_secret'],
-            'access_token': token.get('access_token'),
-            'refresh_token': token.get('refresh_token'),
-            'token_type': token.get('token_type', 'bearer'),
-            'token_time': token.get('expires_at', time.time() + token.get('expires_in', 3600)),
-            'guid': token.get('xoauth_yahoo_guid')
-        }
-        yq = YahooFantasySportsQuery(
-            int(session['league_id']),
-            game_code="nhl",
-            yahoo_access_token_json=auth_data
-        )
-    except Exception as e:
-        logging.error(f"Failed to re-initialize yfpy from session: {e}", exc_info=True)
+    yq = get_yfpy_instance()
+    if not yq:
         return jsonify({"error": "Could not connect to Yahoo API. Your session may have expired."}), 500
 
     query_str = request.get_json().get('query')
     if not query_str:
-        return jsonify({"error": "No query was provided."}), 400
+        return jsonify({"error": "No query provided."}), 400
 
     logging.info(f"Executing query: {query_str}")
     try:
@@ -135,45 +149,70 @@ def handle_query():
         dict_result = model_to_dict(result)
         json_result = json.dumps(dict_result, indent=2)
         return jsonify({"result": json_result})
-    except SystemExit:
-        logging.error("yfpy triggered a SystemExit, likely due to an auth issue.")
-        return jsonify({"error": "Authentication failed with yfpy. Your session may be invalid."}), 401
     except Exception as e:
-        logging.error(f"Error executing query '{query_str}': {e}", exc_info=True)
-        if 'token_expired' in str(e).lower():
-             return jsonify({"error": f"Your session has expired. Please log out and log in again."}), 401
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+        logging.error(f"Query error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/update_db', methods=['POST'])
+def update_db_route():
+    yq = get_yfpy_instance()
+    if not yq:
+        return jsonify({"error": "Authentication failed. Please log in again."}), 401
+
+    league_id = session.get('league_id')
+    if not league_id:
+        return jsonify({'success': False, 'error': 'League ID not found in session.'}), 400
+
+    # Call the refactored database update function
+    result = db_builder.update_league_db(yq, league_id, DATA_DIR)
+
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 500
+
 
 @app.route('/pages/<path:page_name>')
 def serve_page(page_name):
-    """Renders a page from the templates/pages directory."""
-    try:
-        return render_template(f"pages/{page_name}")
-    except Exception:
-        return "Page not found", 404
+    return render_template(f"pages/{page_name}")
 
-# --- Placeholder API Routes to prevent 404 errors ---
-@app.route('/api/get_league_timestamp')
-def get_league_timestamp():
-    return jsonify({'timestamp': int(time.time())})
+@app.route('/api/db_status')
+def db_status():
+    league_id = session.get('league_id')
+    if not league_id:
+        return jsonify({'db_exists': False, 'error': 'Not logged in.'})
 
-@app.route('/api/matchups')
-def get_matchups():
-    # Return some sample data
-    return jsonify([
-        {'week': 1, 'team1': 'Team A', 'team2': 'Team B'},
-        {'week': 1, 'team1': 'Team C', 'team2': 'Team D'},
-        {'week': 2, 'team1': 'Team A', 'team2': 'Team C'},
-    ])
+    db_path = None
+    league_name = "[Unknown]"
+    timestamp = None
+    db_exists = False
 
-@app.route('/api/db')
-def get_db_content():
-    return jsonify({'error': 'Database inspection is not implemented yet.'})
+    for filename in os.listdir(DATA_DIR):
+        if filename.startswith(f"yahoo-{league_id}-") and filename.endswith(".db"):
+            db_path = os.path.join(DATA_DIR, filename)
+            db_exists = True
+            break
 
-@app.route('/api/download_db')
-def download_db():
-     return jsonify({'error': 'Database download is not implemented yet.'})
+    if db_exists:
+        try:
+            # Extract league name from filename
+            match = re.search(f"yahoo-{league_id}-(.*)\\.db", filename)
+            if match:
+                league_name = match.group(1)
+            timestamp = os.path.getmtime(db_path)
+        except Exception as e:
+            logging.error(f"Could not parse DB file info: {e}")
+            return jsonify({'db_exists': False, 'error': 'Could not read database file details.'})
 
+    return jsonify({
+        'db_exists': db_exists,
+        'league_name': league_name,
+        'timestamp': int(timestamp) if timestamp else None
+    })
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('static', filename)
 
 if __name__ == '__main__':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
