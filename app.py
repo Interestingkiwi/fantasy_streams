@@ -105,7 +105,7 @@ def get_yfa_lg_instance():
         "access_token": token.get('access_token'),
         "refresh_token": token.get('refresh_token'),
         "token_type": token.get('token_type', 'bearer'),
-        "token_expiry": token.get('expires_at', time.time() + token.get('expires_in', 3600)),
+        "token_time": token.get('expires_at', time.time() + token.get('expires_in', 3600)),
         "xoauth_yahoo_guid": token.get('xoauth_yahoo_guid')
     }
 
@@ -126,7 +126,7 @@ def get_yfa_lg_instance():
 
             session['yahoo_token']['access_token'] = new_creds.get('access_token')
             session['yahoo_token']['refresh_token'] = new_creds.get('refresh_token')
-            session['yahoo_token']['expires_at'] = new_creds.get('token_expiry')
+            session['yahoo_token']['expires_at'] = new_creds.get('token_time')
             session.modified = True
             logging.info("Session token updated after YFA refresh.")
 
