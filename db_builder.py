@@ -168,7 +168,7 @@ def _update_league_info(yq, cursor, league_id, league_name, league_metadata):
     logging.info("Updating league_info table...")
     # Extract data from the metadata object
     num_teams = league_metadata.num_teams
-    self.start_date = league_metadata.start_date
+    start_date = league_metadata.start_date
     end_date = league_metadata.end_date
 
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
@@ -228,7 +228,7 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, start_date):
         cursor.execute("SELECT MAX(date_) FROM daily_lineups_dump")
         last_fetch_date_str = cursor.fetchone()[0]
 
-        start_date_for_fetch = self.start_date
+        start_date_for_fetch = start_date
         if last_fetch_date_str:
             last_fetch_date = date.fromisoformat(last_fetch_date_str)
             start_date_for_fetch = (last_fetch_date + timedelta(days=1)).isoformat()
@@ -575,7 +575,7 @@ def update_league_db(yq, league_id, data_dir):
         _create_tables(cursor)
         _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
         _update_teams_info(yq, cursor)
-        # _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date) # This function is complex and seems to have other issues, disabling for now
+        _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date)
         _update_player_id(yq, cursor)
         playoff_start_week = _update_league_scoring_settings(yq, cursor)
         _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
