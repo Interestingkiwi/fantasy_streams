@@ -232,9 +232,9 @@ def _update_daily_lineups(yq, cursor):
         if last_fetch_date_str:
             last_fetch_date = date.fromisoformat(last_fetch_date_str)
             start_date_for_fetch = (last_fetch_date + timedelta(days=1)).isoformat()
-            logger.info(f"Found existing lineup data. Resuming fetch from {start_date_for_fetch}.")
+            logging.info(f"Found existing lineup data. Resuming fetch from {start_date_for_fetch}.")
         else:
-            logger.info(f"No existing lineup data found. Performing initial fetch from league start date: {start_date_for_fetch}.")
+            logging.info(f"No existing lineup data found. Performing initial fetch from league start date: {start_date_for_fetch}.")
 
 
         team_id = 1
@@ -242,13 +242,13 @@ def _update_daily_lineups(yq, cursor):
         lineup_data_to_insert = []
 
         if start_date_for_fetch >= stop_date:
-            logger.info("Daily lineups are already up to date.")
+            logging.info("Daily lineups are already up to date.")
             return
 
         while team_id <= self.num_teams:
             date_ = start_date_for_fetch
             while date_ < stop_date:
-                logger.info(f"Fetching daily lineups for team {team_id}, for {date_}...")
+                logging.info(f"Fetching daily lineups for team {team_id}, for {date_}...")
                 players = yq.get_team_roster_player_info_by_date(team_id,date_)
                 c = 0
                 lw = 0
@@ -317,7 +317,7 @@ def _update_daily_lineups(yq, cursor):
             team_id += 1
 
         if not lineup_data_to_insert:
-            logger.info("No new daily lineups to insert for the specified date range.")
+            logging.info("No new daily lineups to insert for the specified date range.")
             return
 
         sql = """
@@ -346,7 +346,7 @@ def _update_player_id(yq, cursor):
         yq: An authenticated yfpy query object.
         cursor: A sqlite3 cursor object.
     """
-    logger.info("Fetching player info...")
+    logging.info("Fetching player info...")
     try:
         players = yq.get_league_players()
 
@@ -373,7 +373,7 @@ def _update_player_id(yq, cursor):
 
         sql = "INSERT OR IGNORE INTO players (player_id, player_name, player_team, player_name_normalized) VALUES (?, ?, ?, ?)"
         cursor.executemany(sql, player_data_to_insert)
-        logger.info(f"Successfully inserted or ignored data for {len(player_data_to_insert)} teams.")
+        logging.info(f"Successfully inserted or ignored data for {len(player_data_to_insert)} teams.")
     except Exception as e:
         logging.error(f"Failed to update player info: {e}", exc_info=True)
 
@@ -386,7 +386,7 @@ def _update_league_scoring_settings(yq, cursor):
         yq: An authenticated yfpy query object.
         cursor: A sqlite3 cursor object.
     """
-    logger.info("Fetching league scoring...")
+    logging.info("Fetching league scoring...")
     try:
         settings = yq.get_league_settings()
         self.playoff_start_week = settings.playoff_start_week
@@ -402,7 +402,7 @@ def _update_league_scoring_settings(yq, cursor):
 
         sql = "INSERT OR IGNORE INTO scoring (stat_id, category, scoring_group) VALUES (?, ?, ?)"
         cursor.executemany(sql, scoring_settings_to_insert)
-        logger.info(f"Successfully inserted or ignored data for {len(scoring_settings_to_insert)} categories.")
+        logging.info(f"Successfully inserted or ignored data for {len(scoring_settings_to_insert)} categories.")
 
     except Exception as e:
         logging.error(f"Failed to update scoring info: {e}", exc_info=True)
@@ -416,7 +416,7 @@ def _update_fantasy_weeks(yq, cursor):
         yq: An authenticated yfpy query object.
         cursor: A sqlite3 cursor object.
     """
-    logger.info("Fetching fantasy weeks...")
+    logging.info("Fetching fantasy weeks...")
     try:
         game_id_end_pos = league_key.index('.')
         game_id = league_key[:game_id_end_pos]
@@ -431,7 +431,7 @@ def _update_fantasy_weeks(yq, cursor):
 
         sql = "INSERT OR IGNORE INTO weeks (week_num, start_date, end_date) VALUES (?, ?, ?)"
         cursor.executemany(sql, weeks_to_insert)
-        logger.info(f"Successfully inserted or ignored data for {len(weeks_to_insert)} weeks.")
+        logging.info(f"Successfully inserted or ignored data for {len(weeks_to_insert)} weeks.")
     except Exception as e:
         logging.error(f"Failed to update week info: {e}", exc_info=True)
 
@@ -444,7 +444,7 @@ def _update_league_matchups(yq, cursor):
         yq: An authenticated yfpy query object.
         cursor: A sqlite3 cursor object.
     """
-    logger.info("Fetching league matchups...")
+    logging.info("Fetching league matchups...")
     try:
         last_reg_season_week = self.playoff_start_week-1
         start_week = 1
@@ -466,7 +466,7 @@ def _update_league_matchups(yq, cursor):
 
         sql = "INSERT OR IGNORE INTO matchups (week, team1, team2) VALUES (?, ?, ?)"
         cursor.executemany(sql, matchup_data_to_insert)
-        logger.info(f"Successfully inserted or ignored data for {len(matchup_data_to_insert)} matchups.")
+        logging.info(f"Successfully inserted or ignored data for {len(matchup_data_to_insert)} matchups.")
     except Exception as e:
         logging.error(f"Failed to update matchup info: {e}", exc_info=True)
 
@@ -479,7 +479,7 @@ def _update_current_rosters(yq, cursor):
         yq: An authenticated yfpy query object.
         cursor: A sqlite3 cursor object.
     """
-    logger.info("Fetching current roster info...")
+    logging.info("Fetching current roster info...")
     try:
         logging.info("Clearing existing data from rosters table.")
         cursor = con.cursor()
@@ -509,7 +509,7 @@ def _update_current_rosters(yq, cursor):
         self.con.executemany(sql, roster_data_to_insert)
         self.con.commit()
 
-        logger.info(f"Successfully inserted data for {len(roster_data_to_insert)} teams.")
+        logging.info(f"Successfully inserted data for {len(roster_data_to_insert)} teams.")
     except Exception as e:
         logging.error(f"Failed to update roster info: {e}", exc_info=True)
 
