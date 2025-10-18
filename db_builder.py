@@ -13,6 +13,251 @@ import logging
 import time
 import unicodedata
 from datetime import date, timedelta
+import ast
+
+
+# --- DB Finalizer Class (from finalize_db.py) ---
+class DBFinalizer:
+    """
+    Processes and joins data in the fantasy hockey database after initial creation.
+    """
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.con = self.get_db_connection()
+
+    def get_db_connection(self):
+        """Gets a connection to the SQLite database."""
+        if not os.path.exists(self.db_path):
+            logging.error(f"Database not found at {self.db_path}. Please provide a valid database file.")
+            return None
+        return sqlite3.connect(self.db_path)
+
+    def close_connection(self):
+        """Closes the database connection if it's open."""
+        if self.con:
+            self.con.close()
+            logging.info("Finalizer database connection closed.")
+
+    def import_player_ids(self, player_ids_db_path):
+        """
+        Attaches the player IDs database, drops the existing players table,
+        and imports the new one in a single transaction.
+        """
+        if not self.con:
+            logging.error("No database connection for finalizer.")
+            return
+
+        if not os.path.exists(player_ids_db_path):
+            logging.error(f"Player IDs database not found at: {player_ids_db_path}")
+            return
+
+        absolute_player_ids_path = os.path.abspath(player_ids_db_path)
+        logging.info(f"Found player IDs DB. Absolute path: {absolute_player_ids_path}")
+
+        attached_successfully = False
+        try:
+            logging.info("Attaching player IDs database...")
+            self.con.execute(f"ATTACH DATABASE '{absolute_player_ids_path}' AS player_ids_db")
+            attached_successfully = True
+            cursor = self.con.cursor()
+
+            logging.info("Importing 'players' table from player_ids_db...")
+            cursor.execute("DROP TABLE IF EXISTS main.players")
+            cursor.execute("CREATE TABLE main.players AS SELECT * FROM player_ids_db.players")
+
+            self.con.commit()
+            logging.info("Successfully imported the 'players' table.")
+
+        except sqlite3.Error as e:
+            logging.error(f"An error occurred while importing player IDs: {e}")
+            logging.info("Rolling back any pending changes.")
+            self.con.rollback()
+        finally:
+            if attached_successfully:
+                logging.info("Detaching player IDs database.")
+                self.con.execute("DETACH DATABASE player_ids_db")
+
+
+    def process_with_projections(self, projections_db_path):
+        """
+        Attaches the projections DB and runs all related processing functions
+        (imports and joins) within a single transaction.
+        """
+        if not self.con:
+            logging.error("No database connection for finalizer.")
+            return
+
+        if not os.path.exists(projections_db_path):
+            logging.error(f"Projections database not found at: {projections_db_path}")
+            return
+
+        absolute_proj_path = os.path.abspath(projections_db_path)
+        logging.info(f"Found projections DB. Absolute path: {absolute_proj_path}")
+
+        attached_successfully = False
+        try:
+            logging.info(f"Attaching projections database...")
+            self.con.execute(f"ATTACH DATABASE '{absolute_proj_path}' AS projections")
+            attached_successfully = True
+            cursor = self.con.cursor()
+
+            logging.info("Importing static tables (off_days, schedule, team_schedules)...")
+            tables_to_import = ['off_days', 'schedule', 'team_schedules']
+            for table in tables_to_import:
+                logging.info(f"Importing table: {table}")
+                cursor.execute(f"DROP TABLE IF EXISTS main.{table}")
+                cursor.execute(f"CREATE TABLE main.{table} AS SELECT * FROM projections.{table}")
+
+            logging.info("Joining player data with projections...")
+            cursor.execute("DROP TABLE IF EXISTS main.joined_player_stats")
+            cursor.execute("""
+                CREATE TABLE main.joined_player_stats AS
+                SELECT
+                    p.player_id,
+                    p.player_name,
+                    p.player_team,
+                    CASE
+                        WHEN fa.player_id IS NOT NULL THEN 'F'
+                        WHEN w.player_id IS NOT NULL THEN 'W'
+                        WHEN r.player_id IS NOT NULL THEN 'R'
+                        ELSE 'Unk'
+                    END AS availability_status,
+                    proj.*
+                FROM main.players AS p
+                LEFT JOIN projections.projections AS proj
+                ON p.player_name_normalized = proj.normalized_name
+                LEFT JOIN main.free_agents AS fa
+                ON p.player_id = fa.player_id
+                LEFT JOIN main.waiver_players AS w
+                ON p.player_id = w.player_id
+                LEFT JOIN main.rostered_players AS r
+                ON p.player_id = r.player_id;
+            """)
+
+            self.con.commit()
+            logging.info("Successfully imported static tables and joined player projections.")
+
+        except sqlite3.Error as e:
+            logging.error(f"An error occurred while processing with projections DB: {e}")
+            logging.info("Rolling back any pending changes.")
+            self.con.rollback()
+        finally:
+            if attached_successfully:
+                logging.info("Detaching projections database.")
+                self.con.execute("DETACH DATABASE projections")
+
+    def parse_and_store_player_stats(self):
+        """
+        Parses raw player data from 'daily_lineups_dump', enriches it with
+        additional details, and stores the structured stats in a new
+        'daily_player_stats' table.
+        """
+        if not self.con:
+            logging.error("No database connection for finalizer.")
+            return
+
+        cursor = self.con.cursor()
+
+        # Check if the source table exists before proceeding
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_lineups_dump'")
+        if cursor.fetchone() is None:
+            logging.info("Table 'daily_lineups_dump' does not exist. Skipping stat parsing.")
+            return
+
+        logging.info("Parsing raw player strings and storing daily stats...")
+
+        # Create a mapping for stat IDs to their category names.
+        stat_map = {
+            1: 'G', 2: 'A', 3: '+/-', 4: 'PIM', 5: 'PPG', 6: 'PPA', 7: 'PPP',
+            8: 'SHG', 9: 'SHA', 10: 'SHP', 11: 'GWG', 14: 'SOG', 15: 'FW',
+            16: 'FL', 31: 'HIT', 32: 'BLK', 17: 'GS', 19: 'W', 20: 'L',
+            22: 'GA', 23: 'GAA', 24: 'SA', 25: 'SV', 26: 'SV%', 27: 'SHO'
+        }
+
+        # Fetch player normalized names into a dictionary for quick lookup
+        cursor.execute("SELECT player_id, player_name_normalized FROM players")
+        player_norm_name_map = dict(cursor.fetchall())
+        logging.info(f"Loaded {len(player_norm_name_map)} players for name normalization lookup.")
+
+        # Create the new table for structured daily stats
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS daily_player_stats (
+                date_ TEXT NOT NULL,
+                team_id INTEGER NOT NULL,
+                player_id INTEGER NOT NULL,
+                player_name_normalized TEXT,
+                lineup_pos TEXT,
+                stat_id INTEGER NOT NULL,
+                category TEXT,
+                stat_value REAL,
+                PRIMARY KEY (date_, player_id, stat_id)
+            );
+        """)
+
+        # Fetch all data from the dump table
+        cursor.execute("SELECT * FROM daily_lineups_dump")
+        all_lineups = cursor.fetchall()
+
+        # Get column names to correctly map the data
+        column_names = [description[0] for description in cursor.description]
+
+        stats_to_insert = []
+        player_string_pattern = re.compile(r"ID: (\d+), Name: .*, Stats: (\[.*\])")
+        pos_pattern = re.compile(r"([a-zA-Z]+)")
+
+        for row in all_lineups:
+            row_dict = dict(zip(column_names, row))
+            date_ = row_dict['date_']
+            team_id = row_dict['team_id']
+
+            # Iterate through all possible player columns (c1, c2, l1, etc.)
+            for col in column_names:
+                if col not in ['lineup_id', 'date_', 'team_id']:
+                    player_string = row_dict[col]
+                    if player_string:
+                        match = player_string_pattern.match(player_string)
+                        if match:
+                            player_id = int(match.group(1))
+                            stats_list_str = match.group(2)
+
+                            # Get lineup position from column name ('c1' -> 'c', 'lw2' -> 'lw')
+                            pos_match = pos_pattern.match(col)
+                            lineup_pos = pos_match.group(1) if pos_match else None
+
+                            # Get player's normalized name from the lookup map
+                            player_name_normalized = player_norm_name_map.get(str(player_id))
+
+                            try:
+                                # Safely evaluate the string representation of the list
+                                stats_list = ast.literal_eval(stats_list_str)
+                                for stat_id, stat_value in stats_list:
+                                    category = stat_map.get(stat_id, 'UNKNOWN')
+                                    stats_to_insert.append((
+                                        date_,
+                                        team_id,
+                                        player_id,
+                                        player_name_normalized,
+                                        lineup_pos,
+                                        stat_id,
+                                        category,
+                                        stat_value
+                                    ))
+                            except (ValueError, SyntaxError) as e:
+                                logging.warning(f"Could not parse stats for player {player_id} on {date_}: {e}")
+
+        if stats_to_insert:
+            logging.info(f"Found {len(stats_to_insert)} individual stat entries to insert/update.")
+            cursor.executemany("""
+                INSERT OR IGNORE INTO daily_player_stats (
+                    date_, team_id, player_id, player_name_normalized, lineup_pos,
+                    stat_id, category, stat_value
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, stats_to_insert)
+            self.con.commit()
+            logging.info("Successfully stored parsed player stats.")
+        else:
+            logging.info("No new player stats to parse.")
 
 
 def _create_tables(cursor):
@@ -83,7 +328,7 @@ def _create_tables(cursor):
           i5 TEXT
         )
     ''')
-    #players - being created externally to save individual league builds
+    #players - will be imported from static db later
 #    cursor.execute('''
 #        CREATE TABLE IF NOT EXISTS players (
 #            player_id TEXT NOT NULL UNIQUE,
@@ -357,6 +602,7 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, start_date):
 
 def _update_player_id(yq, cursor):
     """
+    ***CURRENTLY DISABLED AS STATIC FILE HANDLES THIS DATA***
     Writes player name, normalized player name, team, and yahoo id to players
     table for all players in the league. This is a long-running operation.
 
@@ -687,9 +933,9 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
         _create_tables(cursor)
         _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
         _update_teams_info(yq, cursor)
+        #_update_player_id(yq, cursor)
         if capture_lineups:
             _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date)
-        #_update_player_id(yq, cursor)
         playoff_start_week = _update_league_scoring_settings(yq, cursor)
         _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
         _update_league_matchups(yq, cursor, playoff_start_week)
@@ -703,6 +949,32 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
 
         conn.commit()
         conn.close()
+        logging.info("Initial data import complete. DB connection closed.")
+
+        # --- DB Finalization ---
+        logging.info("--- Starting Database Finalization Process ---")
+
+        # Define paths to static DBs relative to this script's location
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        SERVER_DIR = os.path.join(script_dir, 'server')
+        PLAYER_IDS_DB_PATH = os.path.join(SERVER_DIR, 'yahoo_player_ids.db')
+        PROJECTIONS_DB_PATH = os.path.join(SERVER_DIR, 'projections.db')
+
+        finalizer = DBFinalizer(db_path)
+        if finalizer.con:
+            finalizer.import_player_ids(PLAYER_IDS_DB_PATH)
+            finalizer.process_with_projections(PROJECTIONS_DB_PATH)
+            # Only parse stats if they were captured
+            if capture_lineups:
+                finalizer.parse_and_store_player_stats()
+            else:
+                logging.info("Skipping daily stat parsing as lineups were not captured.")
+            finalizer.close_connection()
+        else:
+            logging.error("Failed to connect to the database for finalization.")
+            return {'success': False, 'error': f"Could not open {db_path} for finalization."}
+
+        logging.info("--- Database Finalization Process Complete ---")
 
         timestamp = os.path.getmtime(db_path)
         logging.info(f"Database for '{sanitized_name}' updated successfully.")
