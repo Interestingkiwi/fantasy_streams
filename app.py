@@ -15,10 +15,13 @@ import logging
 import sqlite3
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from yfpy.query import YahooFantasySportsQuery
+import yahoo_fantasy_api as yfa
+from yahoo_oauth import OAuth2
 from requests_oauthlib import OAuth2Session
 import time
 import re
 import db_builder
+import uuid
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
@@ -72,7 +75,7 @@ def get_yfpy_instance():
     }
     try:
         yq = YahooFantasySportsQuery(
-            int(session['league_id']),
+            session['league_id'],
             game_code="nhl",
             yahoo_access_token_json=auth_data
         )
@@ -80,6 +83,62 @@ def get_yfpy_instance():
     except Exception as e:
         logging.error(f"Failed to init yfpy: {e}", exc_info=True)
         return None
+
+def get_yfa_lg_instance():
+    """Helper function to get an authenticated yfa league instance."""
+    if 'yahoo_token' not in session:
+        return None
+
+    token = session['yahoo_token']
+    consumer_key = session.get('consumer_key')
+    consumer_secret = session.get('consumer_secret')
+    league_id = session.get('league_id')
+
+    if not all([token, consumer_key, consumer_secret, league_id]):
+        logging.error("YFA instance requires token and credentials in session.")
+        return None
+
+    # yahoo_oauth library requires a file, so we create a temporary one.
+    creds = {
+        "consumer_key": consumer_key,
+        "consumer_secret": consumer_secret,
+        "access_token": token.get('access_token'),
+        "refresh_token": token.get('refresh_token'),
+        "token_type": token.get('token_type', 'bearer'),
+        "token_expiry": token.get('expires_at', time.time() + token.get('expires_in', 3600)),
+        "xoauth_yahoo_guid": token.get('xoauth_yahoo_guid')
+    }
+
+    temp_dir = os.path.join(DATA_DIR, 'temp_creds')
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_file_path = os.path.join(temp_dir, f"{uuid.uuid4()}.json")
+
+    try:
+        with open(temp_file_path, 'w') as f:
+            json.dump(creds, f)
+
+        sc = OAuth2(None, None, from_file=temp_file_path)
+        if not sc.token_is_valid():
+            logging.info("YFA token expired, refreshing...")
+            sc.refresh_access_token()
+            with open(temp_file_path, 'r') as f:
+                new_creds = json.load(f)
+
+            session['yahoo_token']['access_token'] = new_creds.get('access_token')
+            session['yahoo_token']['refresh_token'] = new_creds.get('refresh_token')
+            session['yahoo_token']['expires_at'] = new_creds.get('token_expiry')
+            session.modified = True
+            logging.info("Session token updated after YFA refresh.")
+
+        gm = yfa.Game(sc, 'nhl')
+        lg = gm.to_league(f"nhl.l.{league_id}")
+        return lg
+    except Exception as e:
+        logging.error(f"Failed to init yfa: {e}", exc_info=True)
+        return None
+    finally:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
 
 
 @app.route('/')
@@ -147,7 +206,7 @@ def logout():
 def handle_query():
     yq = get_yfpy_instance()
     if not yq:
-        return jsonify({"error": "Could not connect to Yahoo API. Your session may have expired."}), 500
+        return jsonify({"error": "Could not connect to Yahoo API. Your session may have expired."}), 401
 
     query_str = request.get_json().get('query')
     if not query_str:
@@ -163,6 +222,26 @@ def handle_query():
         logging.error(f"Query error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+@app.route('/yfa_query', methods=['POST'])
+def handle_yfa_query():
+    lg = get_yfa_lg_instance()
+    if not lg:
+        return jsonify({"error": "Could not connect to Yahoo API. Your session may have expired."}), 401
+
+    query_str = request.get_json().get('query')
+    if not query_str:
+        return jsonify({"error": "No query provided."}), 400
+
+    logging.info(f"Executing YFA query: {query_str}")
+    try:
+        result = eval(query_str, {"lg": lg})
+        pretty_result = json.dumps(result, indent=2)
+        return jsonify({"result": pretty_result})
+    except Exception as e:
+        logging.error(f"YFA Query error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
     yq = get_yfpy_instance()
@@ -176,7 +255,6 @@ def update_db_route():
     data = request.get_json() or {}
     capture_lineups = data.get('capture_lineups', False)
 
-    # Call the database update function with the new parameter
     result = db_builder.update_league_db(yq, league_id, DATA_DIR, capture_lineups=capture_lineups)
 
     if result['success']:
@@ -191,18 +269,15 @@ def download_db():
         return jsonify({'error': 'Not logged in or session expired.'}), 401
 
     db_filename = None
-    # Find the database file associated with the user's league_id
     for filename in os.listdir(DATA_DIR):
         if filename.startswith(f"yahoo-{league_id}-") and filename.endswith(".db"):
             db_filename = filename
             break
 
     if not db_filename:
-        # If no file is found, inform the user
         return jsonify({'error': 'Database file not found. Please create it on the "League Database" page first.'}), 404
 
     try:
-        # Use send_from_directory to securely send the file for download
         return send_from_directory(DATA_DIR, db_filename, as_attachment=True)
     except Exception as e:
         logging.error(f"Error sending database file: {e}", exc_info=True)
@@ -231,7 +306,6 @@ def db_status():
 
     if db_exists:
         try:
-            # Extract league name from filename
             match = re.search(f"yahoo-{league_id}-(.*)\\.db", filename)
             if match:
                 league_name = match.group(1)
