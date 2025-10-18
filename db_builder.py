@@ -166,6 +166,7 @@ def _update_league_info(yq, cursor, league_id, league_name, league_metadata):
         league_metadata: The fetched league metadata object from yfpy.
     """
     logging.info("Updating league_info table...")
+    # Extract data from the metadata object
     num_teams = league_metadata.num_teams
     start_date = league_metadata.start_date
     end_date = league_metadata.end_date
@@ -213,7 +214,7 @@ def _update_teams_info(yq, cursor):
         logging.error(f"Failed to update teams info: {e}", exc_info=True)
 
 
-def _update_daily_lineups(yq, cursor):
+def _update_daily_lineups(yq, cursor, conn, num_teams, start_date):
     """
     Iterates through a teams lineup for every day of the season and writes
     player name, and stats to their assigned position in the daily lineup
@@ -224,11 +225,10 @@ def _update_daily_lineups(yq, cursor):
         cursor: A sqlite3 cursor object.
     """
     try:
-        cursor = con.cursor()
         cursor.execute("SELECT MAX(date_) FROM daily_lineups_dump")
         last_fetch_date_str = cursor.fetchone()[0]
 
-        start_date_for_fetch = self.start_date
+        start_date_for_fetch = start_date
         if last_fetch_date_str:
             last_fetch_date = date.fromisoformat(last_fetch_date_str)
             start_date_for_fetch = (last_fetch_date + timedelta(days=1)).isoformat()
@@ -245,11 +245,11 @@ def _update_daily_lineups(yq, cursor):
             logging.info("Daily lineups are already up to date.")
             return
 
-        while team_id <= self.num_teams:
-            date_ = start_date_for_fetch
-            while date_ < stop_date:
-                logging.info(f"Fetching daily lineups for team {team_id}, for {date_}...")
-                players = yq.get_team_roster_player_info_by_date(team_id,date_)
+        while team_id <= num_teams:
+            current_date = start_date_for_fetch
+            while current_date < stop_date:
+                logging.info(f"Fetching daily lineups for team {team_id}, for {current_date}...")
+                players = yq.get_team_roster_player_info_by_date(team_id,current_date)
                 c = 0
                 lw = 0
                 rw = 0
@@ -266,10 +266,10 @@ def _update_daily_lineups(yq, cursor):
                         pos = 'c'+str(c+1)
                         c += 1
                     elif pos == "LW":
-                        pos = 'lw'+str(lw+1)
+                        pos = 'l'+str(lw+1)
                         lw += 1
                     elif pos == "RW":
-                        pos = 'rw'+str(rw+1)
+                        pos = 'r'+str(rw+1)
                         rw += 1
                     elif pos == "D":
                         pos = 'd'+str(d+1)
@@ -278,10 +278,10 @@ def _update_daily_lineups(yq, cursor):
                         pos = 'g'+str(g+1)
                         g += 1
                     elif pos == "BN":
-                        pos = 'bn'+str(bn+1)
+                        pos = 'b'+str(bn+1)
                         bn += 1
                     elif pos == "IR" or pos == "IR+":
-                        pos = 'ir'+str(ir+1)
+                        pos = 'i'+str(ir+1)
                         ir += 1
                     player_stats = []
                     if player.player_stats and player.player_stats.stats:
@@ -301,35 +301,33 @@ def _update_daily_lineups(yq, cursor):
                     for data_string, position in lineup_data_raw
                 }
                 lineup_order = [
-                    'c1', 'c2', 'lw1', 'lw2', 'rw1', 'rw2', 'd1', 'd2', 'd3', 'd4',
-                    'g1', 'g2', 'bn1', 'bn2', 'bn3', 'bn4', 'bn5', 'bn6',
-                    'bn7', 'bn8', 'bn9', 'bn10', 'bn11', 'bn12', 'bn13', 'bn14',
-                    'bn15', 'bn16', 'bn17', 'bn18', 'bn19' 'ir1', 'ir2', 'ir3', 'ir4', 'ir5'
+                    'c1', 'c2', 'l1', 'l2', 'r1', 'r2', 'd1', 'd2', 'd3', 'd4',
+                    'g1', 'g2', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6',
+                    'b7', 'b8', 'b9', 'b10', 'b11', 'b12', 'b13', 'b14',
+                    'b15', 'b16', 'b17', 'b18', 'b19', 'i1', 'i2', 'i3', 'i4', 'i5'
                 ]
-                #This is how future list will work
                 #player_dict = {position: (player_id, goals) for player_id, goals, position in player_list}
                 # Result: {'lw1': (1234, 1), 'rw2': (2345, 2), 'lw2': (3456, 1), 'c1': (4567, 3)}
                 #final_list = [player_dict.get(pos, (None, None)) for pos in desired_order]
                 lineup_data_values = [lineup_raw_dict.get(pos, None) for pos in lineup_order]
-                full_row = [date_, team_id, *lineup_data_values]
-                lineup_data_to_insert.append((full_row))
-                date_ = (date.fromisoformat(date_)+timedelta(1)).isoformat()
+                full_row = [current_date, team_id] + lineup_data_values
+                lineup_data_to_insert.append(tuple(full_row))
+                current_date = (date.fromisoformat(current_date)+timedelta(1)).isoformat()
             team_id += 1
 
         if not lineup_data_to_insert:
             logging.info("No new daily lineups to insert for the specified date range.")
             return
 
-        sql = """
+        placeholders = ', '.join(['?'] * 38)
+        sql = f"""
             INSERT INTO daily_lineups_dump (
                 date_, team_id, c1, c2, l1, l2, r1, r2, d1, d2, d3, d4, g1, g2,
                 b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
-                b16, b17, b18, b19 i1, i2, i3, i4, i5
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            )
+                b16, b17, b18, b19, i1, i2, i3, i4, i5
+            ) VALUES ({placeholders})
         """
+
 
         cursor.executemany(sql, lineup_data_to_insert)
         logging.info(f"Successfully inserted or ignored data for {len(lineup_data_to_insert)} dates.")
@@ -340,16 +338,14 @@ def _update_daily_lineups(yq, cursor):
 def _update_player_id(yq, cursor):
     """
     Writes player name, normalized player name, team, and yahoo id to players
-    table for all players in the league
+    table for all players in the league. This is a long-running operation.
 
     Args:
         yq: An authenticated yfpy query object.
         cursor: A sqlite3 cursor object.
     """
-    logging.info("Fetching player info...")
+    logging.info("Fetching all league players (this may take a while)...")
     try:
-        players = yq.get_league_players()
-
         TEAM_TRICODE_MAP = {
             "TB": "TBL",
             "NJ": "NJD",
@@ -360,8 +356,13 @@ def _update_player_id(yq, cursor):
         }
 
         player_data_to_insert = []
-        for player in players:
-            player_id = player.player_id
+        batch_size = 100
+        player_count = 0
+        sql = "INSERT OR IGNORE INTO players (player_id, player_name, player_team, player_name_normalized) VALUES (?, ?, ?, ?)"
+
+        # yfpy's get_league_players is a generator that handles pagination automatically.
+        for player in yq.get_league_players():
+            player_count += 1
             player_name = player.name.full
             nfkd_form = unicodedata.normalize('NFKD', player_name.lower())
             ascii_name = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
@@ -369,11 +370,21 @@ def _update_player_id(yq, cursor):
             player_team_abbr = player.editorial_team_abbr.upper()
             player_team = TEAM_TRICODE_MAP.get(player_team_abbr, player_team_abbr)
 
-            player_data_to_insert.append((player_id, player_name, player_team, player_name_normalized))
+            player_data_to_insert.append((player.player_id, player_name, player_team, player_name_normalized))
 
-        sql = "INSERT OR IGNORE INTO players (player_id, player_name, player_team, player_name_normalized) VALUES (?, ?, ?, ?)"
-        cursor.executemany(sql, player_data_to_insert)
-        logging.info(f"Successfully inserted or ignored data for {len(player_data_to_insert)} teams.")
+            # Insert in batches to manage memory and provide progress
+            if len(player_data_to_insert) >= batch_size:
+                logging.info(f"Processed {player_count} players, inserting batch of {len(player_data_to_insert)}...")
+                cursor.executemany(sql, player_data_to_insert)
+                player_data_to_insert = [] # Clear the batch
+
+        # Insert any remaining players after the loop
+        if player_data_to_insert:
+            logging.info(f"Inserting final batch of {len(player_data_to_insert)} players...")
+            cursor.executemany(sql, player_data_to_insert)
+
+        logging.info(f"Successfully processed and inserted data for a total of {player_count} players.")
+
     except Exception as e:
         logging.error(f"Failed to update player info: {e}", exc_info=True)
 
@@ -389,7 +400,7 @@ def _update_league_scoring_settings(yq, cursor):
     logging.info("Fetching league scoring...")
     try:
         settings = yq.get_league_settings()
-        self.playoff_start_week = settings.playoff_start_week
+        playoff_start_week = settings.playoff_start_week
         scoring_settings_to_insert = []
         for stat_item in settings.stat_categories.stats:
             stat_details = stat_item
@@ -403,12 +414,13 @@ def _update_league_scoring_settings(yq, cursor):
         sql = "INSERT OR IGNORE INTO scoring (stat_id, category, scoring_group) VALUES (?, ?, ?)"
         cursor.executemany(sql, scoring_settings_to_insert)
         logging.info(f"Successfully inserted or ignored data for {len(scoring_settings_to_insert)} categories.")
-
+        return playoff_start_week
     except Exception as e:
         logging.error(f"Failed to update scoring info: {e}", exc_info=True)
+        return None
 
 
-def _update_fantasy_weeks(yq, cursor):
+def _update_fantasy_weeks(yq, cursor, league_key):
     """
     Fetches the weekly struture for the league
 
@@ -436,7 +448,7 @@ def _update_fantasy_weeks(yq, cursor):
         logging.error(f"Failed to update week info: {e}", exc_info=True)
 
 
-def _update_league_matchups(yq, cursor):
+def _update_league_matchups(yq, cursor, playoff_start_week):
     """
     Writes the leagues matchups
 
@@ -446,7 +458,11 @@ def _update_league_matchups(yq, cursor):
     """
     logging.info("Fetching league matchups...")
     try:
-        last_reg_season_week = self.playoff_start_week-1
+        if not playoff_start_week:
+            logging.error("Cannot fetch matchups without playoff_start_week.")
+            return
+
+        last_reg_season_week = playoff_start_week-1
         start_week = 1
         matchup_data_to_insert = []
 
@@ -471,7 +487,7 @@ def _update_league_matchups(yq, cursor):
         logging.error(f"Failed to update matchup info: {e}", exc_info=True)
 
 
-def _update_current_rosters(yq, cursor):
+def _update_current_rosters(yq, cursor, conn, num_teams):
     """
     Writes each team's current roster to the database.
 
@@ -482,32 +498,32 @@ def _update_current_rosters(yq, cursor):
     logging.info("Fetching current roster info...")
     try:
         logging.info("Clearing existing data from rosters table.")
-        cursor = con.cursor()
         cursor.execute("DELETE FROM rosters")
-        con.commit()
+        conn.commit()
     except Exception as e:
         logging.error("Failed to clear rosters table.", exc_info=True)
-        con.rollback()
+        conn.rollback()
 
     try:
         roster_data_to_insert = []
 
-        MAX_PLAYERS = 19
+        MAX_PLAYERS = 29
 
-        for team_id in range(1, self.num_teams + 1):
+        for team_id in range(1, num_teams + 1):
             players = yq.get_team_roster_player_info_by_date(team_id, date.today().isoformat())
             player_ids = [player.player_id for player in players][:MAX_PLAYERS]
             padded_player_ids = player_ids + [None] * (MAX_PLAYERS - len(player_ids))
             row_data = [team_id] + padded_player_ids
             roster_data_to_insert.append(row_data)
-        sql = """INSERT INTO rosters (
-                 team_id, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14,
-                 p15, p16, p17, p18, p19, p20, p21, p22, p23, p24, p25, p26, p27, p28, p29)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+
+        placeholders = ', '.join(['?'] * (MAX_PLAYERS + 1))
+        cols = ", ".join([f"p{i}" for i in range(1, MAX_PLAYERS + 1)])
+        sql = f"""INSERT INTO rosters (
+                 team_id, {cols})
+                 VALUES ({placeholders})
         """
-        self.con.executemany(sql, roster_data_to_insert)
-        self.con.commit()
+        cursor.executemany(sql, roster_data_to_insert)
+        conn.commit()
 
         logging.info(f"Successfully inserted data for {len(roster_data_to_insert)} teams.")
     except Exception as e:
