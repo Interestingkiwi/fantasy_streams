@@ -479,7 +479,27 @@ def _update_teams_info(yq, cursor):
         logging.error(f"Failed to update teams info: {e}", exc_info=True)
 
 
-def _update_daily_lineups(yq, cursor, conn, num_teams, start_date):
+def _get_current_week_start_date(cursor):
+    """Gets the start date of the current fantasy week."""
+    try:
+        today = date.today().isoformat()
+        cursor.execute(
+            "SELECT start_date FROM weeks WHERE start_date <= ? AND end_date >= ?",
+            (today, today)
+        )
+        result = cursor.fetchone()
+        if result:
+            logging.info(f"Current week start date found: {result[0]}")
+            return result[0]
+        else:
+            logging.warning("Could not find a fantasy week for today's date. Defaulting to today.")
+            return today
+    except Exception as e:
+        logging.error(f"Could not determine current week start date from DB: {e}")
+        return date.today().isoformat()
+
+
+def _update_daily_lineups(yq, cursor, conn, num_teams, league_start_date, is_full_mode):
     """
     Iterates through a teams lineup for every day of the season and writes
     player name, and stats to their assigned position in the daily lineup
@@ -488,18 +508,40 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, start_date):
     Args:
         yq: An authenticated yfpy query object.
         cursor: A sqlite3 cursor object.
+        conn: The database connection.
+        num_teams: The number of teams in the league.
+        league_start_date: The official start date of the league season.
+        is_full_mode: Boolean, True for full history, False for weekly update.
     """
     try:
         cursor.execute("SELECT MAX(date_) FROM daily_lineups_dump")
         last_fetch_date_str = cursor.fetchone()[0]
 
-        start_date_for_fetch = start_date
+        last_fetch_date_plus_one = None
         if last_fetch_date_str:
             last_fetch_date = date.fromisoformat(last_fetch_date_str)
-            start_date_for_fetch = (last_fetch_date + timedelta(days=1)).isoformat()
-            logging.info(f"Found existing lineup data. Resuming fetch from {start_date_for_fetch}.")
+            last_fetch_date_plus_one = (last_fetch_date + timedelta(days=1)).isoformat()
+
+        if is_full_mode:
+            # CHECKED: full history from league start or last entry
+            start_date_for_fetch = league_start_date
+            if last_fetch_date_plus_one:
+                 start_date_for_fetch = last_fetch_date_plus_one
+
+            if last_fetch_date_str:
+                logging.info(f"Capture Daily Lineups is CHECKED. Resuming full history fetch from {start_date_for_fetch}.")
+            else:
+                logging.info(f"Capture Daily Lineups is CHECKED. Starting full history fetch from league start date: {start_date_for_fetch}.")
         else:
-            logging.info(f"No existing lineup data found. Performing initial fetch from league start date: {start_date_for_fetch}.")
+            # UNCHECKED: current week or last entry, whichever is newer
+            current_week_start_date = _get_current_week_start_date(cursor)
+
+            if last_fetch_date_plus_one:
+                start_date_for_fetch = max(current_week_start_date, last_fetch_date_plus_one)
+                logging.info(f"Capture Daily Lineups is UNCHECKED. Resuming from more recent of week start ({current_week_start_date}) or last fetch+1 ({last_fetch_date_plus_one}): {start_date_for_fetch}.")
+            else:
+                start_date_for_fetch = current_week_start_date
+                logging.info(f"No existing lineup data. Capture is UNCHECKED, starting from current week start date: {start_date_for_fetch}.")
 
 
         team_id = 1
@@ -899,7 +941,7 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
         lg: An authenticated yahoo_fantasy_api.league.League object.
         league_id: The ID of the fantasy league.
         data_dir: The directory where the database file should be stored.
-        capture_lineups: Boolean to determine if daily lineups should be captured.
+        capture_lineups: Boolean to determine if daily lineups should be captured in full (True) or weekly (False).
 
     Returns:
         A dictionary with the success status and database info, or an error message.
@@ -933,11 +975,12 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
         _create_tables(cursor)
         _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
         _update_teams_info(yq, cursor)
-        #_update_player_id(yq, cursor)
-        if capture_lineups:
-            _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date)
         playoff_start_week = _update_league_scoring_settings(yq, cursor)
         _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
+
+        # Always run lineup updates, but mode depends on 'capture_lineups'
+        _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date, capture_lineups)
+
         _update_league_matchups(yq, cursor, playoff_start_week)
         _update_current_rosters(yq, cursor, conn, league_metadata.num_teams)
 
@@ -964,11 +1007,8 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
         if finalizer.con:
             finalizer.import_player_ids(PLAYER_IDS_DB_PATH)
             finalizer.process_with_projections(PROJECTIONS_DB_PATH)
-            # Only parse stats if they were captured
-            if capture_lineups:
-                finalizer.parse_and_store_player_stats()
-            else:
-                logging.info("Skipping daily stat parsing as lineups were not captured.")
+            # Always parse stats now that lineups are always captured.
+            finalizer.parse_and_store_player_stats()
             finalizer.close_connection()
         else:
             logging.error("Failed to connect to the database for finalization.")
