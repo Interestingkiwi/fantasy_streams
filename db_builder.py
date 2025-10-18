@@ -168,7 +168,7 @@ def _update_league_info(yq, cursor, league_id, league_name, league_metadata):
     logging.info("Updating league_info table...")
     # Extract data from the metadata object
     num_teams = league_metadata.num_teams
-    start_date = league_metadata.start_date
+    self.start_date = league_metadata.start_date
     end_date = league_metadata.end_date
 
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
@@ -228,7 +228,7 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, start_date):
         cursor.execute("SELECT MAX(date_) FROM daily_lineups_dump")
         last_fetch_date_str = cursor.fetchone()[0]
 
-        start_date_for_fetch = start_date
+        start_date_for_fetch = self.start_date
         if last_fetch_date_str:
             last_fetch_date = date.fromisoformat(last_fetch_date_str)
             start_date_for_fetch = (last_fetch_date + timedelta(days=1)).isoformat()
