@@ -83,15 +83,15 @@ def _create_tables(cursor):
           i5 TEXT
         )
     ''')
-    #players
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS players (
-            player_id TEXT NOT NULL UNIQUE,
-            player_name TEXT NOT NULL,
-            player_team TEXT,
-            player_name_normalized TEXT NOT NULL
-        )
-    ''')
+    #players - being created externally to save individual league builds
+#    cursor.execute('''
+#        CREATE TABLE IF NOT EXISTS players (
+#            player_id TEXT NOT NULL UNIQUE,
+#            player_name TEXT NOT NULL,
+#            player_team TEXT,
+#            player_name_normalized TEXT NOT NULL
+#        )
+#    ''')
     #scoring
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scoring (
