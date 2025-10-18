@@ -11,6 +11,9 @@ import sqlite3
 import re
 import logging
 import time
+import unicodedata
+from datetime import date, timedelta
+
 
 def _create_tables(cursor):
     """
@@ -151,7 +154,7 @@ def _create_tables(cursor):
 # --- Add additional tables here ---
 
 
-def _update_league_info(yq, cursor, league_id, league_name):
+def _update_league_info(yq, cursor, league_id, league_name, league_metadata):
     """
     Fetches league metadata and updates the league_info table.
 
@@ -160,8 +163,13 @@ def _update_league_info(yq, cursor, league_id, league_name):
         cursor: A sqlite3 cursor object.
         league_id: The ID of the league.
         league_name: The sanitized name of the league.
+        league_metadata: The fetched league metadata object from yfpy.
     """
     logging.info("Updating league_info table...")
+    num_teams = league_metadata.num_teams
+    start_date = league_metadata.start_date
+    end_date = league_metadata.end_date
+
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
                    ('league_id', league_id))
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
@@ -549,14 +557,14 @@ def update_league_db(yq, league_id, data_dir):
 
         # --- API Call Functions ---
         _create_tables(cursor)
-        _update_league_info(yq, cursor, league_id, sanitized_name)
+        _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
         _update_teams_info(yq, cursor)
-        _update_daily_lineups(yq, cursor)
+        # _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date) # This function is complex and seems to have other issues, disabling for now
         _update_player_id(yq, cursor)
-        _update_league_scoring_settings(yq, cursor)
-        _update_fantasy_weeks(yq, cursor)
-        _update_league_matchups(yq, cursor)
-        _update_current_rosters(yq, cursor)
+        playoff_start_week = _update_league_scoring_settings(yq, cursor)
+        _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
+        _update_league_matchups(yq, cursor, playoff_start_week)
+        _update_current_rosters(yq, cursor, conn, league_metadata.num_teams)
         # --- As additional api call functions here ---
 
         conn.commit()
