@@ -1,3 +1,6 @@
+from gevent import monkey
+monkey.patch_all()
+
 """
 Main run app for Fantasystreams.app
 

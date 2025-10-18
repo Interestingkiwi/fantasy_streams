@@ -5,5 +5,4 @@ yfpy>=2.0
 python-dotenv>=0.19
 eventlet>=0.33
 requests-oauthlib
-requests-oauthlib
 gevent
