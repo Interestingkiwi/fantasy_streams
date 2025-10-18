@@ -1,3 +1,11 @@
+"""
+Main run app for Fantasystreams.app
+
+Author: Jason Druckenmiller
+Date: 10/16/2025
+Updated: 10/18/2025
+"""
+
 import os
 import json
 import logging
@@ -7,7 +15,6 @@ from yfpy.query import YahooFantasySportsQuery
 from requests_oauthlib import OAuth2Session
 import time
 import re
-# Import the new database builder module
 import db_builder
 
 # --- Flask App Configuration ---
