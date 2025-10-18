@@ -173,8 +173,11 @@ def update_db_route():
     if not league_id:
         return jsonify({'success': False, 'error': 'League ID not found in session.'}), 400
 
-    # Call the refactored database update function
-    result = db_builder.update_league_db(yq, league_id, DATA_DIR)
+    data = request.get_json() or {}
+    capture_lineups = data.get('capture_lineups', False)
+
+    # Call the database update function with the new parameter
+    result = db_builder.update_league_db(yq, league_id, DATA_DIR, capture_lineups=capture_lineups)
 
     if result['success']:
         return jsonify(result)

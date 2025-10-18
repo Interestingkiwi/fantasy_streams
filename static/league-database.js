@@ -5,8 +5,9 @@
 
     const statusText = document.getElementById('db-status-text');
     const actionButton = document.getElementById('db-action-button');
+    const captureLineupsCheckbox = document.getElementById('capture-daily-lineups');
 
-    if (!statusText || !actionButton) {
+    if (!statusText || !actionButton || !captureLineupsCheckbox) {
         console.error('Database page elements not found.');
         return;
     }
@@ -46,8 +47,18 @@
         // Set temporary text while the database is being built
         statusText.textContent = 'Building database file, this may take a few minutes.';
 
+        const captureLineups = captureLineupsCheckbox.checked;
+
         try {
-            const response = await fetch('/api/update_db', { method: 'POST' });
+            const response = await fetch('/api/update_db', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    capture_lineups: captureLineups
+                })
+            });
             const data = await response.json();
 
             if (!response.ok || !data.success) {

@@ -533,7 +533,7 @@ def _update_current_rosters(yq, cursor, conn, num_teams):
 # --- Add additional queries here (don't forget to add it to update function too!)---
 
 
-def update_league_db(yq, league_id, data_dir):
+def update_league_db(yq, league_id, data_dir, capture_lineups=False):
     """
     Creates or updates the league-specific SQLite database by calling
     individual query and update functions.
@@ -542,6 +542,7 @@ def update_league_db(yq, league_id, data_dir):
         yq: An authenticated yfpy.query.YahooFantasySportsQuery object.
         league_id: The ID of the fantasy league.
         data_dir: The directory where the database file should be stored.
+        capture_lineups: Boolean to determine if daily lineups should be captured.
 
     Returns:
         A dictionary with the success status and database info, or an error message.
@@ -575,7 +576,8 @@ def update_league_db(yq, league_id, data_dir):
         _create_tables(cursor)
         _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
         _update_teams_info(yq, cursor)
-        _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date)
+        if capture_lineups:
+            _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date)
         _update_player_id(yq, cursor)
         playoff_start_week = _update_league_scoring_settings(yq, cursor)
         _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
