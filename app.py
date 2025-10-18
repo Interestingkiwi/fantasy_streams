@@ -245,7 +245,8 @@ def handle_yfa_query():
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
     yq = get_yfpy_instance()
-    if not yq:
+    lg = get_yfa_lg_instance()
+    if not yq or not lg:
         return jsonify({"error": "Authentication failed. Please log in again."}), 401
 
     league_id = session.get('league_id')
@@ -255,7 +256,7 @@ def update_db_route():
     data = request.get_json() or {}
     capture_lineups = data.get('capture_lineups', False)
 
-    result = db_builder.update_league_db(yq, league_id, DATA_DIR, capture_lineups=capture_lineups)
+    result = db_builder.update_league_db(yq, lg, league_id, DATA_DIR, capture_lineups=capture_lineups)
 
     if result['success']:
         return jsonify(result)

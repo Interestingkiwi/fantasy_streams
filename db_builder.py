@@ -151,7 +151,27 @@ def _create_tables(cursor):
             p29 INTEGER
         )
     ''')
-# --- Add additional tables here ---
+    #free_agents
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS free_agents (
+            player_id TEXT PRIMARY KEY,
+            status TEXT
+        )
+    ''')
+    #waiver_players
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS waiver_players (
+            player_id TEXT PRIMARY KEY,
+            status TEXT
+        )
+    ''')
+    #rostered_players
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS rostered_players (
+            player_id TEXT PRIMARY KEY,
+            status TEXT
+        )
+    ''')
 
 
 def _update_league_info(yq, cursor, league_id, league_name, league_metadata):
@@ -529,17 +549,108 @@ def _update_current_rosters(yq, cursor, conn, num_teams):
     except Exception as e:
         logging.error(f"Failed to update roster info: {e}", exc_info=True)
 
+def _update_free_agents(lg, conn):
+    """
+    Writes all current free agents to free agent table
+    """
+    logging.info("Fetching free agent info...")
+    cursor = conn.cursor()
+    try:
+        logging.info("Clearing existing data from free_agents table.")
+        cursor.execute("DELETE FROM free_agents")
+        conn.commit()
+    except Exception as e:
+        logging.error("Failed to clear free_agents table.", exc_info=True)
+        conn.rollback()
+        return
 
-# --- Add additional queries here (don't forget to add it to update function too!)---
+    free_agents_to_insert = []
+    for pos in ['C', 'LW', 'RW', 'D', 'G']:
+        try:
+            logging.info(f"Fetching free agents for position: {pos}")
+            fas = lg.free_agents(pos)
+            for player in fas:
+                player_id = player['player_id']
+                free_agents_to_insert.append((player_id, 'FA'))
+        except Exception as e:
+            logging.error(f"Could not fetch FAs for position {pos}: {e}")
+
+    sql = "INSERT OR IGNORE INTO free_agents (player_id, status) VALUES (?, ?)"
+    cursor.executemany(sql, free_agents_to_insert)
+    conn.commit()
+    logging.info(f"Successfully inserted data for {len(free_agents_to_insert)} free agents.")
 
 
-def update_league_db(yq, league_id, data_dir, capture_lineups=False):
+def _update_waivers(lg, conn):
+    """
+    Writes all current waiver players to waiver_players table
+    """
+    logging.info("Fetching waiver player info...")
+    cursor = conn.cursor()
+    try:
+        logging.info("Clearing existing data from waiver_players table.")
+        cursor.execute("DELETE FROM waiver_players")
+        conn.commit()
+    except Exception as e:
+        logging.error("Failed to clear waiver_players table.", exc_info=True)
+        conn.rollback()
+        return
+
+    waiver_players_to_insert = []
+    try:
+        logging.info(f"Fetching all waiver players")
+        wvp = lg.waivers()
+        for player in wvp:
+            player_id = player['player_id']
+            waiver_players_to_insert.append((player_id, 'W'))
+    except Exception as e:
+        logging.error(f"Could not fetch waiver players: {e}")
+
+    sql = "INSERT OR IGNORE INTO waiver_players (player_id, status) VALUES (?, ?)"
+    cursor.executemany(sql, waiver_players_to_insert)
+    conn.commit()
+    logging.info(f"Successfully inserted data for {len(waiver_players_to_insert)} waiver players.")
+
+
+def _update_rostered_players(lg, conn):
+    """
+    Writes all currently rostered players to rostered_players table
+    """
+    logging.info("Fetching rostered player info...")
+    cursor = conn.cursor()
+    try:
+        logging.info("Clearing existing data from rostered_players table.")
+        cursor.execute("DELETE FROM rostered_players")
+        conn.commit()
+    except Exception as e:
+        logging.error("Failed to clear rostered_players table.", exc_info=True)
+        conn.rollback()
+        return
+
+    rostered_players_to_insert = []
+    try:
+        logging.info(f"Fetching all rostered players")
+        tkp = lg.taken_players()
+        for player in tkp:
+            player_id = player['player_id']
+            rostered_players_to_insert.append((player_id, 'R'))
+    except Exception as e:
+        logging.error(f"Could not fetch rostered players: {e}")
+
+    sql = "INSERT OR IGNORE INTO rostered_players (player_id, status) VALUES (?, ?)"
+    cursor.executemany(sql, rostered_players_to_insert)
+    conn.commit()
+    logging.info(f"Successfully inserted data for {len(rostered_players_to_insert)} rostered players.")
+
+
+def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
     """
     Creates or updates the league-specific SQLite database by calling
     individual query and update functions.
 
     Args:
         yq: An authenticated yfpy.query.YahooFantasySportsQuery object.
+        lg: An authenticated yahoo_fantasy_api.league.League object.
         league_id: The ID of the fantasy league.
         data_dir: The directory where the database file should be stored.
         capture_lineups: Boolean to determine if daily lineups should be captured.
@@ -572,18 +683,23 @@ def update_league_db(yq, league_id, data_dir, capture_lineups=False):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        # --- API Call Functions ---
+        # --- yfpy API Call Functions ---
         _create_tables(cursor)
         _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
         _update_teams_info(yq, cursor)
         if capture_lineups:
             _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date)
-        _update_player_id(yq, cursor)
+        #_update_player_id(yq, cursor)
         playoff_start_week = _update_league_scoring_settings(yq, cursor)
         _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
         _update_league_matchups(yq, cursor, playoff_start_week)
         _update_current_rosters(yq, cursor, conn, league_metadata.num_teams)
-        # --- As additional api call functions here ---
+
+        # --- yfa API Call Functions ---
+        _update_free_agents(lg, conn)
+        _update_waivers(lg, conn)
+        _update_rostered_players(lg, conn)
+
 
         conn.commit()
         conn.close()
