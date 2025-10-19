@@ -157,7 +157,7 @@
 
             if (category === 'GAA') {
                 const t1_ga = stats.team1.live['GA'] || 0;
-                const t1_toi = stats.team1.live['TOI'] || 0;
+                const t1_toi = stats.team1.live['TOI/G'] || 0;
                 t1_live_val = t1_toi > 0 ? ((t1_ga * 60) / t1_toi).toFixed(2) : '0.00';
 
                 const t2_ga = stats.team2.live['GA'] || 0;
