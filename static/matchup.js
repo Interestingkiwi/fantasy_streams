@@ -1,5 +1,7 @@
 (async function() {
-    // This wrapper matches the original, working file's structure to ensure correct script execution timing.
+    // This delay is critical because the HTML is loaded dynamically by another script.
+    // It ensures the DOM elements are available before the script tries to access them.
+    await new Promise(resolve => setTimeout(resolve, 0));
 
     const errorDiv = document.getElementById('db-error-message');
     const controlsDiv = document.getElementById('matchup-controls');
