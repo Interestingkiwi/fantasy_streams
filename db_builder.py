@@ -168,10 +168,11 @@ class DBFinalizer:
 
         # Create a mapping for stat IDs to their category names.
         stat_map = {
-            1: 'G', 2: 'A', 3: '+/-', 4: 'PIM', 5: 'PPG', 6: 'PPA', 7: 'PPP',
-            8: 'SHG', 9: 'SHA', 10: 'SHP', 11: 'GWG', 14: 'SOG', 15: 'FW',
-            16: 'FL', 31: 'HIT', 32: 'BLK', 17: 'GS', 19: 'W', 20: 'L',
-            22: 'GA', 23: 'GAA', 24: 'SA', 25: 'SV', 26: 'SV%', 27: 'SHO'
+            1: 'G', 2: 'A', 3: 'P', 4: '+/-', 5: 'PIM', 6: 'PPG', 7: 'PPA', 8: 'PPP',
+            9: 'SHG', 10: 'SHA', 11: 'SHP', 12: 'GWG', 13: 'GTG' 14: 'SOG', 15: 'SH%',
+            16: 'FW', 17: 'FL', 31: 'HIT', 32: 'BLK', 18: 'GS', 19: 'W', 20: 'L',
+            22: 'GA', 23: 'GAA', 24: 'SA', 25: 'SV', 26: 'SV%', 27: 'SHO', 28: 'TOI/G',
+            29: 'GP/S', 30: 'GP/G', 33: 'TOI/S', 34: 'TOI/S/Gm'
         }
 
         # Fetch player normalized names into a dictionary for quick lookup
@@ -285,7 +286,7 @@ class DBFinalizer:
 
         # Create a mapping for stat IDs to their category names.
         stat_map = {
-            1: 'G', 2: 'A', 3: 'P', 4: '+/-' 5: 'PIM', 6: 'PPG', 7: 'PPA', 8: 'PPP',
+            1: 'G', 2: 'A', 3: 'P', 4: '+/-', 5: 'PIM', 6: 'PPG', 7: 'PPA', 8: 'PPP',
             9: 'SHG', 10: 'SHA', 11: 'SHP', 12: 'GWG', 13: 'GTG' 14: 'SOG', 15: 'SH%',
             16: 'FW', 17: 'FL', 31: 'HIT', 32: 'BLK', 18: 'GS', 19: 'W', 20: 'L',
             22: 'GA', 23: 'GAA', 24: 'SA', 25: 'SV', 26: 'SV%', 27: 'SHO', 28: 'TOI/G',
