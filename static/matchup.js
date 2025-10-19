@@ -71,7 +71,15 @@
     async function updateOpponent() {
         const selectedWeek = weekSelect.value;
         const selectedTeamKey = yourTeamSelect.value;
-        const matchup = pageData.matchups[selectedWeek].find(m => m.team1_key === selectedTeamKey || m.team2_key === selectedTeamKey);
+
+        // --- FIX: Check if matchup data exists for the selected week before proceeding ---
+        const matchupsForWeek = pageData.matchups[selectedWeek];
+        if (!matchupsForWeek) {
+            opponentSelect.innerHTML = '<option>No Matchup This Week</option>';
+            return;
+        }
+
+        const matchup = matchupsForWeek.find(m => m.team1_key === selectedTeamKey || m.team2_key === selectedTeamKey);
 
         opponentSelect.innerHTML = '';
         if (matchup) {
@@ -95,8 +103,8 @@
         const team2Key = opponentSelect.value;
         const week = weekSelect.value;
 
-        if (!team1Key || !team2Key || !week) {
-            skaterTableContainer.innerHTML = '<p class="text-center text-gray-400">Please select teams and week.</p>';
+        if (!team1Key || !team2Key || !week || !opponentSelect.value) {
+            skaterTableContainer.innerHTML = '<p class="text-center text-gray-400">Please select a valid matchup.</p>';
             goalieTableContainer.innerHTML = '';
             return;
         }
