@@ -28,6 +28,7 @@
             // Initial data load
             await updateOpponent();
             await fetchAndRenderTable();
+            await fetchAndRenderGoalieTable();
 
         } catch (error) {
             console.error('Initialization error:', error);
