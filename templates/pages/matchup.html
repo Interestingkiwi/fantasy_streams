@@ -19,16 +19,22 @@
         </div>
         <div>
             <label for="opponent-select" class="block mb-2 text-sm font-medium text-gray-300">Opponent</label>
-            <select id="opponent-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+            <select id="opponent-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" disabled>
                 <option selected>Loading Opponent...</option>
             </select>
         </div>
     </div>
 
-    <div id="matchup-table-container" class="overflow-x-auto">
-        <!-- Table will be generated here by script -->
-        <p class="text-gray-400">Select a week and teams to view matchup stats.</p>
+    <!-- Container for the Skater Stats Table -->
+    <div id="skater-stats-container" class="mt-6">
+        <!-- Skater stats table will be dynamically inserted here -->
     </div>
+
+    <!-- Container for the Goalie Stats Table -->
+    <div id="goalie-stats-container" class="mt-8">
+        <!-- Goalie stats table will be dynamically inserted here -->
+    </div>
+
 </div>
 
-<script src="{{ url_for('static', filename='matchup.js') }}"></script>
+<script src="/static/matchup.js"></script>
