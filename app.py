@@ -342,13 +342,13 @@ def get_matchup_stats():
     try:
         cursor = conn.cursor()
 
-        # Get team IDs from names
-        cursor.execute("SELECT team_id FROM teams WHERE name = ?", (team1_name,))
+        # Get team IDs from names, casting name to TEXT to handle potential BLOB storage
+        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team1_name,))
         team1_id_row = cursor.fetchone()
         if not team1_id_row: return jsonify({'error': f'Team not found: {team1_name}'}), 404
         team1_id = team1_id_row['team_id']
 
-        cursor.execute("SELECT team_id FROM teams WHERE name = ?", (team2_name,))
+        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team2_name,))
         team2_id_row = cursor.fetchone()
         if not team2_id_row: return jsonify({'error': f'Team not found: {team2_name}'}), 404
         team2_id = team2_id_row['team_id']
@@ -369,20 +369,24 @@ def get_matchup_stats():
         """, (start_date, end_date, team1_id, team2_id))
 
         live_stats_raw = cursor.fetchall()
+        live_stats_decoded = decode_dict_values([dict(row) for row in live_stats_raw])
 
         stats = {
             'team1': {'live': {}, 'row': {}},
             'team2': {'live': {}, 'row': {}}
         }
 
-        for row in live_stats_raw:
+        for row in live_stats_decoded:
             team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
             stats[team_key]['live'][row['category']] = row['total']
 
         # --- Calculate ROW (Rest of Week) Stats (Placeholder) ---
         cursor.execute("SELECT category FROM scoring")
-        all_categories = [row['category'] for row in cursor.fetchall()]
-        for category in all_categories:
+        all_categories_raw = cursor.fetchall()
+        all_categories_decoded = decode_dict_values([dict(row) for row in all_categories_raw])
+
+        for cat_dict in all_categories_decoded:
+            category = cat_dict['category']
             stats['team1']['row'][category] = 0
             stats['team2']['row'][category] = 0
 
