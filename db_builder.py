@@ -263,6 +263,127 @@ class DBFinalizer:
             logging.info("No new player stats to parse.")
 
 
+    def parse_and_store_bench_stats(self):
+        """
+        Parses raw player data from 'daily_lineups_dump', enriches it with
+        additional details, and stores the structured stats in a new
+        'daily_bench_stats' table.
+        """
+        if not self.con:
+            logging.error("No database connection for finalizer.")
+            return
+
+        cursor = self.con.cursor()
+
+        # Check if the source table exists before proceeding
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_lineups_dump'")
+        if cursor.fetchone() is None:
+            logging.info("Table 'daily_lineups_dump' does not exist. Skipping stat parsing.")
+            return
+
+        logging.info("Parsing raw player strings and storing daily stats...")
+
+        # Create a mapping for stat IDs to their category names.
+        stat_map = {
+            1: 'G', 2: 'A', 3: '+/-', 4: 'PIM', 5: 'PPG', 6: 'PPA', 7: 'PPP',
+            8: 'SHG', 9: 'SHA', 10: 'SHP', 11: 'GWG', 14: 'SOG', 15: 'FW',
+            16: 'FL', 31: 'HIT', 32: 'BLK', 17: 'GS', 19: 'W', 20: 'L',
+            22: 'GA', 23: 'GAA', 24: 'SA', 25: 'SV', 26: 'SV%', 27: 'SHO'
+        }
+
+        # Fetch player normalized names into a dictionary for quick lookup
+        cursor.execute("SELECT player_id, player_name_normalized FROM players")
+        player_norm_name_map = dict(cursor.fetchall())
+        logging.info(f"Loaded {len(player_norm_name_map)} players for name normalization lookup.")
+
+        # Create the new table for structured daily stats
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS daily_player_stats (
+                date_ TEXT NOT NULL,
+                team_id INTEGER NOT NULL,
+                player_id INTEGER NOT NULL,
+                player_name_normalized TEXT,
+                lineup_pos TEXT,
+                stat_id INTEGER NOT NULL,
+                category TEXT,
+                stat_value REAL,
+                PRIMARY KEY (date_, player_id, stat_id)
+            );
+        """)
+
+        # Fetch all data from the dump table
+        cursor.execute("SELECT * FROM daily_lineups_dump")
+        all_lineups = cursor.fetchall()
+
+        # Get column names to correctly map the data
+        column_names = [description[0] for description in cursor.description]
+
+        stats_to_insert = []
+        player_string_pattern = re.compile(r"ID: (\d+), Name: .*, Stats: (\[.*\])")
+        pos_pattern = re.compile(r"([a-zA-Z]+)")
+
+        # Define the active roster slots to parse for stats
+        active_roster_columns = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b8', 'b9',
+            'b10', 'b11', 'b12', 'b13', 'b14', 'b15', 'b16', 'b17', 'b18', 'b19',
+            'i1', 'i2', 'i3', 'i4', 'i5']
+
+        for row in all_lineups:
+            row_dict = dict(zip(column_names, row))
+            date_ = row_dict['date_']
+            team_id = row_dict['team_id']
+
+            # Iterate only through active player columns
+            for col in active_roster_columns:
+                # Ensure column exists and has a player string
+                if col in row_dict and row_dict[col]:
+                    player_string = row_dict[col]
+                    match = player_string_pattern.match(player_string)
+                    if match:
+                        player_id = int(match.group(1))
+                        stats_list_str = match.group(2)
+
+                        # Get lineup position from column name ('c1' -> 'c', 'lw2' -> 'lw')
+                        pos_match = pos_pattern.match(col)
+                        lineup_pos = pos_match.group(1) if pos_match else None
+
+                        # Get player's normalized name from the lookup map
+                        player_name_normalized = player_norm_name_map.get(str(player_id))
+
+                        try:
+                            # Safely evaluate the string representation of the list
+                            stats_list = ast.literal_eval(stats_list_str)
+                            for stat_id, stat_value in stats_list:
+                                category = stat_map.get(stat_id, 'UNKNOWN')
+                                stats_to_insert.append((
+                                    date_,
+                                    team_id,
+                                    player_id,
+                                    player_name_normalized,
+                                    lineup_pos,
+                                    stat_id,
+                                    category,
+                                    stat_value
+                                ))
+                        except (ValueError, SyntaxError) as e:
+                            logging.warning(f"Could not parse stats for player {player_id} on {date_}: {e}")
+
+        if stats_to_insert:
+            logging.info(f"Found {len(stats_to_insert)} individual stat entries to insert/update.")
+            cursor.executemany("""
+                INSERT OR IGNORE INTO daily_player_stats (
+                    date_, team_id, player_id, player_name_normalized, lineup_pos,
+                    stat_id, category, stat_value
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, stats_to_insert)
+            self.con.commit()
+            logging.info("Successfully stored parsed player stats.")
+        else:
+            logging.info("No new player stats to parse.")
+
+
+
+
 def _create_tables(cursor):
     """
     Creates all necessary tables in the database if they don't already exist.
