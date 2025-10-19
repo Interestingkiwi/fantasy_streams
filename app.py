@@ -323,8 +323,8 @@ def matchup_page_data():
         cursor.execute("SELECT week, team1, team2 FROM matchups")
         matchups = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
-        # Fetch scoring categories
-        cursor.execute("SELECT category, stat_id FROM scoring ORDER BY stat_id")
+        # Fetch scoring categories, ordered by group (offense, then goalie) then ID
+        cursor.execute("SELECT category, stat_id, scoring_group FROM scoring ORDER BY scoring_group, stat_id")
         scoring_categories = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
         # Determine current week
@@ -383,7 +383,7 @@ def get_matchup_stats():
         start_date = week_dates['start_date']
         end_date = week_dates['end_date']
 
-        # --- Calculate Live Stats ---
+        # --- Calculate Live Stats (SUMS for counting stats) ---
         cursor.execute("""
             SELECT team_id, category, SUM(stat_value) as total
             FROM daily_player_stats
@@ -399,9 +399,48 @@ def get_matchup_stats():
             'team2': {'live': {}, 'row': {}}
         }
 
+        # Initialize TOI for both teams
+        stats['team1']['live']['TOI'] = 0
+        stats['team2']['live']['TOI'] = 0
+
         for row in live_stats_decoded:
             team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
-            stats[team_key]['live'][row['category']] = row['total']
+            # Don't sum GAA or SV% directly, just the counting stats
+            if row['category'] not in ['GAA', 'SV%']:
+                stats[team_key]['live'][row['category']] = row['total']
+
+        # --- Calculate Goalie TOI ---
+        cursor.execute("""
+            SELECT team_id, player_id, date_, category, stat_value
+            FROM daily_player_stats
+            WHERE
+                date_ >= ? AND date_ <= ?
+                AND (team_id = ? OR team_id = ?)
+                AND lineup_pos LIKE 'g%'
+                AND category IN ('GA', 'GAA')
+        """, (start_date, end_date, team1_id, team2_id))
+
+        goalie_stats_raw = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        # Group stats by appearance (team, player, date)
+        appearances = {}
+        for row in goalie_stats_raw:
+            key = (row['team_id'], row['player_id'], row['date_'])
+            if key not in appearances:
+                appearances[key] = {}
+            appearances[key][row['category']] = row['stat_value']
+
+        for key, appearance_stats in appearances.items():
+            team_id_for_appearance = key[0]
+            ga = appearance_stats.get('GA', 0)
+            gaa = appearance_stats.get('GAA', 0)
+
+            if gaa and gaa > 0:
+                # TOI = (GA * 60) / GAA
+                toi_minutes = (ga * 60) / gaa
+                team_key = 'team1' if str(team_id_for_appearance) == str(team1_id) else 'team2'
+                stats[team_key]['live']['TOI'] += toi_minutes
+
 
         # --- Calculate ROW (Rest of Week) Stats (Placeholder) ---
         cursor.execute("SELECT category FROM scoring")

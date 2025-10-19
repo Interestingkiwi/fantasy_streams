@@ -205,45 +205,48 @@ class DBFinalizer:
         player_string_pattern = re.compile(r"ID: (\d+), Name: .*, Stats: (\[.*\])")
         pos_pattern = re.compile(r"([a-zA-Z]+)")
 
+        # Define the active roster slots to parse for stats
+        active_roster_columns = ['c1', 'c2', 'l1', 'l2', 'r1', 'r2', 'd1', 'd2', 'd3', 'd4', 'g1', 'g2']
+
         for row in all_lineups:
             row_dict = dict(zip(column_names, row))
             date_ = row_dict['date_']
             team_id = row_dict['team_id']
 
-            # Iterate through all possible player columns (c1, c2, l1, etc.)
-            for col in column_names:
-                if col not in ['lineup_id', 'date_', 'team_id']:
+            # Iterate only through active player columns
+            for col in active_roster_columns:
+                # Ensure column exists and has a player string
+                if col in row_dict and row_dict[col]:
                     player_string = row_dict[col]
-                    if player_string:
-                        match = player_string_pattern.match(player_string)
-                        if match:
-                            player_id = int(match.group(1))
-                            stats_list_str = match.group(2)
+                    match = player_string_pattern.match(player_string)
+                    if match:
+                        player_id = int(match.group(1))
+                        stats_list_str = match.group(2)
 
-                            # Get lineup position from column name ('c1' -> 'c', 'lw2' -> 'lw')
-                            pos_match = pos_pattern.match(col)
-                            lineup_pos = pos_match.group(1) if pos_match else None
+                        # Get lineup position from column name ('c1' -> 'c', 'lw2' -> 'lw')
+                        pos_match = pos_pattern.match(col)
+                        lineup_pos = pos_match.group(1) if pos_match else None
 
-                            # Get player's normalized name from the lookup map
-                            player_name_normalized = player_norm_name_map.get(str(player_id))
+                        # Get player's normalized name from the lookup map
+                        player_name_normalized = player_norm_name_map.get(str(player_id))
 
-                            try:
-                                # Safely evaluate the string representation of the list
-                                stats_list = ast.literal_eval(stats_list_str)
-                                for stat_id, stat_value in stats_list:
-                                    category = stat_map.get(stat_id, 'UNKNOWN')
-                                    stats_to_insert.append((
-                                        date_,
-                                        team_id,
-                                        player_id,
-                                        player_name_normalized,
-                                        lineup_pos,
-                                        stat_id,
-                                        category,
-                                        stat_value
-                                    ))
-                            except (ValueError, SyntaxError) as e:
-                                logging.warning(f"Could not parse stats for player {player_id} on {date_}: {e}")
+                        try:
+                            # Safely evaluate the string representation of the list
+                            stats_list = ast.literal_eval(stats_list_str)
+                            for stat_id, stat_value in stats_list:
+                                category = stat_map.get(stat_id, 'UNKNOWN')
+                                stats_to_insert.append((
+                                    date_,
+                                    team_id,
+                                    player_id,
+                                    player_name_normalized,
+                                    lineup_pos,
+                                    stat_id,
+                                    category,
+                                    stat_value
+                                ))
+                        except (ValueError, SyntaxError) as e:
+                            logging.warning(f"Could not parse stats for player {player_id} on {date_}: {e}")
 
         if stats_to_insert:
             logging.info(f"Found {len(stats_to_insert)} individual stat entries to insert/update.")

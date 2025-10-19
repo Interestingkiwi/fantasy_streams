@@ -130,32 +130,56 @@
             'GAA': ['GA']
         };
         const allGoalieSubCats = Object.values(goalieCats).flat();
-        const addedGoalieStats = new Set();
 
         pageData.scoring_categories.forEach(cat => {
             const category = cat.category;
 
-            if (addedGoalieStats.has(category)) {
+            // If this category is a sub-category of another, skip it in this main loop.
+            // It will be rendered under its parent category.
+            if (allGoalieSubCats.includes(category)) {
                 return;
             }
 
-            const isBold = !allGoalieSubCats.includes(category);
-            const fontWeight = isBold ? 'font-bold' : 'font-normal';
+            let t1_live_val = stats.team1.live[category] || 0;
+            let t2_live_val = stats.team2.live[category] || 0;
+            let t1_row_val = stats.team1.row[category] || 0;
+            let t2_row_val = stats.team2.row[category] || 0;
+
+            if (category === 'SV%') {
+                const t1_sv = stats.team1.live['SV'] || 0;
+                const t1_sa = stats.team1.live['SA'] || 0;
+                t1_live_val = t1_sa > 0 ? (t1_sv / t1_sa).toFixed(3) : '0.000';
+
+                const t2_sv = stats.team2.live['SV'] || 0;
+                const t2_sa = stats.team2.live['SA'] || 0;
+                t2_live_val = t2_sa > 0 ? (t2_sv / t2_sa).toFixed(3) : '0.000';
+            }
+
+            if (category === 'GAA') {
+                const t1_ga = stats.team1.live['GA'] || 0;
+                const t1_toi = stats.team1.live['TOI'] || 0;
+                t1_live_val = t1_toi > 0 ? ((t1_ga * 60) / t1_toi).toFixed(2) : '0.00';
+
+                const t2_ga = stats.team2.live['GA'] || 0;
+                const t2_toi = stats.team2.live['TOI'] || 0;
+                t2_live_val = t2_toi > 0 ? ((t2_ga * 60) / t2_toi).toFixed(2) : '0.00';
+            }
 
             tableHtml += `
                 <tr class="hover:bg-gray-700/50">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm ${fontWeight} text-gray-300">${category}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team1.live[category] || 0}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team1.row[category] || 0}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team2.live[category] || 0}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team2.row[category] || 0}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-300">${category}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_live_val}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_row_val}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_live_val}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_row_val}</td>
                 </tr>
             `;
 
+            // If it's a parent goalie category, render its children now.
             if (goalieCats[category]) {
                 goalieCats[category].forEach(subCat => {
+                    // Check if the sub-category actually exists in the league settings
                     if(pageData.scoring_categories.some(c => c.category === subCat)) {
-                        addedGoalieStats.add(subCat);
                         tableHtml += `
                             <tr class="hover:bg-gray-700/50">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-normal text-gray-400 pl-8">${subCat}</td>
