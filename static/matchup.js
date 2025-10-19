@@ -37,140 +37,159 @@
     }
 
     function populateDropdowns() {
-        // Populate Week dropdown
-        pageData.weeks.forEach(week => {
-            const option = new Option(`Week ${week}`, week);
-            weekSelect.add(option);
-        });
-        weekSelect.value = pageData.current_week;
+        // Populate Weeks
+        weekSelect.innerHTML = pageData.weeks.map(week =>
+            `<option value="${week.week_num}" ${week.week_num === pageData.current_week ? 'selected' : ''}>
+                Week ${week.week_num} (${week.start_date} to ${week.end_date})
+            </option>`
+        ).join('');
 
-        // Populate Your Team dropdown
-        pageData.teams.forEach(team => {
-            const option = new Option(team.name, team.team_id);
-            yourTeamSelect.add(option);
-        });
-        yourTeamSelect.value = pageData.your_team_id;
+        // Populate Teams
+        const teamOptions = pageData.teams.map(team =>
+            `<option value="${team.name}">${team.name}</option>`
+        ).join('');
+        yourTeamSelect.innerHTML = teamOptions;
+        opponentSelect.innerHTML = teamOptions;
     }
 
     async function updateOpponent() {
-        const selectedWeek = weekSelect.value;
-        const yourTeamId = yourTeamSelect.value;
-        const currentOpponentId = opponentSelect.value;
+        const selectedWeek = parseInt(weekSelect.value, 10);
+        const yourTeamName = yourTeamSelect.value;
 
-        const matchup = pageData.matchups[selectedWeek].find(m => m.includes(parseInt(yourTeamId)));
-        if (!matchup) {
-            opponentSelect.innerHTML = ''; // no matchup found
+        const matchup = pageData.matchups.find(m =>
+            m.week === selectedWeek && (m.team1 === yourTeamName || m.team2 === yourTeamName)
+        );
+
+        if (matchup) {
+            const opponentName = matchup.team1 === yourTeamName ? matchup.team2 : matchup.team1;
+            opponentSelect.value = opponentName;
+        } else {
+            // If no matchup found (e.g., playoffs), just pick the next team in the list
+            const yourTeamIndex = yourTeamSelect.selectedIndex;
+            const opponentIndex = (yourTeamIndex + 1) % yourTeamSelect.options.length;
+            if(yourTeamIndex === opponentIndex) { // handle league with only one team
+                 opponentSelect.selectedIndex = yourTeamIndex;
+            } else {
+                 opponentSelect.selectedIndex = opponentIndex;
+            }
+        }
+    }
+
+    async function fetchAndRenderTable() {
+        const selectedWeek = weekSelect.value;
+        const yourTeamName = yourTeamSelect.value;
+        const opponentName = opponentSelect.value;
+
+        if (!selectedWeek || !yourTeamName || !opponentName) {
+            tableContainer.innerHTML = '<p class="text-gray-400">Please make all selections.</p>';
             return;
         }
 
-        const opponentId = matchup.find(id => id !== parseInt(yourTeamId));
-        const opponent = pageData.teams.find(t => t.team_id === opponentId);
-
-        opponentSelect.innerHTML = '';
-        if (opponent) {
-            const option = new Option(opponent.name, opponent.team_id);
-            opponentSelect.add(option);
-            opponentSelect.value = opponent.team_id;
-        } else {
-             // Handle case where opponent might not be in the teams list for some reason
-             const placeholderOption = new Option('No Opponent Found', '');
-             opponentSelect.add(placeholderOption);
-        }
-    }
-
-
-    async function fetchAndRenderTable() {
-        const week = weekSelect.value;
-        const team1 = yourTeamSelect.value;
-        const team2 = opponentSelect.value;
-
-        if (!week || !team1 || !team2) return;
+        tableContainer.innerHTML = '<p class="text-gray-400">Loading matchup stats...</p>';
 
         try {
-            const response = await fetch(`/api/matchup_stats?week=${week}&team1_id=${team1}&team2_id=${team2}`);
-            if (!response.ok) {
-                throw new Error('Failed to fetch matchup stats.');
-            }
+            const response = await fetch('/api/matchup_team_stats', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    week: selectedWeek,
+                    team1_name: yourTeamName,
+                    team2_name: opponentName
+                })
+            });
+
             const stats = await response.json();
-            renderTable(stats);
-        } catch (error) {
-            console.error('Error fetching/rendering stats:', error);
-            tableContainer.innerHTML = `<p class="error-message">Could not load matchup data.</p>`;
+            if (!response.ok) throw new Error(stats.error || 'Failed to fetch stats.');
+
+            renderTable(stats, yourTeamName, opponentName);
+
+        } catch(error) {
+            console.error('Error fetching stats:', error);
+            tableContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
         }
     }
 
-    function renderTable(stats) {
-        const statCategories = {
-            "Forwards/Defensemen": ["G", "A", "+/-", "PIM", "PPP", "SOG", "FW", "HIT", "BLK"],
-            "Goaltending": ["GS", "W", "GA", "SV", "SHO", "GAA", "SV%"], // Reordered for better flow
-            "Team": ["IR", "IR+", "NA", "Movers"]
-        };
-
+    function renderTable(stats, yourTeamName, opponentName) {
         let tableHtml = `
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-800">
-                    <thead class="bg-gray-900/50">
+            <div class="bg-gray-900 rounded-lg shadow">
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-700/50">
                         <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider pl-8">Category</th>
-                            <th scope="col" colspan="2" class="px-6 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">${stats.team1.name}</th>
-                            <th scope="col" colspan="2" class="px-6 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">${stats.team2.name}</th>
-                        </tr>
-                        <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider pl-8"></th>
-                            <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">Live</th>
-                            <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">R.O.W.</th>
-                            <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">Live</th>
-                            <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">R.O.W.</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Category</th>
+                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${yourTeamName} (Live)</th>
+                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${yourTeamName} (ROW)</th>
+                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${opponentName} (Live)</th>
+                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${opponentName} (ROW)</th>
                         </tr>
                     </thead>
-                    <tbody class="bg-gray-900/20 divide-y divide-gray-800">
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
-        Object.keys(statCategories).forEach(category => {
+        const goalieCats = {
+            'SV%': ['SV', 'SA'],
+            'GAA': ['GA']
+        };
+        const allGoalieSubCats = Object.values(goalieCats).flat();
+
+        pageData.scoring_categories.forEach(cat => {
+            const category = cat.category;
+
+            // If this category is a sub-category of another, skip it in this main loop.
+            // It will be rendered under its parent category.
+            if (allGoalieSubCats.includes(category)) {
+                return;
+            }
+
+            let t1_live_val = stats.team1.live[category] || 0;
+            let t2_live_val = stats.team2.live[category] || 0;
+            let t1_row_val = stats.team1.row[category] || 0;
+            let t2_row_val = stats.team2.row[category] || 0;
+
+            if (category === 'SV%') {
+                const t1_sv = stats.team1.live['SV'] || 0;
+                const t1_sa = stats.team1.live['SA'] || 0;
+                t1_live_val = t1_sa > 0 ? (t1_sv / t1_sa).toFixed(3) : '0.000';
+
+                const t2_sv = stats.team2.live['SV'] || 0;
+                const t2_sa = stats.team2.live['SA'] || 0;
+                t2_live_val = t2_sa > 0 ? (t2_sv / t2_sa).toFixed(3) : '0.000';
+            }
+
+            if (category === 'GAA') {
+                const t1_ga = stats.team1.live['GA'] || 0;
+                const t1_toi = stats.team1.live['TOI'] || 0;
+                t1_live_val = t1_toi > 0 ? ((t1_ga * 60) / t1_toi).toFixed(2) : '0.00';
+
+                const t2_ga = stats.team2.live['GA'] || 0;
+                const t2_toi = stats.team2.live['TOI'] || 0;
+                t2_live_val = t2_toi > 0 ? ((t2_ga * 60) / t2_toi).toFixed(2) : '0.00';
+            }
+
             tableHtml += `
-                <tr class="bg-gray-800/50">
-                    <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-200 pl-8" colspan="5">${category}</td>
+                <tr class="hover:bg-gray-700/50">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-300">${category}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_live_val}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_row_val}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_live_val}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_row_val}</td>
                 </tr>
             `;
 
-            if (statCategories[category]) {
-                statCategories[category].forEach(subCat => {
-                    let t1_live_val, t1_row_val, t2_live_val, t2_row_val;
-
-                    if (subCat === 'GAA') {
-                        // FIX: Manually calculate GAA = GA / GS to ensure accuracy
-                        t1_live_val = (stats.team1.live.GS && stats.team1.live.GS > 0) ? (stats.team1.live.GA / stats.team1.live.GS).toFixed(2) : '0.00';
-                        t1_row_val = (stats.team1.row.GS && stats.team1.row.GS > 0) ? (stats.team1.row.GA / stats.team1.row.GS).toFixed(2) : '0.00';
-                        t2_live_val = (stats.team2.live.GS && stats.team2.live.GS > 0) ? (stats.team2.live.GA / stats.team2.live.GS).toFixed(2) : '0.00';
-                        t2_row_val = (stats.team2.row.GS && stats.team2.row.GS > 0) ? (stats.team2.row.GA / stats.team2.row.GS).toFixed(2) : '0.00';
-                    } else if (subCat === 'SV%') {
-                        // FIX: Manually calculate SV% = SV / (SV + GA) to ensure accuracy
-                        const calc_sv_pct = (sv, ga) => {
-                            const total_shots = (sv || 0) + (ga || 0);
-                            // Format as .XXX, which is standard for SV%
-                            return total_shots > 0 ? (sv / total_shots).toFixed(3).substring(1) : '.000';
-                        };
-                        t1_live_val = calc_sv_pct(stats.team1.live.SV, stats.team1.live.GA);
-                        t1_row_val = calc_sv_pct(stats.team1.row.SV, stats.team1.row.GA);
-                        t2_live_val = calc_sv_pct(stats.team2.live.SV, stats.team2.live.GA);
-                        t2_row_val = calc_sv_pct(stats.team2.row.SV, stats.team2.row.GA);
-                    } else {
-                        // Default behavior for all other stats
-                        t1_live_val = stats.team1.live[subCat] || 0;
-                        t1_row_val = stats.team1.row[subCat] || 0;
-                        t2_live_val = stats.team2.live[subCat] || 0;
-                        t2_row_val = stats.team2.row[subCat] || 0;
+            // If it's a parent goalie category, render its children now.
+            if (goalieCats[category]) {
+                goalieCats[category].forEach(subCat => {
+                    // Check if the sub-category actually exists in the league settings
+                    if(pageData.scoring_categories.some(c => c.category === subCat)) {
+                        tableHtml += `
+                            <tr class="hover:bg-gray-700/50">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-normal text-gray-400 pl-8">${subCat}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team1.live[subCat] || 0}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team1.row[subCat] || 0}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team2.live[subCat] || 0}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team2.row[subCat] || 0}</td>
+                            </tr>
+                        `;
                     }
-
-                    tableHtml += `
-                        <tr class="hover:bg-gray-700/50">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-normal text-gray-400 pl-8">${subCat}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_live_val}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_row_val}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_live_val}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_row_val}</td>
-                        </tr>
-                    `;
                 });
             }
         });
@@ -195,7 +214,5 @@
         opponentSelect.addEventListener('change', fetchAndRenderTable);
     }
 
-    // Initialize the page
     init();
-
 })();
