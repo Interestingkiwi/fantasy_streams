@@ -45,57 +45,41 @@
     }
 
     function populateDropdowns() {
-        // This function is identical to the original, working version.
-        weekSelect.innerHTML = '';
-        pageData.weeks.forEach(week => {
-            const option = document.createElement('option');
-            option.value = week.week;
-            option.textContent = `Week ${week.week} (${week.start_date} - ${week.end_date})`;
-            if (week.week === pageData.current_week) {
-                option.selected = true;
-            }
-            weekSelect.appendChild(option);
-        });
+        // Populate Weeks
+        weekSelect.innerHTML = pageData.weeks.map(week =>
+            `<option value="${week.week_num}" ${week.week_num === pageData.current_week ? 'selected' : ''}>
+                Week ${week.week_num} (${week.start_date} to ${week.end_date})
+            </option>`
+        ).join('');
 
-        yourTeamSelect.innerHTML = '';
-        pageData.teams.forEach(team => {
-            const option = document.createElement('option');
-            option.value = team.team_key;
-            option.textContent = team.team_name;
-            if (team.is_users_team) {
-                option.selected = true;
-            }
-            yourTeamSelect.appendChild(option);
-        });
+        // Populate Teams
+        const teamOptions = pageData.teams.map(team =>
+            `<option value="${team.name}">${team.name}</option>`
+        ).join('');
+        yourTeamSelect.innerHTML = teamOptions;
+        opponentSelect.innerHTML = teamOptions;
     }
 
     async function updateOpponent() {
-        // This function is identical to the original, working version.
-        const selectedWeek = weekSelect.value;
-        const selectedTeamKey = yourTeamSelect.value;
-        const matchupsForWeek = pageData.matchups[selectedWeek];
+        const selectedWeek = parseInt(weekSelect.value, 10);
+        const yourTeamName = yourTeamSelect.value;
 
-        opponentSelect.innerHTML = '';
-        if (!matchupsForWeek) {
-            opponentSelect.innerHTML = '<option value="">No Matchup This Week</option>';
-            return;
-        }
-
-        const matchup = matchupsForWeek.find(m => m.team1_key === selectedTeamKey || m.team2_key === selectedTeamKey);
+        const matchup = pageData.matchups.find(m =>
+            m.week === selectedWeek && (m.team1 === yourTeamName || m.team2 === yourTeamName)
+        );
 
         if (matchup) {
-            const opponentKey = matchup.team1_key === selectedTeamKey ? matchup.team2_key : matchup.team1_key;
-            const opponent = pageData.teams.find(t => t.team_key === opponentKey);
-            if (opponent) {
-                const option = document.createElement('option');
-                option.value = opponent.team_key;
-                option.textContent = opponent.team_name;
-                opponentSelect.appendChild(option);
-            } else {
-                 opponentSelect.innerHTML = '<option value="">No Opponent Found</option>';
-            }
+            const opponentName = matchup.team1 === yourTeamName ? matchup.team2 : matchup.team1;
+            opponentSelect.value = opponentName;
         } else {
-            opponentSelect.innerHTML = '<option value="">No Matchup This Week</option>';
+            // If no matchup found (e.g., playoffs), just pick the next team in the list
+            const yourTeamIndex = yourTeamSelect.selectedIndex;
+            const opponentIndex = (yourTeamIndex + 1) % yourTeamSelect.options.length;
+            if(yourTeamIndex === opponentIndex) { // handle league with only one team
+                 opponentSelect.selectedIndex = yourTeamIndex;
+            } else {
+                 opponentSelect.selectedIndex = opponentIndex;
+            }
         }
     }
 
