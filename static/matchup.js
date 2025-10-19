@@ -1,218 +1,294 @@
-(async function() {
-    // A short delay to ensure the page elements are in the DOM
-    await new Promise(resolve => setTimeout(resolve, 0));
+document.addEventListener('DOMContentLoaded', function() {
+    const weekSelector = document.getElementById('week-selector');
+    const today = new Date();
+    const currentDay = today.getDay(); // 0 for Sunday, 1 for Monday, etc.
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - currentDay + (currentDay === 0 ? -6 : 1)); // Adjust to the most recent Monday
 
-    const errorDiv = document.getElementById('db-error-message');
-    const controlsDiv = document.getElementById('matchup-controls');
-    const tableContainer = document.getElementById('matchup-table-container');
-    const weekSelect = document.getElementById('week-select');
-    const yourTeamSelect = document.getElementById('your-team-select');
-    const opponentSelect = document.getElementById('opponent-select');
+    // Populate week selector
+    for (let i = 0; i < 26; i++) { // Assuming a 26-week season
+        const weekStart = new Date(monday);
+        weekStart.setDate(monday.getDate() - (i * 7));
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
 
-    let pageData = null; // To store weeks, teams, matchups, etc.
+        const option = document.createElement('option');
+        option.value = weekStart.toISOString().split('T')[0];
+        option.textContent = `Week of ${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}`;
+        if (i === 0) {
+            option.selected = true;
+        }
+        weekSelector.appendChild(option);
+    }
 
-    async function init() {
-        try {
-            const response = await fetch('/api/matchup_page_data');
-            const data = await response.json();
-
-            if (!response.ok || !data.db_exists) {
-                throw new Error(data.error || 'Database has not been initialized.');
-            }
-
-            pageData = data;
-            populateDropdowns();
-            setupEventListeners();
-
-            // Initial data load
-            await updateOpponent();
-            await fetchAndRenderTable();
-
-        } catch (error) {
-            console.error('Initialization error:', error);
-            errorDiv.classList.remove('hidden');
-            controlsDiv.classList.add('hidden');
-            tableContainer.classList.add('hidden');
+    // Set default value for opponent selector if it exists
+    const opponentSelector = document.getElementById('opponent-selector');
+    if (opponentSelector && opponentSelector.options.length > 0) {
+        const leagueId = document.getElementById('league-id').value;
+        const defaultOpponent = localStorage.getItem(`defaultOpponent_${leagueId}`);
+        if (defaultOpponent) {
+            opponentSelector.value = defaultOpponent;
         }
     }
 
-    function populateDropdowns() {
-        // Populate Weeks
-        weekSelect.innerHTML = pageData.weeks.map(week =>
-            `<option value="${week.week_num}" ${week.week_num === pageData.current_week ? 'selected' : ''}>
-                Week ${week.week_num} (${week.start_date} to ${week.end_date})
-            </option>`
-        ).join('');
 
-        // Populate Teams
-        const teamOptions = pageData.teams.map(team =>
-            `<option value="${team.name}">${team.name}</option>`
-        ).join('');
-        yourTeamSelect.innerHTML = teamOptions;
-        opponentSelect.innerHTML = teamOptions;
+    weekSelector.addEventListener('change', getMatchupData);
+    if (opponentSelector) {
+        opponentSelector.addEventListener('change', function() {
+            const leagueId = document.getElementById('league-id').value;
+            localStorage.setItem(`defaultOpponent_${leagueId}`, this.value);
+            getMatchupData();
+        });
     }
 
-    async function updateOpponent() {
-        const selectedWeek = parseInt(weekSelect.value, 10);
-        const yourTeamName = yourTeamSelect.value;
+    getMatchupData(); // Initial data load
+});
 
-        const matchup = pageData.matchups.find(m =>
-            m.week === selectedWeek && (m.team1 === yourTeamName || m.team2 === yourTeamName)
-        );
-
-        if (matchup) {
-            const opponentName = matchup.team1 === yourTeamName ? matchup.team2 : matchup.team1;
-            opponentSelect.value = opponentName;
-        } else {
-            // If no matchup found (e.g., playoffs), just pick the next team in the list
-            const yourTeamIndex = yourTeamSelect.selectedIndex;
-            const opponentIndex = (yourTeamIndex + 1) % yourTeamSelect.options.length;
-            if(yourTeamIndex === opponentIndex) { // handle league with only one team
-                 opponentSelect.selectedIndex = yourTeamIndex;
-            } else {
-                 opponentSelect.selectedIndex = opponentIndex;
-            }
-        }
+function getMatchupData() {
+    const leagueId = document.getElementById('league-id').value;
+    const weekStartDate = document.getElementById('week-selector').value;
+    const opponentSelector = document.getElementById('opponent-selector');
+    let opponentTeamId = null;
+    if (opponentSelector){
+        opponentTeamId = opponentSelector.value;
     }
 
-    async function fetchAndRenderTable() {
-        const selectedWeek = weekSelect.value;
-        const yourTeamName = yourTeamSelect.value;
-        const opponentName = opponentSelect.value;
 
-        if (!selectedWeek || !yourTeamName || !opponentName) {
-            tableContainer.innerHTML = '<p class="text-gray-400">Please make all selections.</p>';
-            return;
-        }
-
-        tableContainer.innerHTML = '<p class="text-gray-400">Loading matchup stats...</p>';
-
-        try {
-            const response = await fetch('/api/matchup_team_stats', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    week: selectedWeek,
-                    team1_name: yourTeamName,
-                    team2_name: opponentName
-                })
-            });
-
-            const stats = await response.json();
-            if (!response.ok) throw new Error(stats.error || 'Failed to fetch stats.');
-
-            renderTable(stats, yourTeamName, opponentName);
-
-        } catch(error) {
-            console.error('Error fetching stats:', error);
-            tableContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
-        }
+    if (!opponentTeamId) {
+        console.log("No opponent selected");
+        // Clear tables if no opponent is selected
+        document.querySelector('#my-team-table tbody').innerHTML = '<tr><td colspan="2">Select an opponent</td></tr>';
+        document.querySelector('#opponent-team-table tbody').innerHTML = '<tr><td colspan="2">Select an opponent</td></tr>';
+        document.querySelector('#projected-matchup-table tbody').innerHTML = '<tr><td colspan="3">Select an opponent to see projections</td></tr>';
+        document.getElementById('my-team-score').textContent = '0';
+        document.getElementById('opponent-team-score').textContent = '0';
+        document.getElementById('projected-score').textContent = '0 - 0 - 0';
+        return;
     }
 
-    function renderTable(stats, yourTeamName, opponentName) {
-        let tableHtml = `
-            <div class="bg-gray-900 rounded-lg shadow">
-                <table class="min-w-full divide-y divide-gray-700">
-                    <thead class="bg-gray-700/50">
-                        <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Category</th>
-                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${yourTeamName} (Live)</th>
-                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${yourTeamName} (ROW)</th>
-                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${opponentName} (Live)</th>
-                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${opponentName} (ROW)</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-gray-800 divide-y divide-gray-700">
-        `;
+    showLoading();
 
-        const goalieCats = {
-            'SV%': ['SV', 'SA'],
-            'GAA': ['GA']
-        };
-        const allGoalieSubCats = Object.values(goalieCats).flat();
-
-        pageData.scoring_categories.forEach(cat => {
-            const category = cat.category;
-
-            // If this category is a sub-category of another, skip it in this main loop.
-            // It will be rendered under its parent category.
-            if (allGoalieSubCats.includes(category)) {
+    fetch(`/get_matchup_data?league_id=${leagueId}&week_start_date=${weekStartDate}&opponent_team_id=${opponentTeamId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Error fetching matchup data:', data.error);
+                hideLoading();
                 return;
             }
+            document.getElementById('my-team-name').textContent = data.my_team.name;
+            document.getElementById('opponent-team-name').textContent = data.opponent_team.name;
 
-            let t1_live_val = stats.team1.live[category] || 0;
-            let t2_live_val = stats.team2.live[category] || 0;
-            let t1_row_val = stats.team1.row[category] || 0;
-            let t2_row_val = stats.team2.row[category] || 0;
+            createMatchupTable(data.my_team, 'my-team-table', false);
+            createMatchupTable(data.opponent_team, 'opponent-team-table', true);
 
-            if (category === 'SV%') {
-                const t1_sv = stats.team1.live['SV'] || 0;
-                const t1_sa = stats.team1.live['SA'] || 0;
-                t1_live_val = t1_sa > 0 ? (t1_sv / t1_sa).toFixed(3) : '0.000';
+            createProjectedTable(data.my_team, data.opponent_team, data.my_team_projections, data.opponent_team_projections);
 
-                const t2_sv = stats.team2.live['SV'] || 0;
-                const t2_sa = stats.team2.live['SA'] || 0;
-                t2_live_val = t2_sa > 0 ? (t2_sv / t2_sa).toFixed(3) : '0.000';
-            }
+            updateScores(data.my_team, data.opponent_team);
 
-            if (category === 'GAA') {
-                const t1_ga = stats.team1.live['GA'] || 0;
-                const t1_toi = stats.team1.live['TOI'] || 0;
-                t1_live_val = t1_toi > 0 ? ((t1_ga * 60) / t1_toi).toFixed(2) : '0.00';
-
-                const t2_ga = stats.team2.live['GA'] || 0;
-                const t2_toi = stats.team2.live['TOI'] || 0;
-                t2_live_val = t2_toi > 0 ? ((t2_ga * 60) / t2_toi).toFixed(2) : '0.00';
-            }
-
-            tableHtml += `
-                <tr class="hover:bg-gray-700/50">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-300">${category}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_live_val}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_row_val}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_live_val}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_row_val}</td>
-                </tr>
-            `;
-
-            // If it's a parent goalie category, render its children now.
-            if (goalieCats[category]) {
-                goalieCats[category].forEach(subCat => {
-                    // Check if the sub-category actually exists in the league settings
-                    if(pageData.scoring_categories.some(c => c.category === subCat)) {
-                        tableHtml += `
-                            <tr class="hover:bg-gray-700/50">
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-normal text-gray-400 pl-8">${subCat}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team1.live[subCat] || 0}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team1.row[subCat] || 0}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team2.live[subCat] || 0}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team2.row[subCat] || 0}</td>
-                            </tr>
-                        `;
-                    }
-                });
-            }
+            hideLoading();
+        })
+        .catch(error => {
+            console.error('Error fetching matchup data:', error);
+            hideLoading();
         });
+}
 
-        tableHtml += `
-                    </tbody>
-                </table>
-            </div>
+function createMatchupTable(teamData, tableId, isOpponent) {
+    const tableBody = document.querySelector(`#${tableId} tbody`);
+    tableBody.innerHTML = ''; // Clear existing rows
+
+    const goalieStats = [
+        'W', 'L', 'GAA', 'SV%', 'SO', 'SV', 'GA',
+        'Wins', 'Losses', 'Goals Against Average', 'Save Percentage', 'Shutouts', 'Saves', 'Goals Against'
+    ];
+
+    const sortedStats = [...teamData.stats].sort((a, b) => {
+        const aIsGoalie = goalieStats.includes(a.stat_name);
+        const bIsGoalie = goalieStats.includes(b.stat_name);
+
+        if (aIsGoalie && !bIsGoalie) {
+            return 1; // a (goalie) comes after b (skater)
+        }
+        if (!aIsGoalie && bIsGoalie) {
+            return -1; // a (skater) comes before b (goalie)
+        }
+        return 0; // maintain original relative order
+    });
+
+
+    for (const row of sortedStats) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${row.stat_name}</td>
+            <td class="stat-value">${formatStat(row.stat_name, row.stat_value)}</td>
         `;
-        tableContainer.innerHTML = tableHtml;
+        tableBody.appendChild(tr);
+    }
+    updateTeamScore(tableId, teamData.win_count || 0);
+}
+
+function updateTeamScore(tableId, score) {
+    const scoreElementId = tableId.replace('-table', '-score');
+    const scoreElement = document.getElementById(scoreElementId);
+    if (scoreElement) {
+        scoreElement.textContent = score;
+    }
+}
+
+function createProjectedTable(myTeamData, opponentData, myTeamProjections, opponentProjections) {
+    const tableBody = document.querySelector('#projected-matchup-table tbody');
+    tableBody.innerHTML = '';
+
+    const goalieStats = [
+        'W', 'L', 'GAA', 'SV%', 'SO', 'SV', 'GA',
+        'Wins', 'Losses', 'Goals Against Average', 'Save Percentage', 'Shutouts', 'Saves', 'Goals Against'
+    ];
+
+    const allStatNames = Array.from(new Set([
+        ...myTeamData.stats.map(s => s.stat_name),
+        ...opponentData.stats.map(s => s.stat_name)
+    ]));
+
+    allStatNames.sort((a, b) => {
+        const aIsGoalie = goalieStats.includes(a);
+        const bIsGoalie = goalieStats.includes(b);
+
+        if (aIsGoalie && !bIsGoalie) {
+            return 1;
+        }
+        if (!aIsGoalie && bIsGoalie) {
+            return -1;
+        }
+        // If they are of the same type, maintain a consistent order based on the myTeamData stat order
+        const myTeamStatNames = myTeamData.stats.map(s => s.stat_name);
+        return myTeamStatNames.indexOf(a) - myTeamStatNames.indexOf(b);
+    });
+
+
+    let myProjectedWins = 0;
+    let opponentProjectedWins = 0;
+    let ties = 0;
+
+    for (const statName of allStatNames) {
+        const myStat = myTeamData.stats.find(s => s.stat_name === statName);
+        const opponentStat = opponentData.stats.find(s => s.stat_name === statName);
+
+        const myCurrentValue = myStat ? parseFloat(myStat.stat_value) : 0;
+        const opponentCurrentValue = opponentStat ? parseFloat(opponentStat.stat_value) : 0;
+
+        const myProjectedValue = myTeamProjections[statName] || 0;
+        const opponentProjectedValue = opponentProjections[statName] || 0;
+
+        const myCombinedValue = myCurrentValue + myProjectedValue;
+        const opponentCombinedValue = opponentCurrentValue + opponentProjectedValue;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${formatStat(statName, myCombinedValue)}</td>
+            <td class="stat-name-proj"><strong>${statName}</strong></td>
+            <td>${formatStat(statName, opponentCombinedValue)}</td>
+        `;
+
+        const myTotalCell = tr.children[0];
+        const opponentTotalCell = tr.children[2];
+
+        // Inverse categories where lower is better
+        const isInverseStat = ['GAA', 'L', 'GA', 'Losses', 'Goals Against Average', 'Goals Against', 'PIM', 'Penalty Minutes'].includes(statName);
+
+        if (isInverseStat) {
+            if (myCombinedValue < opponentCombinedValue) {
+                myTotalCell.classList.add('winning');
+                myProjectedWins++;
+            } else if (opponentCombinedValue < myCombinedValue) {
+                opponentTotalCell.classList.add('winning');
+                opponentProjectedWins++;
+            } else if (myCombinedValue === opponentCombinedValue && myCombinedValue !== 0){
+                ties++;
+            }
+        } else {
+            if (myCombinedValue > opponentCombinedValue) {
+                myTotalCell.classList.add('winning');
+                myProjectedWins++;
+            } else if (opponentCombinedValue > myCombinedValue) {
+                opponentTotalCell.classList.add('winning');
+                opponentProjectedWins++;
+            } else if (myCombinedValue === opponentCombinedValue && myCombinedValue !== 0){
+                ties++;
+            }
+        }
+
+        tableBody.appendChild(tr);
     }
 
-    function setupEventListeners() {
-        weekSelect.addEventListener('change', async () => {
-            await updateOpponent();
-            await fetchAndRenderTable();
-        });
-        yourTeamSelect.addEventListener('change', async () => {
-            await updateOpponent();
-            await fetchAndRenderTable();
-        });
-        opponentSelect.addEventListener('change', fetchAndRenderTable);
+    const scoreElement = document.getElementById('projected-score');
+    scoreElement.textContent = `${myProjectedWins} - ${opponentProjectedWins} - ${ties}`;
+}
+
+
+function updateScores(myTeamData, opponentData) {
+    let myWinCount = 0;
+    let opponentWinCount = 0;
+    let tieCount = 0;
+
+    myTeamData.stats.forEach(myStat => {
+        const opponentStat = opponentData.stats.find(s => s.stat_name === myStat.stat_name);
+        if (opponentStat) {
+            const myValue = parseFloat(myStat.stat_value);
+            const opponentValue = parseFloat(opponentStat.stat_value);
+
+            // Inverse categories where lower is better
+            const isInverseStat = ['GAA', 'L', 'GA', 'Losses', 'Goals Against Average', 'Goals Against', 'PIM', 'Penalty Minutes'].includes(myStat.stat_name);
+
+            if (isInverseStat) {
+                if (myValue < opponentValue) {
+                    myWinCount++;
+                } else if (opponentValue < myValue) {
+                    opponentWinCount++;
+                } else if (myValue === opponentValue && myValue !== 0) {
+                    tieCount++;
+                }
+            } else {
+                 if (myValue > opponentValue) {
+                    myWinCount++;
+                } else if (opponentValue > myValue) {
+                    opponentWinCount++;
+                } else if (myValue === opponentValue && myValue !== 0) {
+                    tieCount++;
+                }
+            }
+        }
+    });
+
+    document.getElementById('my-team-score').textContent = myWinCount;
+    document.getElementById('opponent-team-score').textContent = opponentWinCount;
+    document.getElementById('tie-count').textContent = tieCount;
+
+}
+
+
+function formatStat(statName, value) {
+    const floatStats = ['SV%', 'GAA', 'Save Percentage', 'Goals Against Average', 'Shooting Percentage'];
+    if (floatStats.includes(statName)) {
+        // For GAA, ensure 2 decimal places. For SV%, 3.
+        const decimalPlaces = (statName === 'GAA' || statName === 'Goals Against Average') ? 2 : 3;
+        // Check if value is a number before calling toFixed
+        if (typeof value === 'number') {
+            return value.toFixed(decimalPlaces);
+        }
+    }
+    // if value is a float, but not in floatStats, round to 2 decimal places
+    if (typeof value === 'number' && value % 1 !== 0) {
+        return value.toFixed(2);
     }
 
-    init();
-})();
+    return value;
+}
+
+function showLoading() {
+    document.getElementById('loading-overlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loading-overlay').style.display = 'none';
+}
