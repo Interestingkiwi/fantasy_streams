@@ -22,6 +22,7 @@ import time
 import re
 import db_builder
 import uuid
+from datetime import date, timedelta
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
@@ -141,6 +142,31 @@ def get_yfa_lg_instance():
             os.remove(temp_file_path)
 
 
+def get_db_connection_for_league(league_id):
+    """Finds and connects to the league's database."""
+    if not league_id:
+        return None, "League ID not found in session."
+
+    db_filename = None
+    for filename in os.listdir(DATA_DIR):
+        if filename.startswith(f"yahoo-{league_id}-") and filename.endswith(".db"):
+            db_filename = filename
+            break
+
+    if not db_filename:
+        return None, "Database file not found. Please initialize it on the 'League Database' page."
+
+    db_path = os.path.join(DATA_DIR, db_filename)
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn, None
+    except Exception as e:
+        logging.error(f"Error connecting to DB at {db_path}: {e}")
+        return None, "Could not connect to the database."
+
+
+
 @app.route('/')
 def index():
     if 'yahoo_token' in session:
@@ -240,6 +266,126 @@ def handle_yfa_query():
     except Exception as e:
         logging.error(f"YFA Query error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/matchup_page_data')
+def matchup_page_data():
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+
+    if not conn:
+        return jsonify({'db_exists': False, 'error': error_msg})
+
+    try:
+        cursor = conn.cursor()
+
+        # Fetch weeks
+        cursor.execute("SELECT week_num, start_date, end_date FROM weeks ORDER BY week_num")
+        weeks = [dict(row) for row in cursor.fetchall()]
+
+        # Fetch teams
+        cursor.execute("SELECT team_id, name FROM teams ORDER BY name")
+        teams = [dict(row) for row in cursor.fetchall()]
+
+        # Fetch matchups
+        cursor.execute("SELECT week, team1, team2 FROM matchups")
+        matchups = [dict(row) for row in cursor.fetchall()]
+
+        # Fetch scoring categories
+        cursor.execute("SELECT category, stat_id FROM scoring ORDER BY stat_id")
+        scoring_categories = [dict(row) for row in cursor.fetchall()]
+
+        # Determine current week
+        today = date.today().isoformat()
+        cursor.execute("SELECT week_num FROM weeks WHERE start_date <= ? AND end_date >= ?", (today, today))
+        current_week_row = cursor.fetchone()
+        current_week = current_week_row['week_num'] if current_week_row else (weeks[0]['week_num'] if weeks else 1)
+
+        return jsonify({
+            'db_exists': True,
+            'weeks': weeks,
+            'teams': teams,
+            'matchups': matchups,
+            'scoring_categories': scoring_categories,
+            'current_week': current_week
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching matchup page data: {e}", exc_info=True)
+        return jsonify({'db_exists': False, 'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@app.route('/api/matchup_team_stats', methods=['POST'])
+def get_matchup_stats():
+    league_id = session.get('league_id')
+    data = request.get_json()
+    week_num = data.get('week')
+    team1_name = data.get('team1_name')
+    team2_name = data.get('team2_name')
+
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg}), 404
+
+    try:
+        cursor = conn.cursor()
+
+        # Get team IDs from names
+        cursor.execute("SELECT team_id FROM teams WHERE name = ?", (team1_name,))
+        team1_id_row = cursor.fetchone()
+        if not team1_id_row: return jsonify({'error': f'Team not found: {team1_name}'}), 404
+        team1_id = team1_id_row['team_id']
+
+        cursor.execute("SELECT team_id FROM teams WHERE name = ?", (team2_name,))
+        team2_id_row = cursor.fetchone()
+        if not team2_id_row: return jsonify({'error': f'Team not found: {team2_name}'}), 404
+        team2_id = team2_id_row['team_id']
+
+        # Get week start/end dates
+        cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num,))
+        week_dates = cursor.fetchone()
+        if not week_dates: return jsonify({'error': f'Week not found: {week_num}'}), 404
+        start_date = week_dates['start_date']
+        end_date = week_dates['end_date']
+
+        # --- Calculate Live Stats ---
+        cursor.execute("""
+            SELECT team_id, category, SUM(stat_value) as total
+            FROM daily_player_stats
+            WHERE date_ >= ? AND date_ <= ? AND (team_id = ? OR team_id = ?)
+            GROUP BY team_id, category
+        """, (start_date, end_date, team1_id, team2_id))
+
+        live_stats_raw = cursor.fetchall()
+
+        stats = {
+            'team1': {'live': {}, 'row': {}},
+            'team2': {'live': {}, 'row': {}}
+        }
+
+        for row in live_stats_raw:
+            team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
+            stats[team_key]['live'][row['category']] = row['total']
+
+        # --- Calculate ROW (Rest of Week) Stats (Placeholder) ---
+        cursor.execute("SELECT category FROM scoring")
+        all_categories = [row['category'] for row in cursor.fetchall()]
+        for category in all_categories:
+            stats['team1']['row'][category] = 0
+            stats['team2']['row'][category] = 0
+
+        return jsonify(stats)
+
+    except Exception as e:
+        logging.error(f"Error fetching matchup stats: {e}", exc_info=True)
+        return jsonify({'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
 
 
 @app.route('/api/update_db', methods=['POST'])

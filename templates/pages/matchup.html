@@ -1,76 +1,34 @@
-<div class="space-y-4">
-    <h2 class="text-xl font-bold text-white">League Matchups</h2>
-    <div id="matchups-table-container" class="overflow-x-auto">
+<div id="matchup-container" class="space-y-4">
+    <div id="db-error-message" class="hidden bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg" role="alert">
+        <p class="font-bold">Database Not Found!</p>
+        <p class="text-sm">Please go to the "League Database" page and initialize your league's data before using this feature.</p>
+    </div>
+
+    <div id="matchup-controls" class="space-y-4 md:space-y-0 md:flex md:items-end md:gap-4">
+        <div>
+            <label for="week-select" class="block mb-2 text-sm font-medium text-gray-300">Fantasy Week</label>
+            <select id="week-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                <option selected>Loading Weeks...</option>
+            </select>
+        </div>
+        <div>
+            <label for="your-team-select" class="block mb-2 text-sm font-medium text-gray-300">Your Team</label>
+            <select id="your-team-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                <option selected>Loading Teams...</option>
+            </select>
+        </div>
+        <div>
+            <label for="opponent-select" class="block mb-2 text-sm font-medium text-gray-300">Opponent</label>
+            <select id="opponent-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                <option selected>Loading Opponent...</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="matchup-table-container" class="overflow-x-auto">
         <!-- Table will be generated here by script -->
+        <p class="text-gray-400">Select a week and teams to view matchup stats.</p>
     </div>
 </div>
 
-<script>
-    (async function() {
-        const container = document.getElementById('matchups-table-container');
-        try {
-            const response = await fetch('/api/matchups');
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to fetch matchups');
-            }
-            const matchups = await response.json();
-
-            if (matchups.length === 0) {
-                container.innerHTML = '<p class="text-gray-400">No matchup data found for this league.</p>';
-                return;
-            }
-
-            // Group matchups by week
-            const matchupsByWeek = matchups.reduce((acc, matchup) => {
-                const { week } = matchup;
-                if (!acc[week]) {
-                    acc[week] = [];
-                }
-                acc[week].push(matchup);
-                return acc;
-            }, {});
-
-            let allWeeksHtml = '';
-            for (const week in matchupsByWeek) {
-                allWeeksHtml += `
-                    <h3 class="text-lg font-semibold text-gray-200 mt-6 mb-2">Week ${week}</h3>
-                    <div class="bg-gray-900 rounded-lg shadow">
-                        <table class="min-w-full divide-y divide-gray-700">
-                            <thead class="bg-gray-700/50">
-                                <tr>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                                        Team 1
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                                        Team 2
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-gray-800 divide-y divide-gray-700">
-                `;
-
-                matchupsByWeek[week].forEach(match => {
-                    allWeeksHtml += `
-                        <tr class="hover:bg-gray-700/50">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${match.team1}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${match.team2}</td>
-                        </tr>
-                    `;
-                });
-
-                allWeeksHtml += `
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-            }
-
-            container.innerHTML = allWeeksHtml;
-
-        } catch (error) {
-            console.error('Error fetching or rendering matchups:', error);
-            container.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
-        }
-    })();
-</script>
+<script src="{{ url_for('static', filename='matchup.js') }}"></script>
