@@ -72,10 +72,9 @@
         const selectedWeek = weekSelect.value;
         const selectedTeamKey = yourTeamSelect.value;
 
-        // --- FIX: Check if matchup data exists for the selected week before proceeding ---
         const matchupsForWeek = pageData.matchups[selectedWeek];
         if (!matchupsForWeek) {
-            opponentSelect.innerHTML = '<option>No Matchup This Week</option>';
+            opponentSelect.innerHTML = '<option value="">No Matchup This Week</option>';
             return;
         }
 
@@ -91,10 +90,10 @@
                 option.textContent = opponent.team_name;
                 opponentSelect.appendChild(option);
             } else {
-                 opponentSelect.innerHTML = '<option>No Opponent</option>';
+                 opponentSelect.innerHTML = '<option value="">No Opponent</option>';
             }
         } else {
-            opponentSelect.innerHTML = '<option>No Matchup This Week</option>';
+            opponentSelect.innerHTML = '<option value="">No Matchup This Week</option>';
         }
     }
 
@@ -111,8 +110,12 @@
 
         try {
             const response = await fetch(`/api/matchup_data?team1_key=${team1Key}&team2_key=${team2Key}&week=${week}`);
+            if (!response.ok) {
+                // Handle non-JSON error responses gracefully
+                const errorText = await response.text();
+                throw new Error(`Failed to fetch matchup data. Server responded with: ${errorText}`);
+            }
             const stats = await response.json();
-            if (!response.ok) throw new Error(stats.error || 'Failed to fetch matchup data.');
 
             renderTables(stats);
         } catch (error) {
