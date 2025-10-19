@@ -146,11 +146,12 @@ class DBFinalizer:
                 logging.info("Detaching projections database.")
                 self.con.execute("DETACH DATABASE projections")
 
-    def parse_and_store_player_stats(self):
+def parse_and_store_player_stats(self):
         """
         Parses raw player data from 'daily_lineups_dump', enriches it with
-        additional details, and stores the structured stats in a new
-        'daily_player_stats' table.
+        additional details, calculates missing goalie stats (TOI/G) when
+        possible, and stores the structured stats in a new 'daily_player_stats'
+        table.
         """
         if not self.con:
             logging.error("No database connection for finalizer.")
@@ -234,7 +235,30 @@ class DBFinalizer:
                         try:
                             # Safely evaluate the string representation of the list
                             stats_list = ast.literal_eval(stats_list_str)
-                            for stat_id, stat_value in stats_list:
+
+                            # --- START: New Logic for Calculating Stat 28 ---
+
+                            # Store the player's stats in a dictionary for easy lookup
+                            player_stats = dict(stats_list)
+
+                            # Check if the player is a goalie ('g') and if the required stats exist
+                            if (lineup_pos == 'g' and
+                                22 in player_stats and  # GA exists
+                                23 in player_stats and  # GAA exists
+                                28 not in player_stats): # TOI/G does NOT exist
+
+                                val_22_ga = player_stats[22]
+                                val_23_gaa = player_stats[23]
+
+                                # Avoid a ZeroDivisionError if GAA is 0
+                                if val_23_gaa > 0:
+                                    # Calculate TOI/G using the derived formula
+                                    val_28_toi = (val_22_ga / val_23_gaa) * 60
+                                    player_stats[28] = round(val_28_toi, 2) # Add new stat to the dict
+                                    logging.info(f"Calculated stat 28 (TOI/G={val_28_toi:.2f}) for goalie ID {player_id} on {date_}.")
+
+                            # Add all stats for this player (including the new one) to the main list
+                            for stat_id, stat_value in player_stats.items():
                                 category = stat_map.get(stat_id, 'UNKNOWN')
                                 stats_to_insert.append((
                                     date_,
@@ -246,6 +270,9 @@ class DBFinalizer:
                                     category,
                                     stat_value
                                 ))
+
+                            # --- END: New Logic ---
+
                         except (ValueError, SyntaxError) as e:
                             logging.warning(f"Could not parse stats for player {player_id} on {date_}: {e}")
 
@@ -263,8 +290,7 @@ class DBFinalizer:
         else:
             logging.info("No new player stats to parse.")
 
-
-    def parse_and_store_bench_stats(self):
+def parse_and_store_bench_stats(self):
         """
         Parses raw player data from 'daily_lineups_dump', enriches it with
         additional details, and stores the structured stats in a new
@@ -282,7 +308,7 @@ class DBFinalizer:
             logging.info("Table 'daily_lineups_dump' does not exist. Skipping stat parsing.")
             return
 
-        logging.info("Parsing raw player strings and storing daily stats...")
+        logging.info("Parsing raw bench player strings and storing daily stats...")
 
         # Create a mapping for stat IDs to their category names.
         stat_map = {
@@ -324,10 +350,10 @@ class DBFinalizer:
         player_string_pattern = re.compile(r"ID: (\d+), Name: .*, Stats: (\[.*\])")
         pos_pattern = re.compile(r"([a-zA-Z]+)")
 
-        # Define the active roster slots to parse for stats
+        # Define the bench and injured roster slots to parse for stats
         active_roster_columns = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b8', 'b9',
-            'b10', 'b11', 'b12', 'b13', 'b14', 'b15', 'b16', 'b17', 'b18', 'b19',
-            'i1', 'i2', 'i3', 'i4', 'i5']
+                                 'b10', 'b11', 'b12', 'b13', 'b14', 'b15', 'b16', 'b17', 'b18', 'b19',
+                                 'i1', 'i2', 'i3', 'i4', 'i5']
 
         for row in all_lineups:
             row_dict = dict(zip(column_names, row))
@@ -344,7 +370,7 @@ class DBFinalizer:
                         player_id = int(match.group(1))
                         stats_list_str = match.group(2)
 
-                        # Get lineup position from column name ('c1' -> 'c', 'lw2' -> 'lw')
+                        # Get lineup position from column name ('b1' -> 'b', 'i2' -> 'i')
                         pos_match = pos_pattern.match(col)
                         lineup_pos = pos_match.group(1) if pos_match else None
 
@@ -354,7 +380,29 @@ class DBFinalizer:
                         try:
                             # Safely evaluate the string representation of the list
                             stats_list = ast.literal_eval(stats_list_str)
-                            for stat_id, stat_value in stats_list:
+
+                            # --- START: New Logic for Calculating Stat 28 ---
+
+                            # Store the player's stats in a dictionary for easy lookup
+                            player_stats = dict(stats_list)
+
+                            # Check if the required goalie stats exist to calculate TOI/G
+                            if (22 in player_stats and    # GA exists
+                                23 in player_stats and    # GAA exists
+                                28 not in player_stats):  # TOI/G does NOT exist
+
+                                val_22_ga = player_stats[22]
+                                val_23_gaa = player_stats[23]
+
+                                # Avoid a ZeroDivisionError if GAA is 0
+                                if val_23_gaa > 0:
+                                    # Calculate TOI/G using the formula: x = (GA / GAA) * 60
+                                    val_28_toi = (val_22_ga / val_23_gaa) * 60
+                                    player_stats[28] = round(val_28_toi, 2) # Add new stat to the dict
+                                    logging.info(f"Calculated bench stat 28 (TOI/G={val_28_toi:.2f}) for player ID {player_id} on {date_}.")
+
+                            # Add all stats for this player (including the new one) to the main list
+                            for stat_id, stat_value in player_stats.items():
                                 category = stat_map.get(stat_id, 'UNKNOWN')
                                 stats_to_insert.append((
                                     date_,
@@ -366,11 +414,14 @@ class DBFinalizer:
                                     category,
                                     stat_value
                                 ))
+
+                            # --- END: New Logic ---
+
                         except (ValueError, SyntaxError) as e:
                             logging.warning(f"Could not parse stats for player {player_id} on {date_}: {e}")
 
         if stats_to_insert:
-            logging.info(f"Found {len(stats_to_insert)} individual stat entries to insert/update.")
+            logging.info(f"Found {len(stats_to_insert)} individual bench stat entries to insert/update.")
             cursor.executemany("""
                 INSERT OR IGNORE INTO daily_bench_stats (
                     date_, team_id, player_id, player_name_normalized, lineup_pos,
@@ -379,10 +430,9 @@ class DBFinalizer:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, stats_to_insert)
             self.con.commit()
-            logging.info("Successfully stored parsed player stats.")
+            logging.info("Successfully stored parsed bench player stats.")
         else:
-            logging.info("No new player stats to parse.")
-
+            logging.info("No new bench player stats to parse.")
 
 
 
