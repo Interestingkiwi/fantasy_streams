@@ -6,7 +6,7 @@ Main run app for Fantasystreams.app
 
 Author: Jason Druckenmiller
 Date: 10/16/2025
-Updated: 10/18/2025
+Updated: 10/19/2025
 """
 
 import os
@@ -23,12 +23,17 @@ import re
 import db_builder
 import uuid
 from datetime import date, timedelta
+import shutil
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
+
+SERVER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'server')
+TEST_DB_FILENAME = 'yahoo-22705-Albany Hockey Hooligans Test.db'
+TEST_DB_PATH = os.path.join(SERVER_DIR, TEST_DB_FILENAME)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-strong-dev-secret-key-for-local-testing")
@@ -143,7 +148,25 @@ def get_yfa_lg_instance():
 
 
 def get_db_connection_for_league(league_id):
-    """Finds and connects to the league's database."""
+    """Finds and connects to the league's database. Uses a test DB if configured."""
+    if session.get('use_test_db'):
+        logging.info(f"Using test database: {TEST_DB_PATH}")
+        if not os.path.exists(TEST_DB_PATH):
+            return None, f"Test database '{TEST_DB_FILENAME}' not found in 'server' directory."
+        try:
+            # Render has an ephemeral filesystem. The test DB in the repo (`server/`) is read-only.
+            # It's safer to copy it to the writable `data` dir to connect.
+            writable_test_db_path = os.path.join(DATA_DIR, f"temp_{TEST_DB_FILENAME}")
+            shutil.copy2(TEST_DB_PATH, writable_test_db_path)
+            conn = sqlite3.connect(writable_test_db_path)
+            conn.row_factory = sqlite3.Row
+            logging.info(f"Successfully connected to temporary copy of test DB.")
+            return conn, None
+        except Exception as e:
+            logging.error(f"Error connecting to test DB at {TEST_DB_PATH}: {e}")
+            return None, "Could not connect to the test database."
+
+    # Original logic if not using test DB
     if not league_id:
         return None, "League ID not found in session."
 
@@ -424,6 +447,12 @@ def update_db_route():
 
 @app.route('/api/download_db')
 def download_db():
+    if session.get('use_test_db'):
+        logging.info(f"Downloading test database: {TEST_DB_FILENAME}")
+        if not os.path.exists(TEST_DB_PATH):
+            return jsonify({'error': 'Test database file not found in /server directory.'}), 404
+        return send_from_directory(SERVER_DIR, TEST_DB_FILENAME, as_attachment=True)
+
     league_id = session.get('league_id')
     if not league_id:
         return jsonify({'error': 'Not logged in or session expired.'}), 401
@@ -443,41 +472,68 @@ def download_db():
         logging.error(f"Error sending database file: {e}", exc_info=True)
         return jsonify({'error': 'An error occurred while trying to download the file.'}), 500
 
+@app.route('/api/settings', methods=['GET', 'POST'])
+def api_settings():
+    if request.method == 'GET':
+        return jsonify({
+            'use_test_db': session.get('use_test_db', False),
+            'test_db_exists': os.path.exists(TEST_DB_PATH)
+        })
+    elif request.method == 'POST':
+        data = request.get_json()
+        use_test_db = data.get('use_test_db', False)
+        session['use_test_db'] = use_test_db
+        logging.info(f"Test DB mode set to: {use_test_db}")
+        return jsonify({'success': True, 'use_test_db': use_test_db})
+
 @app.route('/pages/<path:page_name>')
 def serve_page(page_name):
     return render_template(f"pages/{page_name}")
 
 @app.route('/api/db_status')
 def db_status():
+    if session.get('use_test_db'):
+        db_exists = os.path.exists(TEST_DB_PATH)
+        timestamp = os.path.getmtime(TEST_DB_PATH) if db_exists else None
+        return jsonify({
+            'db_exists': db_exists,
+            'league_name': f"TEST DB: {TEST_DB_FILENAME}",
+            'timestamp': int(timestamp) if timestamp else None,
+            'is_test_db': True
+        })
+
     league_id = session.get('league_id')
     if not league_id:
-        return jsonify({'db_exists': False, 'error': 'Not logged in.'})
+        return jsonify({'db_exists': False, 'error': 'Not logged in.', 'is_test_db': False})
 
     db_path = None
     league_name = "[Unknown]"
     timestamp = None
     db_exists = False
+    db_filename = None
 
     for filename in os.listdir(DATA_DIR):
         if filename.startswith(f"yahoo-{league_id}-") and filename.endswith(".db"):
             db_path = os.path.join(DATA_DIR, filename)
             db_exists = True
+            db_filename = filename
             break
 
     if db_exists:
         try:
-            match = re.search(f"yahoo-{league_id}-(.*)\\.db", filename)
+            match = re.search(f"yahoo-{league_id}-(.*)\\.db", db_filename)
             if match:
                 league_name = match.group(1)
             timestamp = os.path.getmtime(db_path)
         except Exception as e:
             logging.error(f"Could not parse DB file info: {e}")
-            return jsonify({'db_exists': False, 'error': 'Could not read database file details.'})
+            return jsonify({'db_exists': False, 'error': 'Could not read database file details.', 'is_test_db': False})
 
     return jsonify({
         'db_exists': db_exists,
         'league_name': league_name,
-        'timestamp': int(timestamp) if timestamp else None
+        'timestamp': int(timestamp) if timestamp else None,
+        'is_test_db': False
     })
 
 @app.route('/static/<path:filename>')
