@@ -166,6 +166,15 @@ def get_db_connection_for_league(league_id):
         return None, "Could not connect to the database."
 
 
+def decode_dict_values(data):
+    """Recursively decodes byte strings in a dictionary or list of dictionaries."""
+    if isinstance(data, list):
+        return [decode_dict_values(item) for item in data]
+    if isinstance(data, dict):
+        return {k: v.decode('utf-8') if isinstance(v, bytes) else v for k, v in data.items()}
+    return data
+
+
 
 @app.route('/')
 def index():
@@ -281,19 +290,19 @@ def matchup_page_data():
 
         # Fetch weeks
         cursor.execute("SELECT week_num, start_date, end_date FROM weeks ORDER BY week_num")
-        weeks = [dict(row) for row in cursor.fetchall()]
+        weeks = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
         # Fetch teams
         cursor.execute("SELECT team_id, name FROM teams ORDER BY name")
-        teams = [dict(row) for row in cursor.fetchall()]
+        teams = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
         # Fetch matchups
         cursor.execute("SELECT week, team1, team2 FROM matchups")
-        matchups = [dict(row) for row in cursor.fetchall()]
+        matchups = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
         # Fetch scoring categories
         cursor.execute("SELECT category, stat_id FROM scoring ORDER BY stat_id")
-        scoring_categories = [dict(row) for row in cursor.fetchall()]
+        scoring_categories = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
         # Determine current week
         today = date.today().isoformat()
