@@ -10,6 +10,10 @@
     const yourTeamSelect = document.getElementById('your-team-select');
     const opponentSelect = document.getElementById('opponent-select');
 
+    // Stat ID mappings
+    const skaterStatIds = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 31, 32, 29, 33, 34]);
+    const goalieStatIds = new Set([18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 30]);
+
     let pageData = null; // To store weeks, teams, matchups, etc.
 
     async function init() {

@@ -324,7 +324,7 @@ def matchup_page_data():
         matchups = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
         # Fetch scoring categories, ordered by group (offense, then goalie) then ID
-        cursor.execute("SELECT category, stat_id, scoring_group FROM scoring ORDER BY scoring_group, stat_id")
+        cursor.execute("SELECT category, stat_id, scoring_group FROM scoring ORDER BY scoring_group DESC, stat_id")
         scoring_categories = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
         # Determine current week
