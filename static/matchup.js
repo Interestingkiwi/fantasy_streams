@@ -19,10 +19,17 @@
     async function init() {
         try {
             const response = await fetch('/api/matchup_page_data');
+            if (!response.ok) {
+                throw new Error(`Server returned status: ${response.status}`);
+            }
             const data = await response.json();
 
-            if (!response.ok || !data.db_exists) {
+            if (!data.db_exists) {
                 throw new Error(data.error || 'Database has not been initialized.');
+            }
+             if (!data || !Array.isArray(data.weeks) || !Array.isArray(data.teams)) {
+                console.error("Received malformed page data:", data);
+                throw new Error('Malformed data received from server. Could not populate page.');
             }
 
             pageData = data;
@@ -35,6 +42,7 @@
 
         } catch (error) {
             console.error('Initialization error:', error);
+            errorDiv.textContent = `Error: ${error.message}`;
             errorDiv.classList.remove('hidden');
             controlsDiv.classList.add('hidden');
             skaterTableContainer.classList.add('hidden');
@@ -111,7 +119,6 @@
         try {
             const response = await fetch(`/api/matchup_data?team1_key=${team1Key}&team2_key=${team2Key}&week=${week}`);
             if (!response.ok) {
-                // Handle non-JSON error responses gracefully
                 const errorText = await response.text();
                 throw new Error(`Failed to fetch matchup data. Server responded with: ${errorText}`);
             }
@@ -141,7 +148,7 @@
 
     function generateTableHtml(title, categories, stats) {
         if (categories.length === 0) {
-            return ``; // Don't render a table if there are no relevant categories
+            return ``;
         }
 
         let tableHtml = `
@@ -162,14 +169,13 @@
 
         categories.forEach(category => {
             const catName = category.name;
-            const isBetter = category.is_better; // 'is_higher_better' or 'is_lower_better'
+            const isBetter = category.is_better;
 
             let team1Live = stats.team1.live[catName] || 0;
             let team2Live = stats.team2.live[catName] || 0;
             let team1Row = stats.team1.row[catName] || 0;
             let team2Row = stats.team2.row[catName] || 0;
 
-            // --- Re-integrated Goalie Stat Calculations ---
             if (catName === 'SV%') {
                 const t1_sv_live = stats.team1.live['SV'] || 0;
                 const t1_sa_live = stats.team1.live['SA'] || 0;
@@ -205,7 +211,6 @@
                 const t2_toi_row = stats.team2.row['TOI/G'] || 0;
                 team2Row = t2_toi_row > 0 ? ((t2_ga_row * 60) / t2_toi_row).toFixed(2) : '0.00';
             }
-            // --- End of Goalie Stat Calculations ---
 
             let team1LiveClass = 'text-gray-300';
             let team2LiveClass = 'text-gray-300';
@@ -242,7 +247,6 @@
 
             if (category.sub_categories && category.sub_categories.length > 0) {
                 category.sub_categories.forEach(subCat => {
-                    // Only show sub-categories if there is data for them
                     const t1_sub_live = stats.team1.live[subCat] || 0;
                     const t1_sub_row = stats.team1.row[subCat] || 0;
                     const t2_sub_live = stats.team2.live[subCat] || 0;
