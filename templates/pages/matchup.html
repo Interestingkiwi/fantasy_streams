@@ -25,7 +25,10 @@
         </div>
     </div>
 
-    <!-- Stats tables will be rendered here -->
-    <div id="skater-stats-container" class="space-y-4"></div>
-    <div id="goalie-stats-container" class="space-y-4 mt-6"></div>
+    <div id="matchup-table-container" class="overflow-x-auto">
+        <!-- Table will be generated here by script -->
+        <p class="text-gray-400">Select a week and teams to view matchup stats.</p>
+    </div>
 </div>
+
+<script src="{{ url_for('static', filename='matchup.js') }}"></script>

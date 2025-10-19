@@ -1,19 +1,13 @@
 (async function() {
-    // This delay is critical because the HTML is loaded dynamically by another script.
-    // It ensures the DOM elements are available before the script tries to access them.
+    // A short delay to ensure the page elements are in the DOM
     await new Promise(resolve => setTimeout(resolve, 0));
 
     const errorDiv = document.getElementById('db-error-message');
     const controlsDiv = document.getElementById('matchup-controls');
-    const skaterTableContainer = document.getElementById('skater-stats-container');
-    const goalieTableContainer = document.getElementById('goalie-stats-container');
+    const tableContainer = document.getElementById('matchup-table-container');
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
     const opponentSelect = document.getElementById('opponent-select');
-
-    // Stat ID mappings
-    const skaterStatIds = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 31, 32, 29, 33, 34]);
-    const goalieStatIds = new Set([18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 30]);
 
     let pageData = null; // To store weeks, teams, matchups, etc.
 
@@ -30,17 +24,15 @@
             populateDropdowns();
             setupEventListeners();
 
-            // Initial data load, following the original working file's logic
+            // Initial data load
             await updateOpponent();
-            await fetchAndRenderTables();
+            await fetchAndRenderTable();
 
         } catch (error) {
             console.error('Initialization error:', error);
-            errorDiv.textContent = `Error: ${error.message}`;
             errorDiv.classList.remove('hidden');
             controlsDiv.classList.add('hidden');
-            skaterTableContainer.classList.add('hidden');
-            goalieTableContainer.classList.add('hidden');
+            tableContainer.classList.add('hidden');
         }
     }
 
@@ -83,162 +75,144 @@
         }
     }
 
-    async function fetchAndRenderTables() {
-        // This function's logic is identical to the original, but calls a new rendering function.
-        const team1Key = yourTeamSelect.value;
-        const team2Key = opponentSelect.value;
-        const week = weekSelect.value;
+    async function fetchAndRenderTable() {
+        const selectedWeek = weekSelect.value;
+        const yourTeamName = yourTeamSelect.value;
+        const opponentName = opponentSelect.value;
 
-        if (!team1Key || !team2Key || !week || team2Key === "") {
-            skaterTableContainer.innerHTML = '<p class="text-center text-gray-400">Please select a valid matchup.</p>';
-            goalieTableContainer.innerHTML = '';
+        if (!selectedWeek || !yourTeamName || !opponentName) {
+            tableContainer.innerHTML = '<p class="text-gray-400">Please make all selections.</p>';
             return;
         }
+
+        tableContainer.innerHTML = '<p class="text-gray-400">Loading matchup stats...</p>';
 
         try {
-            const response = await fetch(`/api/matchup_data?team1_key=${team1Key}&team2_key=${team2Key}&week=${week}`);
-            if (!response.ok) throw new Error('Failed to fetch matchup data.');
+            const response = await fetch('/api/matchup_team_stats', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    week: selectedWeek,
+                    team1_name: yourTeamName,
+                    team2_name: opponentName
+                })
+            });
+
             const stats = await response.json();
-            renderSplitTables(stats); // Call the new rendering function
-        } catch (error) {
-            console.error('Error fetching matchup data:', error);
-            skaterTableContainer.innerHTML = `<p class="text-center text-red-400">Could not load matchup data.</p>`;
-            goalieTableContainer.innerHTML = '';
+            if (!response.ok) throw new Error(stats.error || 'Failed to fetch stats.');
+
+            renderTable(stats, yourTeamName, opponentName);
+
+        } catch(error) {
+            console.error('Error fetching stats:', error);
+            tableContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
         }
     }
 
-    function renderSplitTables(stats) {
-        // New function to handle splitting the data into two tables.
-        if (!stats || !pageData || !pageData.categories) {
-            skaterTableContainer.innerHTML = '<p class="text-center text-gray-400">No data to display.</p>';
-            goalieTableContainer.innerHTML = '';
-            return;
-        }
-
-        const skaterCategories = pageData.categories.filter(cat => skaterStatIds.has(cat.stat_id));
-        const goalieCategories = pageData.categories.filter(cat => goalieStatIds.has(cat.stat_id));
-
-        skaterTableContainer.innerHTML = generateTableHtml('Skater Stats', skaterCategories, stats);
-        goalieTableContainer.innerHTML = generateTableHtml('Goalie Stats', goalieCategories, stats);
-    }
-
-    function generateTableHtml(title, categories, stats) {
-        // New helper function to generate the HTML for a single table.
-        // This contains the rendering logic from the original file.
-        if (categories.length === 0) return '';
-
+    function renderTable(stats, yourTeamName, opponentName) {
         let tableHtml = `
-            <h2 class="text-xl font-semibold text-white mb-2">${title}</h2>
-            <div class="overflow-x-auto relative shadow-md rounded-lg">
-                <table class="w-full text-sm text-left text-gray-400">
-                    <thead class="text-xs uppercase bg-gray-700 text-gray-300">
+            <div class="bg-gray-900 rounded-lg shadow">
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-700/50">
                         <tr>
-                            <th scope="col" class="px-6 py-3">Category</th>
-                            <th scope="col" class="px-6 py-3 text-center">${stats.team1.name} (Live)</th>
-                            <th scope="col" class="px-6 py-3 text-center">${stats.team1.name} (RoW)</th>
-                            <th scope="col" class="px-6 py-3 text-center">${stats.team2.name} (Live)</th>
-                            <th scope="col" class="px-6 py-3 text-center">${stats.team2.name} (RoW)</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Category</th>
+                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${yourTeamName} (Live)</th>
+                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${yourTeamName} (ROW)</th>
+                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${opponentName} (Live)</th>
+                            <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${opponentName} (ROW)</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
-        categories.forEach(category => {
-            const catName = category.name;
-            const isBetter = category.is_better;
+        const goalieCats = {
+            'SV%': ['SV', 'SA'],
+            'GAA': ['GA', 'TOI/G']
+        };
+        const allGoalieSubCats = Object.values(goalieCats).flat();
 
-            let team1Live = stats.team1.live[catName] || 0;
-            let team2Live = stats.team2.live[catName] || 0;
-            let team1Row = stats.team1.row[catName] || 0;
-            let team2Row = stats.team2.row[catName] || 0;
+        pageData.scoring_categories.forEach(cat => {
+            const category = cat.category;
 
-            if (catName === 'SV%') {
-                const t1_sv_live = stats.team1.live['SV'] || 0;
-                const t1_sa_live = stats.team1.live['SA'] || 0;
-                team1Live = t1_sa_live > 0 ? (t1_sv_live / t1_sa_live).toFixed(3) : '0.000';
-
-                const t2_sv_live = stats.team2.live['SV'] || 0;
-                const t2_sa_live = stats.team2.live['SA'] || 0;
-                team2Live = t2_sa_live > 0 ? (t2_sv_live / t2_sa_live).toFixed(3) : '0.000';
-
-                const t1_sv_row = stats.team1.row['SV'] || 0;
-                const t1_sa_row = stats.team1.row['SA'] || 0;
-                team1Row = t1_sa_row > 0 ? (t1_sv_row / t1_sa_row).toFixed(3) : '0.000';
-
-                const t2_sv_row = stats.team2.row['SV'] || 0;
-                const t2_sa_row = stats.team2.row['SA'] || 0;
-                team2Row = t2_sa_row > 0 ? (t2_sv_row / t2_sa_row).toFixed(3) : '0.000';
+            // If this category is a sub-category of another, skip it in this main loop.
+            // It will be rendered under its parent category.
+            if (allGoalieSubCats.includes(category)) {
+                return;
             }
 
-            if (catName === 'GAA') {
-                const t1_ga_live = stats.team1.live['GA'] || 0;
-                const t1_toi_live = stats.team1.live['TOI/G'] || 0;
-                team1Live = t1_toi_live > 0 ? ((t1_ga_live * 60) / t1_toi_live).toFixed(2) : '0.00';
+            let t1_live_val = stats.team1.live[category] || 0;
+            let t2_live_val = stats.team2.live[category] || 0;
+            let t1_row_val = stats.team1.row[category] || 0;
+            let t2_row_val = stats.team2.row[category] || 0;
 
-                const t2_ga_live = stats.team2.live['GA'] || 0;
-                const t2_toi_live = stats.team2.live['TOI/G'] || 0;
-                team2Live = t2_toi_live > 0 ? ((t2_ga_live * 60) / t2_toi_live).toFixed(2) : '0.00';
+            if (category === 'SV%') {
+                const t1_sv = stats.team1.live['SV'] || 0;
+                const t1_sa = stats.team1.live['SA'] || 0;
+                t1_live_val = t1_sa > 0 ? (t1_sv / t1_sa).toFixed(3) : '0.000';
 
-                const t1_ga_row = stats.team1.row['GA'] || 0;
-                const t1_toi_row = stats.team1.row['TOI/G'] || 0;
-                team1Row = t1_toi_row > 0 ? ((t1_ga_row * 60) / t1_toi_row).toFixed(2) : '0.00';
-
-                const t2_ga_row = stats.team2.row['GA'] || 0;
-                const t2_toi_row = stats.team2.row['TOI/G'] || 0;
-                team2Row = t2_toi_row > 0 ? ((t2_ga_row * 60) / t2_toi_row).toFixed(2) : '0.00';
+                const t2_sv = stats.team2.live['SV'] || 0;
+                const t2_sa = stats.team2.live['SA'] || 0;
+                t2_live_val = t2_sa > 0 ? (t2_sv / t2_sa).toFixed(3) : '0.000';
             }
 
-            let team1LiveClass = 'text-gray-300';
-            let team2LiveClass = 'text-gray-300';
+            if (category === 'GAA') {
+                const t1_ga = stats.team1.live['GA'] || 0;
+                const t1_toi = stats.team1.live['TOI/G'] || 0;
+                t1_live_val = t1_toi > 0 ? ((t1_ga * 60) / t1_toi).toFixed(2) : '0.00';
 
-            if (isBetter === 'is_higher_better') {
-                if (parseFloat(team1Live) > parseFloat(team2Live)) {
-                    team1LiveClass = 'text-green-400 font-bold';
-                    team2LiveClass = 'text-red-400';
-                } else if (parseFloat(team2Live) > parseFloat(team1Live)) {
-                    team2LiveClass = 'text-green-400 font-bold';
-                    team1LiveClass = 'text-red-400';
-                }
-            } else if (isBetter === 'is_lower_better') {
-                if (parseFloat(team1Live) !== 0 || parseFloat(team2Live) !== 0) {
-                     if (parseFloat(team1Live) < parseFloat(team2Live) && parseFloat(team1Live) !== 0) {
-                        team1LiveClass = 'text-green-400 font-bold';
-                        team2LiveClass = 'text-red-400';
-                    } else if (parseFloat(team2Live) < parseFloat(team1Live) && parseFloat(team2Live) !== 0) {
-                        team2LiveClass = 'text-green-400 font-bold';
-                        team1LiveClass = 'text-red-400';
-                    }
-                }
+                const t2_ga = stats.team2.live['GA'] || 0;
+                const t2_toi = stats.team2.live['TOI/G'] || 0;
+                t2_live_val = t2_toi > 0 ? ((t2_ga * 60) / t2_toi).toFixed(2) : '0.00';
             }
 
             tableHtml += `
-                <tr class="border-b border-gray-700 bg-gray-800 hover:bg-gray-700/50">
-                    <th scope="row" class="px-6 py-4 font-medium whitespace-nowrap text-white">${catName}</th>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center ${team1LiveClass}">${team1Live}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${team1Row}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center ${team2LiveClass}">${team2Live}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${team2Row}</td>
+                <tr class="hover:bg-gray-700/50">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-300">${category}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_live_val}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t1_row_val}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_live_val}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${t2_row_val}</td>
                 </tr>
             `;
+
+            // If it's a parent goalie category, render its children now.
+            if (goalieCats[category]) {
+                goalieCats[category].forEach(subCat => {
+                    // Check if the sub-category actually exists in the league settings
+                    if(pageData.scoring_categories.some(c => c.category === subCat)) {
+                        tableHtml += `
+                            <tr class="hover:bg-gray-700/50">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-normal text-gray-400 pl-8">${subCat}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team1.live[subCat] || 0}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team1.row[subCat] || 0}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team2.live[subCat] || 0}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-300">${stats.team2.row[subCat] || 0}</td>
+                            </tr>
+                        `;
+                    }
+                });
+            }
         });
 
-        tableHtml += `</tbody></table></div>`;
-        return tableHtml;
+        tableHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        tableContainer.innerHTML = tableHtml;
     }
 
     function setupEventListeners() {
-        // This function is identical to the original, working version.
         weekSelect.addEventListener('change', async () => {
             await updateOpponent();
-            await fetchAndRenderTables();
+            await fetchAndRenderTable();
         });
         yourTeamSelect.addEventListener('change', async () => {
             await updateOpponent();
-            await fetchAndRenderTables();
+            await fetchAndRenderTable();
         });
-        opponentSelect.addEventListener('change', fetchAndRenderTables);
+        opponentSelect.addEventListener('change', fetchAndRenderTable);
     }
 
-    // Initialize the page
     init();
 })();
