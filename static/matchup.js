@@ -232,7 +232,7 @@
             const stats = await response.json();
             if (!response.ok) throw new Error(stats.error || 'Failed to fetch stats.');
 
-            renderTable(stats, yourTeamName, opponentName);
+            renderGoalieTable(stats, yourTeamName, opponentName);
 
         } catch(error) {
             console.error('Error fetching stats:', error);
