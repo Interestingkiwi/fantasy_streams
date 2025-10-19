@@ -330,7 +330,7 @@
                 </table>
             </div>
         `;
-        gaolieTableContainer.innerHTML = tableHtml;
+        goalieTableContainer.innerHTML = tableHtml;
     }
 
 
