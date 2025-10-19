@@ -127,7 +127,7 @@
 
         const goalieCats = {
             'SV%': ['SV', 'SA'],
-            'GAA': ['GA']
+            'GAA': ['GA', 'TOI/G']
         };
         const allGoalieSubCats = Object.values(goalieCats).flat();
 
@@ -161,7 +161,7 @@
                 t1_live_val = t1_toi > 0 ? ((t1_ga * 60) / t1_toi).toFixed(2) : '0.00';
 
                 const t2_ga = stats.team2.live['GA'] || 0;
-                const t2_toi = stats.team2.live['TOI'] || 0;
+                const t2_toi = stats.team2.live['TOI/G'] || 0;
                 t2_live_val = t2_toi > 0 ? ((t2_ga * 60) / t2_toi).toFixed(2) : '0.00';
             }
 
