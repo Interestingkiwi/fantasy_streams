@@ -1,34 +1,39 @@
-<div id="matchup-container" class="space-y-4">
-    <div id="db-error-message" class="hidden bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg" role="alert">
-        <p class="font-bold">Database Not Found!</p>
-        <p class="text-sm">Please go to the "League Database" page and initialize your league's data before using this feature.</p>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matchup Comparison</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Matchup Comparison</h2>
+
+        <!-- Error message div, hidden by default -->
+        <div id="db-error-message" class="error-message hidden">
+            Database not found or not initialized. Please go to the Settings page to set your league ID and initialize the database.
+        </div>
+
+        <!-- Controls for week and team selection -->
+        <div id="matchup-controls" class="selectors">
+            <label for="week-select">Week:</label>
+            <select id="week-select"></select>
+
+            <label for="your-team-select">Your Team:</label>
+            <select id="your-team-select"></select>
+
+            <span>vs</span>
+
+            <label for="opponent-select">Opponent:</label>
+            <select id="opponent-select"></select>
+        </div>
+
+        <!-- Container for the stats table -->
+        <div id="matchup-table-container"></div>
     </div>
 
-    <div id="matchup-controls" class="space-y-4 md:space-y-0 md:flex md:items-end md:gap-4">
-        <div>
-            <label for="week-select" class="block mb-2 text-sm font-medium text-gray-300">Fantasy Week</label>
-            <select id="week-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
-                <option selected>Loading Weeks...</option>
-            </select>
-        </div>
-        <div>
-            <label for="your-team-select" class="block mb-2 text-sm font-medium text-gray-300">Your Team</label>
-            <select id="your-team-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
-                <option selected>Loading Teams...</option>
-            </select>
-        </div>
-        <div>
-            <label for="opponent-select" class="block mb-2 text-sm font-medium text-gray-300">Opponent</label>
-            <select id="opponent-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
-                <option selected>Loading Opponent...</option>
-            </select>
-        </div>
-    </div>
-
-    <div id="matchup-table-container" class="overflow-x-auto">
-        <!-- Table will be generated here by script -->
-        <p class="text-gray-400">Select a week and teams to view matchup stats.</p>
-    </div>
-</div>
-
-<script src="{{ url_for('static', filename='matchup.js') }}"></script>
+    <!-- Added a new cache-busting query string to ensure the browser loads the new JS file -->
+    <script src="/static/matchup.js?v=1.2"></script>
+</body>
+</html>
