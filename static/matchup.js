@@ -19,24 +19,17 @@
     async function init() {
         try {
             const response = await fetch('/api/matchup_page_data');
-            if (!response.ok) {
-                throw new Error(`Server returned status: ${response.status}`);
-            }
             const data = await response.json();
 
-            if (!data.db_exists) {
+            if (!response.ok || !data.db_exists) {
                 throw new Error(data.error || 'Database has not been initialized.');
-            }
-             if (!data || !Array.isArray(data.weeks) || !Array.isArray(data.teams)) {
-                console.error("Received malformed page data:", data);
-                throw new Error('Malformed data received from server. Could not populate page.');
             }
 
             pageData = data;
             populateDropdowns();
             setupEventListeners();
 
-            // Initial data load
+            // Initial data load, following the original working file's logic
             await updateOpponent();
             await fetchAndRenderTables();
 
@@ -81,6 +74,8 @@
         const selectedTeamKey = yourTeamSelect.value;
 
         const matchupsForWeek = pageData.matchups[selectedWeek];
+
+        opponentSelect.innerHTML = ''; // Clear existing options
         if (!matchupsForWeek) {
             opponentSelect.innerHTML = '<option value="">No Matchup This Week</option>';
             return;
@@ -88,7 +83,6 @@
 
         const matchup = matchupsForWeek.find(m => m.team1_key === selectedTeamKey || m.team2_key === selectedTeamKey);
 
-        opponentSelect.innerHTML = '';
         if (matchup) {
             const opponentKey = matchup.team1_key === selectedTeamKey ? matchup.team2_key : matchup.team1_key;
             const opponent = pageData.teams.find(t => t.team_key === opponentKey);
@@ -98,7 +92,7 @@
                 option.textContent = opponent.team_name;
                 opponentSelect.appendChild(option);
             } else {
-                 opponentSelect.innerHTML = '<option value="">No Opponent</option>';
+                 opponentSelect.innerHTML = '<option value="">No Opponent Found</option>';
             }
         } else {
             opponentSelect.innerHTML = '<option value="">No Matchup This Week</option>';
@@ -110,7 +104,8 @@
         const team2Key = opponentSelect.value;
         const week = weekSelect.value;
 
-        if (!team1Key || !team2Key || !week || !opponentSelect.value) {
+        // Guard clause from original file, checks for valid opponent value
+        if (!team1Key || !team2Key || !week || team2Key === "") {
             skaterTableContainer.innerHTML = '<p class="text-center text-gray-400">Please select a valid matchup.</p>';
             goalieTableContainer.innerHTML = '';
             return;
@@ -224,6 +219,7 @@
                     team1LiveClass = 'text-red-400';
                 }
             } else if (isBetter === 'is_lower_better') {
+                 // only apply colors if both values are not zero to avoid highlighting empty stats
                 if (parseFloat(team1Live) !== 0 && parseFloat(team2Live) !== 0) {
                      if (parseFloat(team1Live) < parseFloat(team2Live)) {
                         team1LiveClass = 'text-green-400 font-bold';
@@ -245,7 +241,7 @@
                 </tr>
             `;
 
-            if (category.sub_categories && category.sub_categories.length > 0) {
+             if (category.sub_categories && category.sub_categories.length > 0) {
                 category.sub_categories.forEach(subCat => {
                     const t1_sub_live = stats.team1.live[subCat] || 0;
                     const t1_sub_row = stats.team1.row[subCat] || 0;
