@@ -495,7 +495,7 @@ def get_roster_data():
         cursor.execute("""
             SELECT
                 p.player_name,
-                p.player_team,
+                p.player_team as team,
                 p.player_name_normalized,
                 rp.eligible_positions
             FROM rosters_tall r
@@ -509,7 +509,7 @@ def get_roster_data():
 
         # Get schedules and calculate games in week
         for player in players:
-            cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player['player_team'],))
+            cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player['team'],))
             schedule_row = cursor.fetchone()
             games_this_week = []
             if schedule_row and schedule_row['schedule_json']:
