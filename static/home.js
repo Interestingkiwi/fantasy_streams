@@ -104,4 +104,5 @@ document.addEventListener('DOMContentLoaded', () => {
     if(timestampText) {
         getTimestamp();
     }
+    initializeApp();
 });
