@@ -25,7 +25,7 @@ import uuid
 from datetime import date, timedelta
 import shutil
 from server.lineup_generator import generate_weekly_lineups
-from concurrent.futures import ThreadPoolExecutor # Import for background tasks
+from concurrent.futures import ThreadPoolExecutor
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
@@ -547,47 +547,41 @@ def serve_static(filename):
 
 @app.route('/api/start_lineup_generation', methods=['POST'])
 def start_lineup_generation():
-    """
-    Kicks off the lineup generation in a background thread. Responds immediately.
-    """
+    """ Kicks off the lineup generation in a background thread. """
     data = request.json
     full_league_db_name = data.get('league_db_name')
     team_id = data.get('team_id')
     week_num = data.get('week')
+    use_test_db = data.get('use_test_db', False)
 
-    logging.info(f"Received request to START generation: db={full_league_db_name}, team={team_id}, week={week_num}")
+    logging.info(f"START request: db={full_league_db_name}, team={team_id}, week={week_num}, test_mode={use_test_db}")
 
     if not all([full_league_db_name, team_id, week_num]):
         return jsonify({"error": "Missing required parameters"}), 400
 
-    # Submit the long-running task to the executor
-    executor.submit(run_lineup_generation, full_league_db_name, team_id, week_num)
-
+    executor.submit(run_lineup_generation, full_league_db_name, team_id, week_num, use_test_db)
     return jsonify({"message": "Lineup generation started."}), 202
 
-def run_lineup_generation(full_league_db_name, team_id, week_num):
-    """
-    A helper/wrapper function that contains the logic to be run in the background.
-    """
+def run_lineup_generation(full_league_db_name, team_id, week_num, use_test_db):
+    """ Helper that contains the logic to be run in the background. """
     try:
-        logging.info(f"Background task started for team {team_id}, week {week_num}.")
+        logging.info(f"Background task started: team {team_id}, week {week_num}, test_mode={use_test_db}")
 
-        league_id_match = re.search(r'yahoo-(\d+)-', full_league_db_name)
-        if not league_id_match:
-            logging.error(f"Could not parse league_id from db_name: {full_league_db_name}")
+        db_path = ""
+        if use_test_db:
+            db_path = os.path.join(DATA_DIR, f"temp_{TEST_DB_FILENAME}")
+            # Ensure the temp DB exists if the start request created it
+            if not os.path.exists(db_path):
+                 shutil.copy2(TEST_DB_PATH, db_path)
+        else:
+            db_dir = DATA_DIR if os.path.exists(DATA_DIR) else 'server'
+            db_path = os.path.join(db_dir, full_league_db_name)
+
+        if not os.path.exists(db_path):
+            logging.error(f"DB file not found in background task: {db_path}")
             return
 
-        league_id_from_db_name = league_id_match.group(1)
-        db_dir = DATA_DIR if os.path.exists(DATA_DIR) else 'server'
-        league_db_path = os.path.join(db_dir, full_league_db_name)
-
-        if not os.path.exists(league_db_path):
-            logging.error(f"DB file not found in background task: {league_db_path}")
-            return
-
-        # We need a connection within the thread
-        # Note: We can't use the session-based helper here easily.
-        conn = sqlite3.connect(league_db_path)
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("SELECT start_date, end_date FROM fantasy_weeks WHERE week_num = ?", (week_num,))
@@ -601,47 +595,44 @@ def run_lineup_generation(full_league_db_name, team_id, week_num):
         week_info = dict(week_info_row)
         week_info['week_num'] = week_num
 
-        generate_weekly_lineups(league_db_path, team_id, week_info)
+        # The generator function now gets the direct, correct path.
+        generate_weekly_lineups(db_path, team_id, week_info)
         logging.info(f"Background task COMPLETED for team {team_id}, week {week_num}.")
 
     except Exception as e:
         logging.error(f"Exception in background lineup generation: {e}", exc_info=True)
 
 
-
 @app.route('/api/lineups')
 def get_lineups():
-    """
-    Fetches the PRE-COMPUTED lineup data from the database. Does not trigger generation.
-    """
+    """ Fetches the PRE-COMPUTED lineup data from the database. """
     full_league_db_name = request.args.get('league_db_name')
     team_id = request.args.get('team_id')
     week_num = request.args.get('week')
+    # The 'use_test_db' parameter is now a string 'true' or 'false' from the URL
+    use_test_db = request.args.get('use_test_db', 'false').lower() == 'true'
 
-    logging.info(f"Received request to GET lineups: db={full_league_db_name}, team={team_id}, week={week_num}")
+    logging.info(f"GET request: db={full_league_db_name}, team={team_id}, week={week_num}, test_mode={use_test_db}")
 
     if not all([full_league_db_name, team_id, week_num]):
         return jsonify({"error": "Missing required parameters"}), 400
 
     league_id_match = re.search(r'yahoo-(\d+)-', full_league_db_name)
-    if not league_id_match:
-        return jsonify({"error": "Invalid league DB name"}), 400
-    league_id_from_db_name = league_id_match.group(1)
+    league_id = league_id_match.group(1) if league_id_match else None
 
     conn = None
     try:
-        conn, error = get_db_connection_for_league(league_id_from_db_name)
+        # Pass the explicit flag to the connection helper
+        conn, error = get_db_connection_for_league(league_id, use_test_db)
         if error:
             return jsonify({"error": error}), 500
 
         cur = conn.cursor()
-        # First, get the date range for the requested week
         cur.execute("SELECT start_date, end_date FROM fantasy_weeks WHERE week_num = ?", (week_num,))
         week_info_row = cur.fetchone()
         if not week_info_row:
             return jsonify({"error": "Week not found"}), 404
 
-        # Now, query for lineups within that date range
         cur.execute("""
             SELECT lineup_date, player_name, played_position, status
             FROM optimal_lineups
@@ -651,8 +642,6 @@ def get_lineups():
 
         lineups_data = [dict(row) for row in cur.fetchall()]
 
-        # If no data is found yet, it means the background job isn't done.
-        # Return an empty object, which the frontend will interpret as "still processing".
         if not lineups_data:
             logging.info("No lineup data found yet for this week, returning empty object.")
             return jsonify({})
