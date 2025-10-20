@@ -98,13 +98,13 @@
 
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
-                <table class="min-w-full divide-y divide-gray-700">
+                <table class="divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
                         <tr>
-                            <th scope="col" class="px-4 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
-                            <th scope="col" class="px-4 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
-                            <th scope="col" class="px-4 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
-                            <th scope="col" class="px-4 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Games This Week</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Games This Week</th>
                         </tr>
                     </thead>
                     <tbody class="bg-gray-800 divide-y divide-gray-700">
@@ -113,10 +113,10 @@
         roster.forEach(player => {
             tableHtml += `
                 <tr class="hover:bg-gray-700/50">
-                    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
-                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-300">${player.team}</td>
-                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions}</td>
-                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.join(', ')}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.team}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.join(', ')}</td>
                 </tr>
             `;
         });
