@@ -498,8 +498,8 @@ def get_roster_data():
                 p.player_team,
                 p.player_name_normalized,
                 rp.eligible_positions
-            FROM rosters r
-            JOIN rostered_players rp ON r.roster_id = rp.roster_id
+            FROM rosters_tall r
+            JOIN rostered_players rp ON r.player_id = rp.player_id
             JOIN players p ON rp.player_id = p.player_id
             WHERE r.team_id = ?
         """, (team_id,))

@@ -1038,6 +1038,38 @@ def _update_current_rosters(yq, cursor, conn, num_teams):
     except Exception as e:
         logging.error(f"Failed to update roster info: {e}", exc_info=True)
 
+def _create_rosters_tall_and_drop_rosters(cursor, conn):
+    """
+    Creates a new 'rosters_tall' table from the wide 'rosters' table,
+    and then drops the original 'rosters' table.
+    """
+    logging.info("Creating tall rosters table and dropping the wide version...")
+    try:
+        # Step 1: Create the new 'rosters_tall' table.
+        # Drop it first to ensure a clean run (emulates 'CREATE OR REPLACE').
+        cursor.execute("DROP TABLE IF EXISTS rosters_tall;")
+
+        union_all_parts = []
+        for i in range(1, 30):
+            union_all_parts.append(
+                f"SELECT team_id, p{i} AS player_id FROM rosters WHERE p{i} IS NOT NULL"
+            )
+        unpivot_query = "\nUNION ALL\n".join(union_all_parts)
+
+        # The source table is 'rosters', as per the user's query.
+        create_tall_table_query = f"CREATE TABLE rosters_tall AS\n{unpivot_query};"
+        cursor.execute(create_tall_table_query)
+        logging.info("Successfully created 'rosters_tall' table.")
+
+        # Step 2: Drop the original wide 'rosters' table, as requested.
+        cursor.execute("DROP TABLE IF EXISTS rosters;")
+        logging.info("Successfully dropped 'rosters' table.")
+
+        conn.commit()
+    except Exception as e:
+        logging.error(f"Failed during tall roster creation: {e}", exc_info=True)
+        conn.rollback()
+
 def _update_free_agents(lg, conn):
     """
     Writes all current free agents to free agent table
@@ -1198,6 +1230,7 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
 
         _update_league_matchups(yq, cursor, playoff_start_week)
         _update_current_rosters(yq, cursor, conn, league_metadata.num_teams)
+        _create_rosters_tall_and_drop_rosters(cursor, conn)
 
         # --- yfa API Call Functions ---
         _update_free_agents(lg, conn)
