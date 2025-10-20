@@ -524,6 +524,7 @@ def _create_tables(cursor):
     #lineup settings
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS lineup_settings (
+            position_id INTEGER PRIMARY KEY AUTOINCREMENT,
             position TEXT NOT NULL,
             position_count INTEGER NOT NULL
         )
@@ -916,7 +917,7 @@ def _update_lineup_settings(yq, cursor):
         lineup_settings_data_to_insert = []
         for roster_position_item in settings.roster_positions:
             position_details = roster_position_item
-            position = position_details.poisition
+            position = position_details.position
             position_count = position_details.count
 
             lineup_settings_data_to_insert.append((position, position_count))
