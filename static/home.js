@@ -1,6 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
     const logoutButton = document.getElementById('logout-button');
     const timestampText = document.getElementById('timestamp-text');
+    const weekSelect = document.getElementById('week-select');
+    const yourTeamSelect = document.getElementById('your-team-select');
+
+    let pageData = null; // To store weeks, teams, etc.
 
     async function handleLogout() {
         // Redirect to logout endpoint, which will clear the session
@@ -9,23 +13,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function getTimestamp() {
         try {
-            // This API endpoint doesn't exist yet, so we'll just show a placeholder
-            // const response = await fetch('/api/get_league_timestamp');
-            // if (!response.ok) {
-            //     throw new Error('Could not fetch timestamp');
-            // }
-            // const data = await response.json();
-            // if (data.timestamp) {
-            //     const date = new Date(data.timestamp * 1000);
-            //     timestampText.textContent = `League data last updated: ${date.toLocaleString()}`;
-            // } else {
-            //      timestampText.textContent = 'Could not retrieve last update time.';
-            // }
             timestampText.textContent = 'League data is loaded live from Yahoo.';
         } catch (error) {
-            console.error('Error fetching timestamp:', error);
+            console.error('Error setting timestamp:', error);
             timestampText.textContent = 'Error loading league data status.';
         }
+    }
+
+    async function initDropdowns() {
+        try {
+            const response = await fetch('/api/matchup_page_data');
+            const data = await response.json();
+
+            if (!response.ok || !data.db_exists) {
+                throw new Error(data.error || 'Database has not been initialized.');
+            }
+
+            pageData = data;
+            populateDropdowns();
+
+        } catch (error) {
+            console.error('Initialization error for dropdowns:', error);
+            // Optionally hide or disable dropdowns
+            weekSelect.style.display = 'none';
+            yourTeamSelect.style.display = 'none';
+        }
+    }
+
+    function populateDropdowns() {
+        // Populate Weeks
+        weekSelect.innerHTML = pageData.weeks.map(week =>
+            `<option value="${week.week_num}" ${week.week_num === pageData.current_week ? 'selected' : ''}>
+                Week ${week.week_num} (${week.start_date} to ${week.end_date})
+            </option>`
+        ).join('');
+
+        // Populate Teams
+        const teamOptions = pageData.teams.map(team =>
+            `<option value="${team.name}">${team.name}</option>`
+        ).join('');
+        yourTeamSelect.innerHTML = teamOptions;
     }
 
     if(logoutButton) {
@@ -35,4 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(timestampText) {
         getTimestamp();
     }
+
+    // Initialize the dropdowns
+    initDropdowns();
 });
