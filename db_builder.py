@@ -598,7 +598,7 @@ def _create_tables(cursor):
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS rostered_players (
             player_id TEXT PRIMARY KEY,
-            status TEXT
+            status TEXT,
             eligible_positions TEXT
         )
     ''')
