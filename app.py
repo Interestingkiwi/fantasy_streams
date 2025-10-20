@@ -509,7 +509,7 @@ def get_roster_data():
 
         # Get schedules and calculate games in week
         for player in players:
-            cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_name = ?", (player['team'],))
+            cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_name = ?", (player['player_team'],))
             schedule_row = cursor.fetchone()
             games_this_week = []
             if schedule_row and schedule_row['schedule_json']:
