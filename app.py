@@ -6,14 +6,14 @@ Main run app for Fantasystreams.app
 
 Author: Jason Druckenmiller
 Date: 10/16/2025
-Updated: 10/19/2025
+Updated: 10/20/2025
 """
 
 import os
 import json
 import logging
 import sqlite3
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory, g
 from yfpy.query import YahooFantasySportsQuery
 import yahoo_fantasy_api as yfa
 from yahoo_oauth import OAuth2
@@ -24,6 +24,7 @@ import db_builder
 import uuid
 from datetime import date, timedelta
 import shutil
+from server.lineup_generator import generate_weekly_lineups
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
@@ -42,6 +43,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Yahoo OAuth2 Settings ---
 authorization_base_url = 'https://api.login.yahoo.com/oauth2/request_auth'
 token_url = 'https://api.login.yahoo.com/oauth2/get_token'
+
 
 def model_to_dict(obj):
     """
@@ -539,6 +541,80 @@ def db_status():
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     return send_from_directory('static', filename)
+
+
+@app.route('/api/lineups')
+def get_lineups():
+    # The league_id here is the partial ID like '22705', not the full filename
+    league_id_from_param = request.args.get('league_id')
+    full_league_db_name = request.args.get('league_db_name') # e.g., yahoo-22705-....db
+    team_id = request.args.get('team_id')
+    week_num = request.args.get('week')
+
+    if not all([full_league_db_name, team_id, week_num, league_id_from_param]):
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    # We need the full path to pass to the generator, which doesn't use session logic
+    # Determine the correct directory
+    db_dir = DATA_DIR if os.path.exists(DATA_DIR) else 'server'
+    league_db_path = os.path.join(db_dir, full_league_db_name)
+
+    if not os.path.exists(league_db_path):
+        return jsonify({"error": "League database file not found"}), 404
+
+    conn = None
+    try:
+        # Step 1: Connect using your helper to get week info
+        conn, error = get_db_connection_for_league(league_id_from_param)
+        if error:
+            return jsonify({"error": error}), 500
+
+        cur = conn.cursor()
+        cur.execute("SELECT start_date, end_date FROM fantasy_weeks WHERE week_num = ?", (week_num,))
+        week_info_row = cur.fetchone()
+        if not week_info_row:
+            return jsonify({"error": "Week not found"}), 404
+
+        week_info = dict(week_info_row)
+        week_info['week_num'] = week_num
+        conn.close() # Close connection before heavy processing
+
+        # Step 2: Call the lineup generator with the full, direct path
+        generate_weekly_lineups(league_db_path, team_id, week_info)
+
+        # Step 3: Re-connect using your helper to fetch the generated data
+        conn, error = get_db_connection_for_league(league_id_from_param)
+        if error:
+            return jsonify({"error": error}), 500
+
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT lineup_date, player_name, played_position, status, marginal_value
+            FROM optimal_lineups
+            WHERE team_id = ? AND lineup_date BETWEEN ? AND ?
+            ORDER BY lineup_date,
+                     CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END,
+                     marginal_value DESC
+        """, (team_id, week_info['start_date'], week_info['end_date']))
+
+        lineups_data = [dict(row) for row in cur.fetchall()]
+
+        grouped_lineups = {}
+        for row in lineups_data:
+            date = row['lineup_date']
+            if date not in grouped_lineups:
+                grouped_lineups[date] = []
+            grouped_lineups[date].append(row)
+
+        return jsonify(grouped_lineups)
+
+    except Exception as e:
+        logging.error(f"Error in /api/lineups: {e}")
+        return jsonify({"error": "An internal server error occurred."}), 500
+    finally:
+        if conn:
+            conn.close()
+    
 
 if __name__ == '__main__':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'

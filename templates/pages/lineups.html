@@ -1,4 +1,61 @@
-<div class="space-y-4">
-    <h2 class="text-xl font-bold text-white">Lineups</h2>
-    <p class="text-gray-400">Lineups page content will go here.</p>
-</div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimal Lineups</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        .lineup-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            padding: 20px;
+        }
+        .day-card {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            width: 100%;
+            max-width: 350px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .day-card h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .lineup-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .lineup-table th, .lineup-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .lineup-table th {
+            font-size: 0.9em;
+            color: #666;
+        }
+        .bench-row td {
+            opacity: 0.7;
+            font-style: italic;
+        }
+        .loader {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <div id="lineups-container">
+        <div class="loader">Loading optimal lineups...</div>
+    </div>
+
+    <script src="{{ url_for('static', filename='lineups.js') }}"></script>
+</body>
+</html>
