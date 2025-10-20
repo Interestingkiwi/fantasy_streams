@@ -495,7 +495,7 @@ def get_roster_data():
         cursor.execute("""
             SELECT
                 p.player_name,
-                p.team,
+                p.player_team,
                 p.player_name_normalized,
                 rp.eligible_positions
             FROM rosters r
