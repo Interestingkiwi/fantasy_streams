@@ -523,7 +523,7 @@ def _create_tables(cursor):
     ''')
     #lineup settings
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS lineup_settins (
+        CREATE TABLE IF NOT EXISTS lineup_settings (
             position TEXT NOT NULL,
             position_count TEXT NOT NULL
         )
@@ -909,7 +909,10 @@ def _update_league_scoring_settings(yq, cursor):
         logging.error(f"Failed to update scoring info: {e}", exc_info=True)
         return None
 
+
+def _update_lineup_settings(yq, cursor):
     try:
+        settings = yq.get_league_settings()
         lineup_settings_data_to_insert = []
         for roster_position_item in settings.roster_positions:
             position_details = roster_position_item
@@ -1172,6 +1175,7 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
         _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
         _update_teams_info(yq, cursor)
         playoff_start_week = _update_league_scoring_settings(yq, cursor)
+        _update_lineup_settings(yq, cursor)
         _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
 
         # Always run lineup updates, but mode depends on 'capture_lineups'
