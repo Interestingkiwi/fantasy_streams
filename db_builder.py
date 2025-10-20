@@ -599,6 +599,7 @@ def _create_tables(cursor):
         CREATE TABLE IF NOT EXISTS rostered_players (
             player_id TEXT PRIMARY KEY,
             status TEXT
+            eligible_positions TEXT
         )
     ''')
 
@@ -1121,11 +1122,13 @@ def _update_rostered_players(lg, conn):
         tkp = lg.taken_players()
         for player in tkp:
             player_id = player['player_id']
+            position = eligible_positions['eligible_positions']
             rostered_players_to_insert.append((player_id, 'R'))
+
     except Exception as e:
         logging.error(f"Could not fetch rostered players: {e}")
 
-    sql = "INSERT OR IGNORE INTO rostered_players (player_id, status) VALUES (?, ?)"
+    sql = "INSERT OR IGNORE INTO rostered_players (player_id, status, eligible_positions) VALUES (?, ?, ?)"
     cursor.executemany(sql, rostered_players_to_insert)
     conn.commit()
     logging.info(f"Successfully inserted data for {len(rostered_players_to_insert)} rostered players.")
