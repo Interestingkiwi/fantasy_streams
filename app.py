@@ -422,6 +422,19 @@ def get_matchup_stats():
         if conn:
             conn.close()
 
+@app.route('/api/lineup_page_data')
+def lineup_page_data():
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+
+    if not conn:
+        return jsonify({'db_exists': False, 'error': error_msg})
+
+    if conn:
+        conn.close()
+
+    return jsonify({'db_exists': True})
+
 
 
 @app.route('/api/update_db', methods=['POST'])
