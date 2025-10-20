@@ -1,8 +1,3 @@
-{% extends "index.html" %}
-
-{% block title %}Optimal Lineups{% endblock %}
-
-{% block content %}
 <h1 class="text-3xl font-bold mb-6 text-white">Optimal Lineups</h1>
 
 <div id="db-error-message" class="hidden bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg" role="alert">
@@ -17,4 +12,3 @@
 
 
 <script src="{{ url_for('static', filename='lineups.js') }}"></script>
-{% endblock %}
