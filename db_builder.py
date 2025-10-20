@@ -1118,20 +1118,31 @@ def _update_rostered_players(lg, conn):
 
     rostered_players_to_insert = []
     try:
-        logging.info(f"Fetching all rostered players")
+        logging.info("Fetching all rostered players")
         tkp = lg.taken_players()
         for player in tkp:
             player_id = player['player_id']
-            position = eligible_positions['eligible_positions']
-            rostered_players_to_insert.append((player_id, 'R'))
+            eligible_positions_list = player['eligible_positions']
+            eligible_positions_str = ','.join(eligible_positions_list)
+
+            rostered_players_to_insert.append((player_id, 'R', eligible_positions_str))
 
     except Exception as e:
-        logging.error(f"Could not fetch rostered players: {e}")
+        logging.error(f"Could not fetch rostered players: {e}", exc_info=True)
+        return
 
-    sql = "INSERT OR IGNORE INTO rostered_players (player_id, status, eligible_positions) VALUES (?, ?, ?)"
-    cursor.executemany(sql, rostered_players_to_insert)
-    conn.commit()
-    logging.info(f"Successfully inserted data for {len(rostered_players_to_insert)} rostered players.")
+    if not rostered_players_to_insert:
+        logging.warning("No rostered players found to insert.")
+        return
+
+    try:
+        sql = "INSERT OR IGNORE INTO rostered_players (player_id, status, eligible_positions) VALUES (?, ?, ?)"
+        cursor.executemany(sql, rostered_players_to_insert)
+        conn.commit()
+        logging.info(f"Successfully inserted data for {len(rostered_players_to_insert)} rostered players.")
+    except Exception as e:
+        logging.error("Failed to insert rostered players into the database.", exc_info=True)
+        conn.rollback()
 
 
 def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
