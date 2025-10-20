@@ -22,7 +22,7 @@ import time
 import re
 import db_builder
 import uuid
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 import shutil
 
 # --- Flask App Configuration ---
@@ -430,11 +430,104 @@ def lineup_page_data():
     if not conn:
         return jsonify({'db_exists': False, 'error': error_msg})
 
-    if conn:
-        conn.close()
+    try:
+        cursor = conn.cursor()
 
-    return jsonify({'db_exists': True})
+        # Fetch weeks
+        cursor.execute("SELECT week_num, start_date, end_date FROM weeks ORDER BY week_num")
+        weeks = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
+        # Fetch teams
+        cursor.execute("SELECT team_id, name FROM teams ORDER BY name")
+        teams = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        # Determine current week
+        today = date.today().isoformat()
+        cursor.execute("SELECT week_num FROM weeks WHERE start_date <= ? AND end_date >= ?", (today, today))
+        current_week_row = cursor.fetchone()
+        current_week = current_week_row['week_num'] if current_week_row else (weeks[0]['week_num'] if weeks else 1)
+
+        return jsonify({
+            'db_exists': True,
+            'weeks': weeks,
+            'teams': teams,
+            'current_week': current_week
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching lineup page data: {e}", exc_info=True)
+        return jsonify({'db_exists': False, 'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@app.route('/api/roster_data', methods=['POST'])
+def get_roster_data():
+    league_id = session.get('league_id')
+    data = request.get_json()
+    week_num = data.get('week')
+    team_name = data.get('team_name')
+
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg}), 404
+
+    try:
+        cursor = conn.cursor()
+
+        # Get team ID
+        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
+        team_id_row = cursor.fetchone()
+        if not team_id_row:
+            return jsonify({'error': f'Team not found: {team_name}'}), 404
+        team_id = team_id_row['team_id']
+
+        # Get week dates
+        cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num,))
+        week_dates = cursor.fetchone()
+        if not week_dates:
+            return jsonify({'error': f'Week not found: {week_num}'}), 404
+        start_date = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
+        end_date = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
+
+        # Get roster and player info
+        cursor.execute("""
+            SELECT
+                p.player_name,
+                p.team,
+                p.player_name_normalized,
+                rp.eligible_positions
+            FROM rosters r
+            JOIN rostered_players rp ON r.roster_id = rp.roster_id
+            JOIN players p ON rp.player_id = p.player_id
+            WHERE r.team_id = ?
+        """, (team_id,))
+
+        players_raw = cursor.fetchall()
+        players = decode_dict_values([dict(row) for row in players_raw])
+
+        # Get schedules and calculate games in week
+        for player in players:
+            cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_name = ?", (player['team'],))
+            schedule_row = cursor.fetchone()
+            games_this_week = []
+            if schedule_row and schedule_row['schedule_json']:
+                schedule = json.loads(schedule_row['schedule_json'])
+                for game_date_str in schedule:
+                    game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
+                    if start_date <= game_date <= end_date:
+                        games_this_week.append(game_date.strftime('%A'))
+            player['games_this_week'] = games_this_week
+
+        return jsonify(players)
+
+    except Exception as e:
+        logging.error(f"Error fetching roster data: {e}", exc_info=True)
+        return jsonify({'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route('/api/update_db', methods=['POST'])

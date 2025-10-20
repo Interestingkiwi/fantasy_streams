@@ -4,6 +4,11 @@
 
     const errorDiv = document.getElementById('db-error-message');
     const controlsDiv = document.getElementById('lineup-controls');
+    const tableContainer = document.getElementById('roster-table-container');
+    const weekSelect = document.getElementById('week-select');
+    const yourTeamSelect = document.getElementById('your-team-select');
+
+    let pageData = null; // To store weeks and teams
 
     async function init() {
         try {
@@ -13,13 +18,120 @@
             if (!response.ok || !data.db_exists) {
                 throw new Error(data.error || 'Database has not been initialized.');
             }
+
+            pageData = data;
+            populateDropdowns();
+            setupEventListeners();
+
+            // Initial data load
+            await fetchAndRenderTable();
+
             controlsDiv.classList.remove('hidden');
 
         } catch (error) {
             console.error('Initialization error:', error);
             errorDiv.classList.remove('hidden');
             controlsDiv.classList.add('hidden');
+            tableContainer.classList.add('hidden');
         }
+    }
+
+    function populateDropdowns() {
+        // Populate Weeks
+        weekSelect.innerHTML = pageData.weeks.map(week =>
+            `<option value="${week.week_num}" ${week.week_num === pageData.current_week ? 'selected' : ''}>
+                Week ${week.week_num} (${week.start_date} to ${week.end_date})
+            </option>`
+        ).join('');
+
+        // Populate Teams
+        const teamOptions = pageData.teams.map(team =>
+            `<option value="${team.name}">${team.name}</option>`
+        ).join('');
+        yourTeamSelect.innerHTML = teamOptions;
+    }
+
+    async function fetchAndRenderTable() {
+        const selectedWeek = weekSelect.value;
+        const yourTeamName = yourTeamSelect.value;
+
+        if (!selectedWeek || !yourTeamName) {
+            tableContainer.innerHTML = '<p class="text-gray-400">Please make all selections.</p>';
+            return;
+        }
+
+        tableContainer.innerHTML = '<p class="text-gray-400">Loading roster...</p>';
+
+        try {
+            const response = await fetch('/api/roster_data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    week: selectedWeek,
+                    team_name: yourTeamName,
+                })
+            });
+
+            const roster = await response.json();
+            if (!response.ok) throw new Error(roster.error || 'Failed to fetch roster.');
+
+            renderTable(roster);
+
+        } catch(error) {
+            console.error('Error fetching roster:', error);
+            tableContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
+        }
+    }
+
+    function renderTable(roster) {
+        const positionOrder = ['C', 'LW', 'RW', 'D', 'G', 'IR', 'IR+'];
+
+        roster.sort((a, b) => {
+            const posA = a.eligible_positions.split(',').map(p => p.trim());
+            const posB = b.eligible_positions.split(',').map(p => p.trim());
+
+            const maxIndexA = Math.max(...posA.map(p => positionOrder.indexOf(p)));
+            const maxIndexB = Math.max(...posB.map(p => positionOrder.indexOf(p)));
+
+            return maxIndexA - maxIndexB;
+        });
+
+        let tableHtml = `
+            <div class="bg-gray-900 rounded-lg shadow">
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-700/50">
+                        <tr>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Games This Week</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+        `;
+
+        roster.forEach(player => {
+            tableHtml += `
+                <tr class="hover:bg-gray-700/50">
+                    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-300">${player.team}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.join(', ')}</td>
+                </tr>
+            `;
+        });
+
+        tableHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        tableContainer.innerHTML = tableHtml;
+    }
+
+    function setupEventListeners() {
+        weekSelect.addEventListener('change', fetchAndRenderTable);
+        yourTeamSelect.addEventListener('change', fetchAndRenderTable);
     }
 
     init();

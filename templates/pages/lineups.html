@@ -6,8 +6,19 @@
 </div>
 
 <div id="lineup-controls" class="hidden">
-    <p class="text-gray-300">Lineup generator controls will be displayed here.</p>
-</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div>
+            <label for="week-select" class="block text-sm font-medium text-gray-300 mb-1">Weekqwqw</label>
+            <select id="week-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"></select>
+        </div>
+        <div>
+            <label for="your-team-select" class="block text-sm font-medium text-gray-300 mb-1">Your Teamqwqw</label>
+            <select id="your-team-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"></select>
+        </div>
+    </div>
 
+    <div id="roster-table-container">
+        </div>
+</div>
 
 <script src="{{ url_for('static', filename='lineups.js') }}"></script>
