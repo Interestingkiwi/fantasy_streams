@@ -545,46 +545,64 @@ def serve_static(filename):
 
 @app.route('/api/lineups')
 def get_lineups():
-    # The league_id here is the partial ID like '22705', not the full filename
-    league_id_from_param = request.args.get('league_id')
+    # Parameters from the frontend
     full_league_db_name = request.args.get('league_db_name') # e.g., yahoo-22705-....db
     team_id = request.args.get('team_id')
     week_num = request.args.get('week')
 
-    if not all([full_league_db_name, team_id, week_num, league_id_from_param]):
-        return jsonify({"error": "Missing required parameters"}), 400
+    # Add logging to see incoming requests immediately
+    logging.info(f"Received /api/lineups request with params: db_name={full_league_db_name}, team_id={team_id}, week={week_num}")
 
-    # We need the full path to pass to the generator, which doesn't use session logic
-    # Determine the correct directory
+    if not all([full_league_db_name, team_id, week_num]):
+        logging.error("Missing required parameters for /api/lineups")
+        return jsonify({"error": "Missing required parameters: league_db_name, team_id, week"}), 400
+
+    # --- Backend logic to extract league_id from the filename ---
+    league_id_match = re.search(r'yahoo-(\d+)-', full_league_db_name)
+    if not league_id_match:
+        logging.error(f"Could not parse league_id from db_name: {full_league_db_name}")
+        return jsonify({"error": "Invalid league database filename format."}), 400
+
+    league_id_from_db_name = league_id_match.group(1)
+    logging.info(f"Parsed league_id '{league_id_from_db_name}' from filename.")
+
+    # Determine the correct directory and full path
     db_dir = DATA_DIR if os.path.exists(DATA_DIR) else 'server'
     league_db_path = os.path.join(db_dir, full_league_db_name)
 
     if not os.path.exists(league_db_path):
+        logging.error(f"Database file not found at path: {league_db_path}")
         return jsonify({"error": "League database file not found"}), 404
 
     conn = None
     try:
         # Step 1: Connect using your helper to get week info
-        conn, error = get_db_connection_for_league(league_id_from_param)
+        conn, error = get_db_connection_for_league(league_id_from_db_name)
         if error:
+            logging.error(f"DB connection error for league {league_id_from_db_name}: {error}")
             return jsonify({"error": error}), 500
 
         cur = conn.cursor()
         cur.execute("SELECT start_date, end_date FROM fantasy_weeks WHERE week_num = ?", (week_num,))
         week_info_row = cur.fetchone()
         if not week_info_row:
-            return jsonify({"error": "Week not found"}), 404
+            logging.warning(f"Week {week_num} not found for league {league_id_from_db_name}")
+            conn.close()
+            return jsonify({"error": f"Week {week_num} not found"}), 404
 
         week_info = dict(week_info_row)
         week_info['week_num'] = week_num
-        conn.close() # Close connection before heavy processing
+        conn.close()
 
         # Step 2: Call the lineup generator with the full, direct path
+        logging.info(f"Starting lineup generation for team {team_id}, week {week_num}")
         generate_weekly_lineups(league_db_path, team_id, week_info)
+        logging.info(f"Finished lineup generation for team {team_id}, week {week_num}")
 
-        # Step 3: Re-connect using your helper to fetch the generated data
-        conn, error = get_db_connection_for_league(league_id_from_param)
+        # Step 3: Re-connect to fetch the generated data
+        conn, error = get_db_connection_for_league(league_id_from_db_name)
         if error:
+            logging.error(f"DB re-connection error for league {league_id_from_db_name}: {error}")
             return jsonify({"error": error}), 500
 
         cur = conn.cursor()
@@ -606,10 +624,11 @@ def get_lineups():
                 grouped_lineups[date] = []
             grouped_lineups[date].append(row)
 
+        logging.info(f"Successfully fetched and grouped {len(lineups_data)} lineup entries.")
         return jsonify(grouped_lineups)
 
     except Exception as e:
-        logging.error(f"Error in /api/lineups: {e}")
+        logging.error(f"Unhandled exception in /api/lineups: {e}", exc_info=True)
         return jsonify({"error": "An internal server error occurred."}), 500
     finally:
         if conn:

@@ -1,24 +1,41 @@
 document.addEventListener('DOMContentLoaded', function() {
     const container = document.getElementById('lineups-container');
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize today's date
+    today.setHours(0, 0, 0, 0);
 
     function fetchLineups() {
-        const selectedDb = localStorage.getItem('selectedDb');
+        // Get data from localStorage
+        const selectedDb = localStorage.getItem('selectedDb'); // This is the full filename
         const selectedTeamId = localStorage.getItem('selectedTeamId');
         const selectedWeek = localStorage.getItem('selectedWeek');
 
+        // --- Debugging Logs ---
+        console.log("Attempting to fetch lineups with the following data:");
+        console.log("Selected DB (filename):", selectedDb);
+        console.log("Selected Team ID:", selectedTeamId);
+        console.log("Selected Week:", selectedWeek);
+
         if (!selectedDb || !selectedTeamId || !selectedWeek) {
             container.innerHTML = '<div class="loader">Please select a league, team, and week from the Home page first.</div>';
+            console.error("Missing required data in localStorage.");
             return;
         }
 
         container.innerHTML = '<div class="loader">Generating optimal lineups... This may take a moment.</div>';
 
-        fetch(`/api/lineups?league_id=${selectedDb}&team_id=${selectedTeamId}&week=${selectedWeek}`)
+        // Construct the URL with the correct parameter name the backend now expects
+        const apiUrl = `/api/lineups?league_db_name=${selectedDb}&team_id=${selectedTeamId}&week=${selectedWeek}`;
+
+        // --- Debugging Log ---
+        console.log("Fetching from URL:", apiUrl);
+
+        fetch(apiUrl)
             .then(response => {
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    // Try to get more error details from the response body
+                    return response.json().then(err => {
+                        throw new Error(`HTTP error! status: ${response.status}, message: ${err.error || 'Unknown error'}`);
+                    });
                 }
                 return response.json();
             })
@@ -26,12 +43,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 renderLineups(data);
             })
             .catch(error => {
+                // Log the full error to the console for better debugging
                 console.error('Error fetching lineup data:', error);
-                container.innerHTML = `<div class="loader">Error loading lineups. Please try again.</div>`;
+                container.innerHTML = `<div class="loader">Error loading lineups: ${error.message}. Please check the console for more details.</div>`;
             });
     }
 
     function renderLineups(lineupData) {
+        // ... (The renderLineups function remains the same as before) ...
         container.innerHTML = '';
         if (Object.keys(lineupData).length === 0) {
             container.innerHTML = '<div class="loader">No games found for your team in the selected week.</div>';
@@ -41,9 +60,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const sortedDates = Object.keys(lineupData).sort();
 
         sortedDates.forEach(dateStr => {
-            const lineupDate = new Date(dateStr + 'T00:00:00'); // Treat date as local
+            const lineupDate = new Date(dateStr + 'T00:00:00');
 
-            // Only show lineups from today onwards
             if (lineupDate < today) {
                 return;
             }
@@ -62,7 +80,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const players = lineupData[dateStr];
 
-            // Separate active and bench players
             const activePlayers = players.filter(p => p.status === 'ACTIVE');
             const benchPlayers = players.filter(p => p.status === 'BENCH');
 
