@@ -525,7 +525,7 @@ def _create_tables(cursor):
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS lineup_settings (
             position TEXT NOT NULL,
-            position_count TEXT NOT NULL
+            position_count INTEGER NOT NULL
         )
     ''')
     #weeks
