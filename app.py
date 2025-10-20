@@ -24,6 +24,7 @@ import db_builder
 import uuid
 from datetime import date, timedelta
 import shutil
+from functools import wraps
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
@@ -42,6 +43,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Yahoo OAuth2 Settings ---
 authorization_base_url = 'https://api.login.yahoo.com/oauth2/request_auth'
 token_url = 'https://api.login.yahoo.com/oauth2/get_token'
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'credentials' not in session:
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
 
 def model_to_dict(obj):
     """
@@ -535,6 +544,38 @@ def db_status():
         'timestamp': int(timestamp) if timestamp else None,
         'is_test_db': False
     })
+
+@app.route('/api/lineups_page_data')
+@login_required
+def lineups_page_data():
+    league_id = session.get('league_id')
+    db_exists = False
+
+    if not league_id:
+        # Use test DB if no league_id in session
+        db_path = 'server/yahoo-22705-Albany Hockey Hooligans Test.db'
+        db_exists = os.path.exists(db_path)
+    else:
+        # Build path for the user's authenticated league DB.
+        # This logic first checks for the simple name format, then falls back
+        # to the more complete name format that db_builder.py creates.
+        db_file_name = f"yahoo-{league_id.replace('.l.', '-')}.db"
+        db_path = os.path.join('server', db_file_name)
+        db_exists = os.path.exists(db_path)
+
+        if not db_exists:
+            league_name = session.get('league_name', '')
+            if league_name:
+                db_file_name_with_name = f"yahoo-{league_id.replace('.l.', '-')}-{league_name}.db"
+                db_path_with_name = os.path.join('server', db_file_name_with_name)
+                if os.path.exists(db_path_with_name):
+                    db_exists = True
+
+    if not db_exists:
+        return jsonify({'db_exists': False, 'error': 'Database not found.'})
+
+    return jsonify({'db_exists': True})
+
 
 @app.route('/static/<path:filename>')
 def serve_static(filename):

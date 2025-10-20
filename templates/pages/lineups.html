@@ -1,4 +1,20 @@
-<div class="space-y-4">
-    <h2 class="text-xl font-bold text-white">Lineups</h2>
-    <p class="text-gray-400">Lineups page content will go here.</p>
+{% extends "index.html" %}
+
+{% block title %}Optimal Lineups{% endblock %}
+
+{% block content %}
+<h1 class="text-3xl font-bold mb-6 text-white">Optimal Lineups</h1>
+
+<div id="db-error-message" class="hidden bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg" role="alert">
+    <p class="font-bold">Database Not Found!</p>
+    <p class="text-sm">Please go to the "League Database" page and initialize your league's data before using this feature.</p>
 </div>
+
+<div id="lineup-controls" class="hidden">
+    <!-- Future content for the lineup generator will go here -->
+    <p class="text-gray-300">Lineup generator controls will be displayed here.</p>
+</div>
+
+
+<script src="{{ url_for('static', filename='lineups.js') }}"></script>
+{% endblock %}
