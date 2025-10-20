@@ -6,14 +6,14 @@ Main run app for Fantasystreams.app
 
 Author: Jason Druckenmiller
 Date: 10/16/2025
-Updated: 10/20/2025
+Updated: 10/19/2025
 """
 
 import os
 import json
 import logging
 import sqlite3
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory, g
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from yfpy.query import YahooFantasySportsQuery
 import yahoo_fantasy_api as yfa
 from yahoo_oauth import OAuth2
@@ -24,8 +24,6 @@ import db_builder
 import uuid
 from datetime import date, timedelta
 import shutil
-from server.lineup_generator import generate_weekly_lineups
-from concurrent.futures import ThreadPoolExecutor
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
@@ -40,11 +38,10 @@ TEST_DB_PATH = os.path.join(SERVER_DIR, TEST_DB_FILENAME)
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-strong-dev-secret-key-for-local-testing")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-executor = ThreadPoolExecutor(max_workers=2)
+
 # --- Yahoo OAuth2 Settings ---
 authorization_base_url = 'https://api.login.yahoo.com/oauth2/request_auth'
 token_url = 'https://api.login.yahoo.com/oauth2/get_token'
-
 
 def model_to_dict(obj):
     """
@@ -174,7 +171,6 @@ def get_db_connection_for_league(league_id):
         return None, "League ID not found in session."
 
     db_filename = None
-    db_dir = DATA_DIR if os.path.exists(DATA_DIR) else 'server'
     for filename in os.listdir(DATA_DIR):
         if filename.startswith(f"yahoo-{league_id}-") and filename.endswith(".db"):
             db_filename = filename
@@ -543,160 +539,6 @@ def db_status():
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     return send_from_directory('static', filename)
-
-
-@app.route('/api/lineups_precheck')
-def lineups_precheck():
-    """
-    A lightweight endpoint to verify if the required database file exists.
-    """
-    league_db_name = request.args.get('league_db_name')
-    use_test_db = request.args.get('use_test_db', 'false').lower() == 'true'
-
-    if use_test_db:
-        if os.path.exists(TEST_DB_PATH):
-            return jsonify({"db_exists": True})
-        else:
-            return jsonify({"db_exists": False, "error": "Test DB not found."})
-
-    # For non-test DB, check if a file with the league ID exists.
-    if not league_db_name:
-         return jsonify({"db_exists": False, "error": "League DB name not provided."})
-
-    league_id_match = re.search(r'yahoo-(\d+)-', league_db_name)
-    if not league_id_match:
-        return jsonify({"db_exists": False, "error": "Invalid DB name format."})
-    league_id = league_id_match.group(1)
-
-    db_found = False
-    for directory in [DATA_DIR, 'server']:
-        if os.path.exists(directory):
-            for filename in os.listdir(directory):
-                if f"yahoo-{league_id}-" in filename and filename.endswith(".db"):
-                    db_found = True
-                    break
-        if db_found:
-            break
-
-    if db_found:
-        return jsonify({"db_exists": True})
-    else:
-        return jsonify({"db_exists": False, "error": f"Database for league {league_id} not found."})
-
-
-@app.route('/api/start_lineup_generation', methods=['POST'])
-def start_lineup_generation():
-    # This function remains the same as the previous version
-    data = request.json
-    full_league_db_name = data.get('league_db_name')
-    team_id = data.get('team_id')
-    week_num = data.get('week')
-    use_test_db = data.get('use_test_db', False)
-
-    logging.info(f"START request: db={full_league_db_name}, team={team_id}, week={week_num}, test_mode={use_test_db}")
-
-    if not all([full_league_db_name, team_id, week_num]):
-        return jsonify({"error": "Missing required parameters"}), 400
-
-    executor.submit(run_lineup_generation, full_league_db_name, team_id, week_num, use_test_db)
-    return jsonify({"message": "Lineup generation started."}), 202
-
-def run_lineup_generation(full_league_db_name, team_id, week_num, use_test_db):
-    # This function remains the same
-    try:
-        logging.info(f"Background task started: team {team_id}, week {week_num}, test_mode={use_test_db}")
-
-        db_path = ""
-        if use_test_db:
-            db_path = os.path.join(DATA_DIR, f"temp_{TEST_DB_FILENAME}")
-            if not os.path.exists(db_path):
-                 shutil.copy2(TEST_DB_PATH, db_path)
-        else:
-            db_dir = DATA_DIR if os.path.exists(DATA_DIR) else 'server'
-            db_path = os.path.join(db_dir, full_league_db_name)
-
-        if not os.path.exists(db_path):
-            logging.error(f"DB file not found in background task: {db_path}")
-            return
-
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute("SELECT start_date, end_date FROM fantasy_weeks WHERE week_num = ?", (week_num,))
-        week_info_row = cur.fetchone()
-        conn.close()
-
-        if not week_info_row:
-            logging.error(f"Week {week_num} not found in background task.")
-            return
-
-        week_info = dict(week_info_row)
-        week_info['week_num'] = week_num
-
-        generate_weekly_lineups(db_path, team_id, week_info)
-        logging.info(f"Background task COMPLETED for team {team_id}, week {week_num}.")
-
-    except Exception as e:
-        logging.error(f"Exception in background lineup generation: {e}", exc_info=True)
-
-
-@app.route('/api/lineups')
-def get_lineups():
-    # This function remains the same
-    full_league_db_name = request.args.get('league_db_name')
-    team_id = request.args.get('team_id')
-    week_num = request.args.get('week')
-    use_test_db = request.args.get('use_test_db', 'false').lower() == 'true'
-
-    logging.info(f"GET request: db={full_league_db_name}, team={team_id}, week={week_num}, test_mode={use_test_db}")
-
-    if not all([full_league_db_name, team_id, week_num]):
-        return jsonify({"error": "Missing required parameters"}), 400
-
-    league_id_match = re.search(r'yahoo-(\d+)-', full_league_db_name)
-    league_id = league_id_match.group(1) if league_id_match else None
-
-    conn = None
-    try:
-        conn, error = get_db_connection_for_league(league_id, use_test_db)
-        if error:
-            return jsonify({"error": error}), 500
-
-        cur = conn.cursor()
-        cur.execute("SELECT start_date, end_date FROM fantasy_weeks WHERE week_num = ?", (week_num,))
-        week_info_row = cur.fetchone()
-        if not week_info_row:
-            return jsonify({"error": "Week not found"}), 404
-
-        cur.execute("""
-            SELECT lineup_date, player_name, played_position, status
-            FROM optimal_lineups
-            WHERE team_id = ? AND lineup_date BETWEEN ? AND ?
-            ORDER BY lineup_date, CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END
-        """, (team_id, week_info_row['start_date'], week_info_row['end_date']))
-
-        lineups_data = [dict(row) for row in cur.fetchall()]
-
-        if not lineups_data:
-            logging.info("No lineup data found yet for this week, returning empty object.")
-            return jsonify({})
-
-        grouped_lineups = {}
-        for row in lineups_data:
-            date = row['lineup_date']
-            if date not in grouped_lineups:
-                grouped_lineups[date] = []
-            grouped_lineups[date].append(row)
-
-        return jsonify(grouped_lineups)
-
-    except Exception as e:
-        logging.error(f"Error in /api/lineups GET: {e}", exc_info=True)
-        return jsonify({"error": "An internal server error occurred."}), 500
-    finally:
-        if conn:
-            conn.close()
-
 
 if __name__ == '__main__':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
