@@ -4,12 +4,10 @@ document.addEventListener('DOMContentLoaded', function() {
     today.setHours(0, 0, 0, 0);
 
     function fetchLineups() {
-        // Get data from localStorage
-        const selectedDb = localStorage.getItem('selectedDb'); // This is the full filename
+        const selectedDb = localStorage.getItem('selectedDb');
         const selectedTeamId = localStorage.getItem('selectedTeamId');
         const selectedWeek = localStorage.getItem('selectedWeek');
 
-        // --- Debugging Logs ---
         console.log("Attempting to fetch lineups with the following data:");
         console.log("Selected DB (filename):", selectedDb);
         console.log("Selected Team ID:", selectedTeamId);
@@ -23,37 +21,34 @@ document.addEventListener('DOMContentLoaded', function() {
 
         container.innerHTML = '<div class="loader">Generating optimal lineups... This may take a moment.</div>';
 
-        // Construct the URL with the correct parameter name the backend now expects
-        const apiUrl = `/api/lineups?league_db_name=${selectedDb}&team_id=${selectedTeamId}&week=${selectedWeek}`;
+        // Use encodeURIComponent for robustness against special characters in filenames
+        const apiUrl = `/api/lineups?league_db_name=${encodeURIComponent(selectedDb)}&team_id=${encodeURIComponent(selectedTeamId)}&week=${encodeURIComponent(selectedWeek)}`;
 
-        // --- Debugging Log ---
         console.log("Fetching from URL:", apiUrl);
 
         fetch(apiUrl)
             .then(response => {
                 if (!response.ok) {
-                    // Try to get more error details from the response body
                     return response.json().then(err => {
-                        throw new Error(`HTTP error! status: ${response.status}, message: ${err.error || 'Unknown error'}`);
+                        throw new Error(`HTTP error! status: ${response.status}, message: ${err.error || 'Unknown server error'}`);
                     });
                 }
                 return response.json();
             })
             .then(data => {
+                console.log("Received lineup data from server:", data);
                 renderLineups(data);
             })
             .catch(error => {
-                // Log the full error to the console for better debugging
                 console.error('Error fetching lineup data:', error);
-                container.innerHTML = `<div class="loader">Error loading lineups: ${error.message}. Please check the console for more details.</div>`;
+                container.innerHTML = `<div class="loader">Error loading lineups: ${error.message}. Check the browser console and server logs for more details.</div>`;
             });
     }
 
     function renderLineups(lineupData) {
-        // ... (The renderLineups function remains the same as before) ...
         container.innerHTML = '';
         if (Object.keys(lineupData).length === 0) {
-            container.innerHTML = '<div class="loader">No games found for your team in the selected week.</div>';
+            container.innerHTML = '<div class="loader">No games found for your team in the selected week, or optimization did not produce a result.</div>';
             return;
         }
 
