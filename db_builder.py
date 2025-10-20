@@ -521,6 +521,13 @@ def _create_tables(cursor):
             scoring_group TEXT NOT NULL
         )
     ''')
+    #lineup settings
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS lineup_settins (
+            position TEXT NOT NULL,
+            position_count TEXT NOT NULL
+        )
+    ''')
     #weeks
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS weeks (
@@ -875,7 +882,7 @@ def _update_player_id(yq, cursor):
 
 def _update_league_scoring_settings(yq, cursor):
     """
-    Writes the leagues scoring settings
+    Writes the leagues scoring settings, and lineup settings
 
     Args:
         yq: An authenticated yfpy query object.
@@ -892,7 +899,6 @@ def _update_league_scoring_settings(yq, cursor):
             scoring_group = stat_details.group
             stat_id = stat_details.stat_id
 
-
             scoring_settings_to_insert.append((stat_id, category, scoring_group))
 
         sql = "INSERT OR IGNORE INTO scoring (stat_id, category, scoring_group) VALUES (?, ?, ?)"
@@ -903,6 +909,20 @@ def _update_league_scoring_settings(yq, cursor):
         logging.error(f"Failed to update scoring info: {e}", exc_info=True)
         return None
 
+    try:
+        lineup_settings_data_to_insert = []
+        for roster_position_item in settings.roster_positions:
+            position_details = roster_position_item
+            position = position_details.poisition
+            position_count = position_details.count
+
+            lineup_settings_data_to_insert.append((position, position_count))
+
+        sql = "INSERT OR IGNORE INTO lineup_settings (position, position_count) VALUES (?, ?)"
+        cursor.executemany(sql, lineup_settings_data_to_insert)
+        logging.info(f"Successfully inserted or ignored data for {len(lineup_settings_data_to_insert)} lineup positions.")
+    except Exception as e:
+        logging.error(f"Failed to update lineup settings info: {e}", exc_info=True)
 
 def _update_fantasy_weeks(yq, cursor, league_key):
     """
