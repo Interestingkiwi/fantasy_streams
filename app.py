@@ -545,9 +545,48 @@ def serve_static(filename):
     return send_from_directory('static', filename)
 
 
+@app.route('/api/lineups_precheck')
+def lineups_precheck():
+    """
+    A lightweight endpoint to verify if the required database file exists.
+    """
+    league_db_name = request.args.get('league_db_name')
+    use_test_db = request.args.get('use_test_db', 'false').lower() == 'true'
+
+    if use_test_db:
+        if os.path.exists(TEST_DB_PATH):
+            return jsonify({"db_exists": True})
+        else:
+            return jsonify({"db_exists": False, "error": "Test DB not found."})
+
+    # For non-test DB, check if a file with the league ID exists.
+    if not league_db_name:
+         return jsonify({"db_exists": False, "error": "League DB name not provided."})
+
+    league_id_match = re.search(r'yahoo-(\d+)-', league_db_name)
+    if not league_id_match:
+        return jsonify({"db_exists": False, "error": "Invalid DB name format."})
+    league_id = league_id_match.group(1)
+
+    db_found = False
+    for directory in [DATA_DIR, 'server']:
+        if os.path.exists(directory):
+            for filename in os.listdir(directory):
+                if f"yahoo-{league_id}-" in filename and filename.endswith(".db"):
+                    db_found = True
+                    break
+        if db_found:
+            break
+
+    if db_found:
+        return jsonify({"db_exists": True})
+    else:
+        return jsonify({"db_exists": False, "error": f"Database for league {league_id} not found."})
+
+
 @app.route('/api/start_lineup_generation', methods=['POST'])
 def start_lineup_generation():
-    """ Kicks off the lineup generation in a background thread. """
+    # This function remains the same as the previous version
     data = request.json
     full_league_db_name = data.get('league_db_name')
     team_id = data.get('team_id')
@@ -563,14 +602,13 @@ def start_lineup_generation():
     return jsonify({"message": "Lineup generation started."}), 202
 
 def run_lineup_generation(full_league_db_name, team_id, week_num, use_test_db):
-    """ Helper that contains the logic to be run in the background. """
+    # This function remains the same
     try:
         logging.info(f"Background task started: team {team_id}, week {week_num}, test_mode={use_test_db}")
 
         db_path = ""
         if use_test_db:
             db_path = os.path.join(DATA_DIR, f"temp_{TEST_DB_FILENAME}")
-            # Ensure the temp DB exists if the start request created it
             if not os.path.exists(db_path):
                  shutil.copy2(TEST_DB_PATH, db_path)
         else:
@@ -595,7 +633,6 @@ def run_lineup_generation(full_league_db_name, team_id, week_num, use_test_db):
         week_info = dict(week_info_row)
         week_info['week_num'] = week_num
 
-        # The generator function now gets the direct, correct path.
         generate_weekly_lineups(db_path, team_id, week_info)
         logging.info(f"Background task COMPLETED for team {team_id}, week {week_num}.")
 
@@ -605,11 +642,10 @@ def run_lineup_generation(full_league_db_name, team_id, week_num, use_test_db):
 
 @app.route('/api/lineups')
 def get_lineups():
-    """ Fetches the PRE-COMPUTED lineup data from the database. """
+    # This function remains the same
     full_league_db_name = request.args.get('league_db_name')
     team_id = request.args.get('team_id')
     week_num = request.args.get('week')
-    # The 'use_test_db' parameter is now a string 'true' or 'false' from the URL
     use_test_db = request.args.get('use_test_db', 'false').lower() == 'true'
 
     logging.info(f"GET request: db={full_league_db_name}, team={team_id}, week={week_num}, test_mode={use_test_db}")
@@ -622,7 +658,6 @@ def get_lineups():
 
     conn = None
     try:
-        # Pass the explicit flag to the connection helper
         conn, error = get_db_connection_for_league(league_id, use_test_db)
         if error:
             return jsonify({"error": error}), 500

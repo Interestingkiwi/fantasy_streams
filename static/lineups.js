@@ -9,28 +9,39 @@ document.addEventListener('DOMContentLoaded', function() {
     let pollCount = 0;
     const maxPolls = 30; // Stop polling after 60 seconds
 
-    function init() {
-        // --- PREREQUISITE CHECK ---
+    async function init() {
         const selectedDb = localStorage.getItem('selectedDb');
         const selectedTeamId = localStorage.getItem('selectedTeamId');
         const selectedWeek = localStorage.getItem('selectedWeek');
-
-        // As you suggested, check if the DB/team/week is selected first.
-        if (!selectedDb || !selectedTeamId || !selectedWeek) {
-            console.error("Validation Error: Missing required data from localStorage.");
-            errorDiv.classList.remove('hidden');
-            contentDiv.classList.add('hidden'); // Hide the main content area
-            return; // Stop execution
-        }
-
-        // If checks pass, proceed with starting the generation.
-        startLineupGeneration(selectedDb, selectedTeamId, selectedWeek);
-    }
-
-    function startLineupGeneration(selectedDb, selectedTeamId, selectedWeek) {
-        // Correctly read the use_test_db flag from localStorage. It's a string 'true' or 'false'.
         const useTestDb = localStorage.getItem('use_test_db') === 'true';
 
+        try {
+            // 1. Client-side check for selected values
+            if (!selectedDb || !selectedTeamId || !selectedWeek) {
+                throw new Error("Please select a League, Team, and Week on the Home page.");
+            }
+
+            // 2. Server-side check to ensure DB file exists
+            const precheckUrl = `/api/lineups_precheck?league_db_name=${encodeURIComponent(selectedDb)}&use_test_db=${useTestDb}`;
+            const response = await fetch(precheckUrl);
+            const precheckData = await response.json();
+
+            if (!response.ok || !precheckData.db_exists) {
+                throw new Error(precheckData.error || "The selected database file could not be found on the server.");
+            }
+
+            // 3. If all checks pass, start the generation process
+            startLineupGeneration(selectedDb, selectedTeamId, selectedWeek, useTestDb);
+
+        } catch (error) {
+            console.error('Initialization failed:', error);
+            errorDiv.querySelector('.text-sm').textContent = error.message;
+            errorDiv.classList.remove('hidden');
+            contentDiv.classList.add('hidden');
+        }
+    }
+
+    function startLineupGeneration(selectedDb, selectedTeamId, selectedWeek, useTestDb) {
         console.log("Attempting to start lineup generation with:", { selectedDb, selectedTeamId, selectedWeek, useTestDb });
         container.innerHTML = '<div class="loader">Requesting lineup generation...</div>';
 
@@ -41,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 league_db_name: selectedDb,
                 team_id: selectedTeamId,
                 week: selectedWeek,
-                use_test_db: useTestDb // Include the test DB flag in the request
+                use_test_db: useTestDb
             })
         })
         .then(response => {
@@ -63,7 +74,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (pollingInterval) clearInterval(pollingInterval);
         pollCount = 0;
 
-        // Add the use_test_db flag to the polling URL
         const apiUrl = `/api/lineups?league_db_name=${encodeURIComponent(selectedDb)}&team_id=${encodeURIComponent(selectedTeamId)}&week=${encodeURIComponent(selectedWeek)}&use_test_db=${useTestDb}`;
 
         pollingInterval = setInterval(() => {
@@ -97,7 +107,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderLineups(lineupData) {
-        // This rendering function remains the same
         container.innerHTML = '';
         const sortedDates = Object.keys(lineupData).sort();
 
@@ -107,7 +116,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const dayCard = document.createElement('div');
             dayCard.className = 'day-card';
-            const formattedDate = lineupDate.toLocaleDateDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+            const formattedDate = lineupDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
             dayCard.innerHTML = `<h3>${formattedDate}</h3>`;
 
             const table = document.createElement('table');
