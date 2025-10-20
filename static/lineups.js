@@ -15,9 +15,19 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedWeek = localStorage.getItem('selectedWeek');
         const useTestDb = localStorage.getItem('use_test_db') === 'true';
 
+        // --- AGGRESSIVE DEBUGGING ---
+        // This will show the exact values in your browser's developer console (F12)
+        console.log("--- Lineups Page Initializing ---");
+        console.log("Value of 'selectedDb' from localStorage:", selectedDb, `(Type: ${typeof selectedDb})`);
+        console.log("Value of 'selectedTeamId' from localStorage:", selectedTeamId, `(Type: ${typeof selectedTeamId})`);
+        console.log("Value of 'selectedWeek' from localStorage:", selectedWeek, `(Type: ${typeof selectedWeek})`);
+        console.log("---------------------------------");
+
+
         try {
-            // 1. Client-side check for selected values
-            if (!selectedDb || !selectedTeamId || !selectedWeek) {
+            // --- MORE ROBUST VALIDATION ---
+            // This now checks for null, undefined, empty string, and the literal string "null".
+            if (!selectedDb || selectedDb === 'null' || !selectedTeamId || !selectedWeek) {
                 throw new Error("Please select a League, Team, and Week on the Home page.");
             }
 
