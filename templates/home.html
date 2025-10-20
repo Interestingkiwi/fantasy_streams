@@ -22,16 +22,9 @@
                     <p id="timestamp-text" class="text-gray-400 text-xs">Loading league data...</p>
                     <p class="text-gray-400 text-xs">Projection data is sourced by reddit user: <a href="https://www.reddit.com/r/fantasyhockey/comments/1n1wsqc/dtz_20252026_nhl_projections/" target="_blank" class="text-blue-400 hover:underline">Datsyuktozetterberg</a></p>
                 </main>
-                <div id="global-controls" class="dropdown-container" style="padding-bottom: 10px; border-bottom: 1px solid #ccc; margin-bottom: 10px;">
-                    <div class="dropdown-group">
-                        <label for="global-week-dropdown">Fantasy Week:</label>
-                        <select id="global-week-dropdown"></select>
-                    </div>
-                    <div class="dropdown-group">
-                        <label for="global-your-team-dropdown">Your Team:</label>
-                        <select id="global-your-team-dropdown"></select>
-                    </div>
-                </div>
+                <button id="refresh-data-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-2 text-xs rounded-lg transition duration-300 ease-in-out">
+                    Refresh League Data
+                </button>
             </div>
 
             <button id="logout-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 ease-in-out">
