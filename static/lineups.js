@@ -3,67 +3,107 @@ document.addEventListener('DOMContentLoaded', function() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    function fetchLineups() {
+    // Polling interval tracker
+    let pollingInterval = null;
+    let pollCount = 0;
+    const maxPolls = 30; // Stop polling after 60 seconds (30 polls * 2s)
+
+    function startLineupGeneration() {
         const selectedDb = localStorage.getItem('selectedDb');
         const selectedTeamId = localStorage.getItem('selectedTeamId');
         const selectedWeek = localStorage.getItem('selectedWeek');
 
-        console.log("Attempting to fetch lineups with the following data:");
-        console.log("Selected DB (filename):", selectedDb);
-        console.log("Selected Team ID:", selectedTeamId);
-        console.log("Selected Week:", selectedWeek);
+        console.log("Attempting to start lineup generation with:", { selectedDb, selectedTeamId, selectedWeek });
 
         if (!selectedDb || !selectedTeamId || !selectedWeek) {
             container.innerHTML = '<div class="loader">Please select a league, team, and week from the Home page first.</div>';
-            console.error("Missing required data in localStorage.");
             return;
         }
 
-        container.innerHTML = '<div class="loader">Generating optimal lineups... This may take a moment.</div>';
+        container.innerHTML = '<div class="loader">Requesting lineup generation...</div>';
 
-        // Use encodeURIComponent for robustness against special characters in filenames
+        // Step 1: Send a request to START the generation process
+        fetch('/api/start_lineup_generation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                league_db_name: selectedDb,
+                team_id: selectedTeamId,
+                week: selectedWeek
+            })
+        })
+        .then(response => {
+            if (response.status === 202) { // 202 Accepted
+                console.log("Server accepted the generation request. Starting to poll for results.");
+                container.innerHTML = '<div class="loader">Generating optimal lineups... This may take a moment.</div>';
+                // Step 2: If server accepts, start polling for the results
+                pollForLineups();
+            } else {
+                throw new Error(`Server rejected the request with status: ${response.status}`);
+            }
+        })
+        .catch(error => {
+            console.error('Error starting lineup generation:', error);
+            container.innerHTML = `<div class="loader">Error starting lineup generation: ${error.message}</div>`;
+        });
+    }
+
+    function pollForLineups() {
+        // Clear any existing polling interval
+        if (pollingInterval) clearInterval(pollingInterval);
+        pollCount = 0;
+
+        const selectedDb = localStorage.getItem('selectedDb');
+        const selectedTeamId = localStorage.getItem('selectedTeamId');
+        const selectedWeek = localStorage.getItem('selectedWeek');
+
         const apiUrl = `/api/lineups?league_db_name=${encodeURIComponent(selectedDb)}&team_id=${encodeURIComponent(selectedTeamId)}&week=${encodeURIComponent(selectedWeek)}`;
 
-        console.log("Fetching from URL:", apiUrl);
+        pollingInterval = setInterval(() => {
+            if (pollCount >= maxPolls) {
+                clearInterval(pollingInterval);
+                container.innerHTML = '<div class="loader">Lineup generation is taking longer than expected. Please try refreshing the page later.</div>';
+                console.error("Polling timed out.");
+                return;
+            }
 
-        fetch(apiUrl)
-            .then(response => {
-                if (!response.ok) {
-                    return response.json().then(err => {
-                        throw new Error(`HTTP error! status: ${response.status}, message: ${err.error || 'Unknown server error'}`);
-                    });
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log("Received lineup data from server:", data);
-                renderLineups(data);
-            })
-            .catch(error => {
-                console.error('Error fetching lineup data:', error);
-                container.innerHTML = `<div class="loader">Error loading lineups: ${error.message}. Check the browser console and server logs for more details.</div>`;
-            });
+            console.log(`Polling for results... (Attempt ${pollCount + 1})`);
+
+            fetch(apiUrl)
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    // An empty object {} means the data is not ready yet
+                    if (Object.keys(data).length > 0) {
+                        console.log("Success! Received lineup data from server:", data);
+                        clearInterval(pollingInterval);
+                        renderLineups(data);
+                    } else {
+                        // Data not ready, continue polling
+                        pollCount++;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching lineup data during poll:', error);
+                    clearInterval(pollingInterval);
+                    container.innerHTML = `<div class="loader">Error loading lineups: ${error.message}.</div>`;
+                });
+        }, 2000); // Poll every 2 seconds
     }
 
     function renderLineups(lineupData) {
+        // This function remains the same as your latest version
         container.innerHTML = '';
-        if (Object.keys(lineupData).length === 0) {
-            container.innerHTML = '<div class="loader">No games found for your team in the selected week, or optimization did not produce a result.</div>';
-            return;
-        }
-
         const sortedDates = Object.keys(lineupData).sort();
 
         sortedDates.forEach(dateStr => {
             const lineupDate = new Date(dateStr + 'T00:00:00');
-
-            if (lineupDate < today) {
-                return;
-            }
+            if (lineupDate < today) return;
 
             const dayCard = document.createElement('div');
             dayCard.className = 'day-card';
-
             const formattedDate = lineupDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
             dayCard.innerHTML = `<h3>${formattedDate}</h3>`;
 
@@ -72,7 +112,6 @@ document.addEventListener('DOMContentLoaded', function() {
             table.innerHTML = `<thead><tr><th>Pos</th><th>Player</th></tr></thead>`;
 
             const tbody = document.createElement('tbody');
-
             const players = lineupData[dateStr];
 
             const activePlayers = players.filter(p => p.status === 'ACTIVE');
@@ -99,5 +138,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    fetchLineups();
+    // Initial call to start the whole process
+    startLineupGeneration();
 });
