@@ -24,6 +24,8 @@ import db_builder
 import uuid
 from datetime import date, timedelta, datetime
 import shutil
+from collections import defaultdict
+import itertools
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
@@ -196,6 +198,64 @@ def decode_dict_values(data):
     if isinstance(data, dict):
         return {k: v.decode('utf-8') if isinstance(v, bytes) else v for k, v in data.items()}
     return data
+
+
+
+def get_optimal_lineup(players, lineup_settings):
+    """
+    Calculates the optimal lineup based on player ranks and lineup constraints.
+
+    Args:
+        players: A list of player dictionaries, each including 'total_rank' and 'eligible_positions'.
+        lineup_settings: A dictionary mapping position to the number of available slots.
+
+    Returns:
+        A dictionary representing the optimized lineup.
+    """
+    # Filter out players with no rank
+    ranked_players = [p for p in players if 'total_rank' in p and p['total_rank'] is not None]
+
+    # Sort players by their rank (lower is better)
+    ranked_players.sort(key=lambda p: p['total_rank'])
+
+    # Initialize the lineup slots
+    lineup = {pos: [] for pos, count in lineup_settings.items() for _ in range(count)}
+
+    # Create a copy of the players to try different permutations
+    player_pool = list(ranked_players)
+
+    # A simple greedy algorithm to place players
+    filled_positions = set()
+
+    for player in player_pool:
+        eligible_positions = player['eligible_positions'].split(',')
+        best_pos = None
+
+        # Find the best available position for the player
+        for pos in eligible_positions:
+            if pos in lineup_settings:
+                # Find an empty slot for this position
+                for i in range(lineup_settings[pos]):
+                    slot_name = f"{pos}_{i}"
+                    if slot_name not in filled_positions:
+                        best_pos = slot_name
+                        break
+            if best_pos:
+                break
+
+        if best_pos:
+            lineup[best_pos] = player
+            filled_positions.add(best_pos)
+
+    # Reorganize the lineup by position for easier display
+    display_lineup = defaultdict(list)
+    for pos_key, player in lineup.items():
+        if player:
+            position = pos_key.split('_')[0]
+            display_lineup[position].append(player)
+
+    return display_lineup
+
 
 
 
@@ -514,7 +574,40 @@ def get_roster_data():
         players_raw = cursor.fetchall()
         players = decode_dict_values([dict(row) for row in players_raw])
 
-        # Get schedules and calculate games in week
+        # Get scoring categories
+        cursor.execute("SELECT category FROM scoring")
+        scoring_categories = [row['category'] for row in cursor.fetchall()]
+        cat_rank_columns = [f"{cat}_cat_rank" for cat in scoring_categories]
+
+        # Filter out IR players and get normalized names for the query
+        active_players = [p for p in players if 'IR' not in p['eligible_positions'].split(',')]
+        normalized_names = [p['player_name_normalized'] for p in active_players]
+
+        # Get player stats and calculate total rank
+        if normalized_names:
+            placeholders = ','.join('?' for _ in normalized_names)
+            query = f"""
+                SELECT player_name_normalized, {', '.join(cat_rank_columns)}
+                FROM joined_player_stats
+                WHERE player_name_normalized IN ({placeholders})
+            """
+            cursor.execute(query, normalized_names)
+            player_stats = {row['player_name_normalized']: dict(row) for row in cursor.fetchall()}
+
+            for player in active_players:
+                stats = player_stats.get(player['player_name_normalized'])
+                if stats:
+                    total_rank = sum(stats.get(col, 0) or 0 for col in cat_rank_columns)
+                    player['total_rank'] = total_rank
+
+        # Get lineup settings
+        cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
+        lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
+
+        # Get optimal lineup
+        optimal_lineup = get_optimal_lineup(active_players, lineup_settings)
+
+        # Get schedules and calculate games in week for all players
         for player in players:
             cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player['team'],))
             schedule_row = cursor.fetchone()
@@ -535,7 +628,7 @@ def get_roster_data():
                         games_next_week.append(game_date.strftime('%a'))
             player['games_next_week'] = games_next_week
 
-        return jsonify(players)
+        return jsonify({'players': players, 'optimal_lineup': optimal_lineup})
 
     except Exception as e:
         logging.error(f"Error fetching roster data: {e}", exc_info=True)
@@ -543,7 +636,6 @@ def get_roster_data():
     finally:
         if conn:
             conn.close()
-
 
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():

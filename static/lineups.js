@@ -5,6 +5,7 @@
     const errorDiv = document.getElementById('db-error-message');
     const controlsDiv = document.getElementById('lineup-controls');
     const tableContainer = document.getElementById('roster-table-container');
+    const optimalLineupContainer = document.getElementById('optimal-lineup-container');
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
 
@@ -33,6 +34,7 @@
             errorDiv.classList.remove('hidden');
             controlsDiv.classList.add('hidden');
             tableContainer.classList.add('hidden');
+            optimalLineupContainer.classList.add('hidden');
         }
     }
 
@@ -61,6 +63,7 @@
         }
 
         tableContainer.innerHTML = '<p class="text-gray-400">Loading roster...</p>';
+        optimalLineupContainer.innerHTML = '<p class="text-gray-400">Calculating optimal lineup...</p>';
 
         try {
             const response = await fetch('/api/roster_data', {
@@ -72,14 +75,17 @@
                 })
             });
 
-            const roster = await response.json();
-            if (!response.ok) throw new Error(roster.error || 'Failed to fetch roster.');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to fetch roster.');
 
-            renderTable(roster);
+            renderTable(data.players);
+            renderOptimalLineup(data.optimal_lineup);
+
 
         } catch(error) {
             console.error('Error fetching roster:', error);
             tableContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
+            optimalLineupContainer.innerHTML = '';
         }
     }
 
@@ -98,7 +104,7 @@
 
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
-                <table class="divide-y divide-gray-700">
+                <table class="min-w-full divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
                         <tr>
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
@@ -130,6 +136,46 @@
         `;
         tableContainer.innerHTML = tableHtml;
     }
+
+    function renderOptimalLineup(lineup) {
+        const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
+        let tableHtml = `
+            <div class="bg-gray-900 rounded-lg shadow">
+                <h2 class="text-xl font-bold text-white p-2">Optimal Lineup</h2>
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-700/50">
+                        <tr>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Position</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Total Rank</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+        `;
+
+        positionOrder.forEach(pos => {
+            if (lineup[pos]) {
+                lineup[pos].forEach(player => {
+                    tableHtml += `
+                        <tr class="hover:bg-gray-700/50">
+                            <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${pos}</td>
+                            <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.player_name}</td>
+                            <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.total_rank}</td>
+                        </tr>
+                    `;
+                });
+            }
+        });
+
+
+        tableHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        optimalLineupContainer.innerHTML = tableHtml;
+    }
+
 
     function setupEventListeners() {
         weekSelect.addEventListener('change', fetchAndRenderTable);
