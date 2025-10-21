@@ -11,6 +11,35 @@
 
     let pageData = null; // To store weeks and teams
 
+    /**
+     * Calculates a color for a heat map based on a player's rank.
+     * Lower ranks (closer to 1) are green, higher ranks (closer to 20) are red.
+     * @param {number} rank The player's rank in a category.
+     * @returns {string} An HSL color string or an empty string if rank is invalid.
+     */
+    function getHeatmapColor(rank) {
+        if (rank === null || rank === undefined || rank === '-') {
+            return ''; // No color for empty ranks
+        }
+
+        const minRank = 1;
+        const maxRank = 20;
+
+        // Clamp the rank to be within our min/max range for color calculation
+        const clampedRank = Math.max(minRank, Math.min(rank, maxRank));
+
+        // Calculate the percentage of where the rank falls between min and max.
+        // A rank of 1 will be 0%, a rank of 20 will be 100%.
+        const percentage = (clampedRank - minRank) / (maxRank - minRank);
+
+        // We want green (hue 120) at 0% and red (hue 0) at 100%.
+        // So, we calculate the hue by scaling (1 - percentage) over the 120-degree hue range.
+        const hue = (1 - percentage) * 120;
+
+        // Return an HSL color string. 90% saturation and 40% lightness look good in dark mode.
+        return `hsl(${hue}, 90%, 40%)`;
+    }
+
     async function init() {
         try {
             const response = await fetch('/api/lineup_page_data');
@@ -135,13 +164,14 @@
             `;
             scoringCategories.forEach(cat => {
                 const rank_key = cat + '_cat_rank';
-                let rank = '-'; // Default value
+                let rank = '-';
 
-                // Check if the player has this property and it's not null
                 if (player.hasOwnProperty(rank_key) && player[rank_key] !== null) {
                     rank = player[rank_key];
                 }
-                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${rank}</td>`;
+
+                const color = getHeatmapColor(rank);
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-200" style="background-color: ${color};">${rank}</td>`;
             });
 
 

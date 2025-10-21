@@ -580,9 +580,8 @@ def get_roster_data():
         cat_rank_columns = [f"{cat}_cat_rank" for cat in scoring_categories]
 
         # Filter out IR players and get normalized names for the query
-        active_players = [p for p in players if 'IR' not in p['eligible_positions'].split(',')]
+        active_players = [p for p in players if not any(pos.strip().startswith('IR') for pos in p['eligible_positions'].split(','))]
         normalized_names = [p['player_name_normalized'] for p in active_players]
-        print(normalized_names)
 
         # Get player stats and calculate total rank
         if normalized_names:
@@ -594,17 +593,14 @@ def get_roster_data():
             """
             cursor.execute(query, normalized_names)
             player_stats = {row['player_name_normalized']: dict(row) for row in cursor.fetchall()}
-            print(player_stats)
 
             for player in active_players:
                 stats = player_stats.get(player['player_name_normalized'])
-                print(stats)
                 if stats:
                     total_rank = sum(stats.get(col, 0) or 0 for col in cat_rank_columns)
                     player['total_rank'] = total_rank
                     for cat in scoring_categories:
                         rank_value = stats.get(f"{cat}_cat_rank")
-                        print(rank_value)
                         if rank_value is not None:
                             player[f"{cat}_cat_rank"] = round(rank_value, 2)
                         else:
