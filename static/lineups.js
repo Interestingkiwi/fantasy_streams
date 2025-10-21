@@ -171,7 +171,7 @@
                 }
 
                 const color = getHeatmapColor(rank);
-                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-200" style="background-color: ${color};">${rank}</td>`;
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-600" style="background-color: ${color};">${rank}</td>`;
             });
 
 
@@ -192,59 +192,67 @@
         let finalHtml = '';
         const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
 
-        for (const day in dailyLineups) {
-            if (Object.hasOwnProperty.call(dailyLineups, day)) {
-                const lineup = dailyLineups[day];
+        // Get the day keys and sort them chronologically
+        const sortedDays = Object.keys(dailyLineups).sort((a, b) => {
+            // Append a year to make parsing reliable, since the date strings don't have one
+            const currentYear = new Date().getFullYear();
+            const dateA = new Date(`${a}, ${currentYear}`);
+            const dateB = new Date(`${b}, ${currentYear}`);
+            return dateA - dateB;
+        });
 
-                let tableHtml = `
-                    <div class="bg-gray-900 rounded-lg shadow mt-4">
-                        <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">${day}</h2>
-                        <table class="min-w-full divide-y divide-gray-700">
-                            <thead class="bg-gray-700/50">
-                                <tr>
-                                    <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Position</th>
-                                    <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
-                                    <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Total Rank</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-gray-800 divide-y divide-gray-700">
-                `;
+        // Iterate over the sorted array of days
+        sortedDays.forEach(day => {
+            const lineup = dailyLineups[day];
 
-                positionOrder.forEach(pos => {
-                    const numSlots = lineupSettings[pos] || 0;
-                    const playersInPos = lineup[pos] || [];
+            let tableHtml = `
+                <div class="bg-gray-900 rounded-lg shadow mt-4">
+                    <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">${day}</h2>
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-700/50">
+                            <tr>
+                                <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Position</th>
+                                <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
+                                <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Total Rank</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-gray-800 divide-y divide-gray-700">
+            `;
 
-                    for (let i = 0; i < numSlots; i++) {
-                        const player = playersInPos[i];
-                        if (player) {
-                             tableHtml += `
-                                <tr class="hover:bg-gray-700/50">
-                                    <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${pos}</td>
-                                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.player_name}</td>
-                                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.total_rank}</td>
-                                </tr>
-                            `;
-                        } else {
-                            // Render an empty slot
-                            tableHtml += `
-                                <tr class="hover:bg-gray-700/50">
-                                    <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${pos}</td>
-                                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-500 italic">(Empty)</td>
-                                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">-</td>
-                                </tr>
-                            `;
-                        }
+            positionOrder.forEach(pos => {
+                const numSlots = lineupSettings[pos] || 0;
+                const playersInPos = lineup[pos] || [];
+
+                for (let i = 0; i < numSlots; i++) {
+                    const player = playersInPos[i];
+                    if (player) {
+                         tableHtml += `
+                            <tr class="hover:bg-gray-700/50">
+                                <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${pos}</td>
+                                <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.player_name}</td>
+                                <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.total_rank}</td>
+                            </tr>
+                        `;
+                    } else {
+                        // Render an empty slot
+                        tableHtml += `
+                            <tr class="hover:bg-gray-700/50">
+                                <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${pos}</td>
+                                <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-500 italic">(Empty)</td>
+                                <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">-</td>
+                            </tr>
+                        `;
                     }
-                });
+                }
+            });
 
-                tableHtml += `
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-                finalHtml += tableHtml;
-            }
-        }
+            tableHtml += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            finalHtml += tableHtml;
+        });
 
         if(finalHtml === '') {
             optimalLineupContainer.innerHTML = '<p class="text-gray-400">No games scheduled for active players this week.</p>';
