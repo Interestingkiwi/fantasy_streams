@@ -139,8 +139,10 @@
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
-                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Games This Week</th>
-                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Games Next Week</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">This Week</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider"># Games</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Starts</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Next Week</th>
         `;
 
         (scoringCategories || []).forEach(cat => {
@@ -160,6 +162,8 @@
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.team}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.join(', ')}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.length}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.starts_this_week}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_next_week.join(', ')}</td>
             `;
             (scoringCategories || []).forEach(cat => {
@@ -214,7 +218,6 @@
                             <tr>
                                 <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Position</th>
                                 <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
-                                <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Total Rank</th>
                             </tr>
                         </thead>
                         <tbody class="bg-gray-800 divide-y divide-gray-700">
@@ -231,7 +234,6 @@
                             <tr class="hover:bg-gray-700/50">
                                 <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${pos}</td>
                                 <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.player_name}</td>
-                                <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.total_rank}</td>
                             </tr>
                         `;
                     } else {
@@ -240,7 +242,6 @@
                             <tr class="hover:bg-gray-700/50">
                                 <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${pos}</td>
                                 <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-500 italic">(Empty)</td>
-                                <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">-</td>
                             </tr>
                         `;
                     }

@@ -24,7 +24,7 @@ import db_builder
 import uuid
 from datetime import date, timedelta, datetime
 import shutil
-from collections import defaultdict
+from collections import defaultdict, Counter
 import itertools
 
 # --- Flask App Configuration ---
@@ -617,10 +617,13 @@ def get_roster_data():
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
 
-        # --- NEW: Calculate optimal lineup for each day ---
+        # --- Calculate optimal lineup for each day ---
         daily_optimal_lineups = {}
         delta = end_date - start_date
         days_in_week = [(start_date + timedelta(days=i)) for i in range(delta.days + 1)]
+
+        # --- Calculate player starts ---
+        player_starts_counter = Counter()
 
         for day_date in days_in_week:
             day_str = day_date.strftime('%Y-%m-%d')
@@ -633,6 +636,16 @@ def get_roster_data():
                 optimal_lineup_for_day = get_optimal_lineup(players_playing_today, lineup_settings)
                 display_date = day_date.strftime('%A, %b %d')
                 daily_optimal_lineups[display_date] = optimal_lineup_for_day
+
+                # Increment start counter for players in the lineup
+                for pos in optimal_lineup_for_day:
+                    for player in optimal_lineup_for_day[pos]:
+                        player_starts_counter[player['player_name']] += 1
+
+        # Add the starts count to each player object
+        for player in players:
+            player['starts_this_week'] = player_starts_counter[player['player_name']]
+
 
         return jsonify({
             'players': players,
