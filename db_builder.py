@@ -898,8 +898,8 @@ def _update_league_scoring_settings(yq, cursor):
         for stat_item in settings.stat_categories.stats:
             stat_details = stat_item
             category = stat_details.display_name
-            if category == 'sv%':
-                category = 'svpct'
+            if category == 'SV%':
+                category = 'SVpct'
             scoring_group = stat_details.group
             stat_id = stat_details.stat_id
 
