@@ -587,15 +587,15 @@ def get_roster_data():
         if normalized_names:
             placeholders = ','.join('?' for _ in normalized_names)
             query = f"""
-                SELECT player_name_normalized, {', '.join(cat_rank_columns)}
+                SELECT normalized_name, {', '.join(cat_rank_columns)}
                 FROM joined_player_stats
-                WHERE player_name_normalized IN ({placeholders})
+                WHERE normalized_name IN ({placeholders})
             """
             cursor.execute(query, normalized_names)
             player_stats = {row['player_name_normalized']: dict(row) for row in cursor.fetchall()}
 
             for player in active_players:
-                stats = player_stats.get(player['player_name_normalized'])
+                stats = player_stats.get(player['normalized_name'])
                 if stats:
                     total_rank = sum(stats.get(col, 0) or 0 for col in cat_rank_columns)
                     player['total_rank'] = total_rank
