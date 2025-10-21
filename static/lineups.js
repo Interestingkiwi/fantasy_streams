@@ -121,6 +121,10 @@
     function renderTable(roster, scoringCategories) {
         const positionOrder = ['C', 'LW', 'RW', 'D', 'G', 'IR', 'IR+'];
 
+        // Get today's day abbreviation to highlight it
+        const dayMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const todayAbbr = dayMap[new Date().getDay()];
+
         roster.sort((a, b) => {
             const posA = a.eligible_positions.split(',').map(p => p.trim());
             const posB = b.eligible_positions.split(',').map(p => p.trim());
@@ -156,12 +160,21 @@
         `;
 
         roster.forEach(player => {
+            // Create the highlighted games list for the "This Week" column
+            const gamesThisWeekHtml = player.games_this_week.map(day => {
+                if (day === todayAbbr) {
+                    // Use a bold tag and a brighter text color for today
+                    return `<strong class="text-yellow-300">${day}</strong>`;
+                }
+                return day;
+            }).join(', ');
+
             tableHtml += `
                 <tr class="hover:bg-gray-700/50">
                     <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.team}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions}</td>
-                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.join(', ')}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${gamesThisWeekHtml}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.length}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.starts_this_week}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_next_week.join(', ')}</td>

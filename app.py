@@ -200,50 +200,77 @@ def decode_dict_values(data):
     return data
 
 
-
 def get_optimal_lineup(players, lineup_settings):
     """
-    Calculates the optimal lineup based on player ranks and lineup constraints.
-    This is a greedy algorithm that prioritizes filling slots with the best-ranked players first.
-
-    Args:
-        players: A list of player dictionaries, each including 'total_rank' and 'eligible_positions'.
-        lineup_settings: A dictionary mapping position to the number of available slots.
-
-    Returns:
-        A dictionary representing the optimized lineup, grouped by position.
+    Calculates the optimal lineup by placing players in their best possible positions
+    to maximize the inclusion of top-ranked players, especially considering multi-position eligibility.
     """
+    # Sort players by rank, best (lowest rank) first
     ranked_players = sorted(
         [p for p in players if 'total_rank' in p and p['total_rank'] is not None],
         key=lambda p: p['total_rank']
     )
 
+    # Initialize empty lineup slots
     lineup = {pos: [] for pos in lineup_settings}
-    player_assigned = set()
 
-    # Create a list of all available slots, e.g., ['C', 'C', 'LW', 'LW', 'RW', ...]
-    available_slots = []
-    for pos, count in lineup_settings.items():
-        available_slots.extend([pos] * count)
+    # Keep track of which players have been assigned
+    assigned_players = set()
 
-    # First pass: try to fill a player's primary position if possible
-    # (Assuming primary is the first in their eligibility list, though not guaranteed)
-    # This greedy approach works by iterating through the best players first.
+    # Iterate through each player, from best to worst
     for player in ranked_players:
-        if player['player_name_normalized'] in player_assigned:
+
+        # Find all possible open slots for this player
+        possible_slots = []
+        eligible_positions = player['eligible_positions'].split(',')
+        for pos_str in eligible_positions:
+            pos = pos_str.strip()
+            # Check if this position is in our lineup and has an open slot
+            if pos in lineup and len(lineup[pos]) < lineup_settings.get(pos, 0):
+                possible_slots.append(pos)
+
+        # If there are no open slots for this player, they are effectively benched
+        if not possible_slots:
             continue
 
-        eligible_positions = player['eligible_positions'].split(',')
-        for pos in eligible_positions:
-            pos = pos.strip()
-            if pos in lineup and len(lineup[pos]) < lineup_settings.get(pos, 0):
-                lineup[pos].append(player)
-                player_assigned.add(player['player_name_normalized'])
-                break  # Player is assigned, move to the next player
+        # --- Smarter Slot Selection Logic ---
+        # Strategy: Place the player in the slot that is LEAST in-demand by the remaining players.
+        # This saves the more contested/scarce slots for players who might be less flexible.
+
+        best_slot_to_take = None
+
+        if len(possible_slots) == 1:
+            # If there's only one option, take it
+            best_slot_to_take = possible_slots[0]
+        else:
+            # If multiple slots are possible, find the one that offers the most flexibility for others
+            slot_demand = {}
+
+            # Get the list of players not yet assigned
+            remaining_players = [p for p in ranked_players if p['player_name_normalized'] not in assigned_players and p != player]
+
+            for slot in possible_slots:
+                # Count how many of the REMAINING players can fill this type of slot
+                count = 0
+                for other_player in remaining_players:
+                    if slot in [p.strip() for p in other_player['eligible_positions'].split(',')]:
+                        count += 1
+                slot_demand[slot] = count
+
+            # We want to take the slot with the HIGHEST demand (most other players can play it),
+            # saving the low-demand (scarce) slots.
+            if slot_demand:
+                best_slot_to_take = sorted(slot_demand, key=slot_demand.get, reverse=True)[0]
+            else:
+                # If no other players remain, any possible slot is fine. Take the first one.
+                best_slot_to_take = possible_slots[0]
+
+        # Assign the player to the chosen slot
+        if best_slot_to_take:
+            lineup[best_slot_to_take].append(player)
+            assigned_players.add(player['player_name_normalized'])
 
     return lineup
-
-
 
 
 @app.route('/')
