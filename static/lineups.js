@@ -135,15 +135,15 @@
             `;
 
             scoringCategories.forEach(cat => {
-                const rank = player[cat + '_cat_rank'] !== null && player[cat + '_cat_rank'] !== undefined ? player[cat + '_cat_rank'] : '-';
+                const rank_key = cat + '_cat_rank';
+                let rank = '-'; // Default value
+
+                // Check if the player has this property and it's not null
+                if (player.hasOwnProperty(rank_key) && player[rank_key] !== null) {
+                    rank = player[rank_key];
+                }
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${rank}</td>`;
             });
-
-            tableHtml += `
-                </tr>
-            `;
-        });
-
         tableHtml += `
                     </tbody>
                 </table>
@@ -152,7 +152,7 @@
         tableContainer.innerHTML = tableHtml;
     }
 
-    
+
     function renderOptimalLineup(lineup) {
         const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
         let tableHtml = `

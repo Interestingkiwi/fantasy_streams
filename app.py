@@ -600,8 +600,11 @@ def get_roster_data():
                     total_rank = sum(stats.get(col, 0) or 0 for col in cat_rank_columns)
                     player['total_rank'] = total_rank
                     for cat in scoring_categories:
-                        player[f"{cat}_cat_rank"] = stats.get(f"{cat}_cat_rank")
-
+                        rank_value = stats.get(f"{cat}_cat_rank")
+                        if rank_value is not None:
+                            player[f"{cat}_cat_rank"] = round(rank_value, 2)
+                        else:
+                            player[f"{cat}_cat_rank"] = None
 
         # Get lineup settings
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
