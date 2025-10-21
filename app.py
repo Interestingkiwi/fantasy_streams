@@ -202,73 +202,84 @@ def decode_dict_values(data):
 
 def get_optimal_lineup(players, lineup_settings):
     """
-    Calculates the optimal lineup by placing players in their best possible positions
-    to maximize the inclusion of top-ranked players, especially considering multi-position eligibility.
+    Calculates the optimal lineup using a three-pass greedy algorithm that prioritizes
+    maximizing player starts and then optimizing for the best rank.
     """
-    # Sort players by rank, best (lowest rank) first
     ranked_players = sorted(
         [p for p in players if 'total_rank' in p and p['total_rank'] is not None],
         key=lambda p: p['total_rank']
     )
 
-    # Initialize empty lineup slots
     lineup = {pos: [] for pos in lineup_settings}
+    player_pool = list(ranked_players)
+    assigned_player_names = set()
 
-    # Keep track of which players have been assigned
-    assigned_players = set()
+    def assign_player(player, pos, current_lineup, assigned_set):
+        current_lineup[pos].append(player)
+        assigned_set.add(player['player_name_normalized'])
+        return True
 
-    # Iterate through each player, from best to worst
-    for player in ranked_players:
+    # --- Pass 1: Place players with only one eligible position ---
+    single_pos_players = sorted(
+        [p for p in player_pool if len(p['eligible_positions'].split(',')) == 1],
+        key=lambda p: p['total_rank']
+    )
+    for player in single_pos_players:
+        pos = player['eligible_positions'].strip()
+        if pos in lineup and len(lineup[pos]) < lineup_settings.get(pos, 0):
+            assign_player(player, pos, lineup, assigned_player_names)
 
-        # Find all possible open slots for this player
-        possible_slots = []
-        eligible_positions = player['eligible_positions'].split(',')
-        for pos_str in eligible_positions:
-            pos = pos_str.strip()
-            # Check if this position is in our lineup and has an open slot
-            if pos in lineup and len(lineup[pos]) < lineup_settings.get(pos, 0):
-                possible_slots.append(pos)
+    player_pool = [p for p in player_pool if p['player_name_normalized'] not in assigned_player_names]
 
-        # If there are no open slots for this player, they are effectively benched
-        if not possible_slots:
-            continue
+    # --- Pass 2: Place multi-position players using a scarcity-aware algorithm ---
+    player_pool.sort(key=lambda p: p['total_rank'])
+    for player in player_pool:
+        eligible_positions = [pos.strip() for pos in player['eligible_positions'].split(',')]
+        available_slots_for_player = [
+            pos for pos in eligible_positions if pos in lineup and len(lineup[pos]) < lineup_settings.get(pos, 0)
+        ]
 
-        # --- Smarter Slot Selection Logic ---
-        # Strategy: Place the player in the slot that is LEAST in-demand by the remaining players.
-        # This saves the more contested/scarce slots for players who might be less flexible.
+        if not available_slots_for_player: continue
 
-        best_slot_to_take = None
+        slot_scarcity = {}
+        for slot in available_slots_for_player:
+            scarcity_count = sum(1 for other in player_pool if other != player and slot in [p.strip() for p in other['eligible_positions'].split(',')])
+            slot_scarcity[slot] = scarcity_count
 
-        if len(possible_slots) == 1:
-            # If there's only one option, take it
-            best_slot_to_take = possible_slots[0]
-        else:
-            # If multiple slots are possible, find the one that offers the most flexibility for others
-            slot_demand = {}
+        best_pos = min(slot_scarcity, key=slot_scarcity.get)
+        assign_player(player, best_pos, lineup, assigned_player_names)
 
-            # Get the list of players not yet assigned
-            remaining_players = [p for p in ranked_players if p['player_name_normalized'] not in assigned_players and p != player]
+    player_pool = [p for p in player_pool if p['player_name_normalized'] not in assigned_player_names]
 
-            for slot in possible_slots:
-                # Count how many of the REMAINING players can fill this type of slot
-                count = 0
-                for other_player in remaining_players:
-                    if slot in [p.strip() for p in other_player['eligible_positions'].split(',')]:
-                        count += 1
-                slot_demand[slot] = count
+    # --- Pass 3: Upgrade Pass ---
+    # Try to swap in benched players if they are better than a starter.
+    for benched_player in player_pool: # player_pool now contains only benched players
+        for pos in [p.strip() for p in benched_player['eligible_positions'].split(',')]:
+            if pos not in lineup: continue
 
-            # We want to take the slot with the HIGHEST demand (most other players can play it),
-            # saving the low-demand (scarce) slots.
-            if slot_demand:
-                best_slot_to_take = sorted(slot_demand, key=slot_demand.get, reverse=True)[0]
-            else:
-                # If no other players remain, any possible slot is fine. Take the first one.
-                best_slot_to_take = possible_slots[0]
+            # Find the worst-ranked starter in this position
+            if not lineup[pos]: continue # Should not happen if lineup is full, but a safeguard
 
-        # Assign the player to the chosen slot
-        if best_slot_to_take:
-            lineup[best_slot_to_take].append(player)
-            assigned_players.add(player['player_name_normalized'])
+            worst_starter_in_pos = max(lineup[pos], key=lambda p: p['total_rank'])
+
+            # If the benched player is better, try to make a swap
+            if benched_player['total_rank'] < worst_starter_in_pos['total_rank']:
+                # The simple swap: benched player takes the starter's spot
+                lineup[pos].remove(worst_starter_in_pos)
+                lineup[pos].append(benched_player)
+
+                # Now, try to re-slot the benched starter (worst_starter_in_pos)
+                # This makes the algorithm more robust.
+                is_re_slotted = False
+                for other_pos in [p.strip() for p in worst_starter_in_pos['eligible_positions'].split(',')]:
+                    if other_pos in lineup and len(lineup[other_pos]) < lineup_settings.get(other_pos, 0):
+                        lineup[other_pos].append(worst_starter_in_pos)
+                        is_re_slotted = True
+                        break # Re-slotted successfully
+
+                # If the bumped starter couldn't be re-slotted, they go to the bench.
+                # The lineup is still better overall because of the initial upgrade.
+                break # Move to the next benched player
 
     return lineup
 
