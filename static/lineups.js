@@ -36,8 +36,8 @@
         // So, we calculate the hue by scaling (1 - percentage) over the 120-degree hue range.
         const hue = (1 - percentage) * 120;
 
-        // Return an HSL color string. Lower saturation and higher lightness create a pastel effect.
-        return `hsl(${hue}, 60%, 75%)`;
+        // Return a very pastel HSL color. Low saturation and high lightness create a soft effect.
+        return `hsl(${hue}, 65%, 75%)`;
     }
 
     async function init() {
@@ -107,7 +107,7 @@
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Failed to fetch roster.');
 
-            renderTable(data.players, data.scoring_categories);
+            renderTable(data.players, data.scoring_categories, data.daily_optimal_lineups);
             renderOptimalLineups(data.daily_optimal_lineups, data.lineup_settings);
 
 
@@ -118,12 +118,32 @@
         }
     }
 
-    function renderTable(roster, scoringCategories) {
+    function renderTable(roster, scoringCategories, dailyLineups) {
         const positionOrder = ['C', 'LW', 'RW', 'D', 'G', 'IR', 'IR+'];
 
-        // Get today's day abbreviation to highlight it
-        const dayMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const todayAbbr = dayMap[new Date().getDay()];
+        // Create a lookup map for which days each player starts
+        const playerStartsByDay = {};
+        const dayAbbrMap = {
+            'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed',
+            'Thursday': 'Thu', 'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+        };
+
+        for (const dayString in dailyLineups) {
+            const lineup = dailyLineups[dayString];
+            const dayName = dayString.split(',')[0]; // e.g., "Monday"
+            const dayAbbr = dayAbbrMap[dayName];     // e.g., "Mon"
+
+            if (dayAbbr) {
+                for (const position in lineup) {
+                    lineup[position].forEach(player => {
+                        if (!playerStartsByDay[player.player_name]) {
+                            playerStartsByDay[player.player_name] = new Set();
+                        }
+                        playerStartsByDay[player.player_name].add(dayAbbr);
+                    });
+                }
+            }
+        }
 
         roster.sort((a, b) => {
             const posA = a.eligible_positions.split(',').map(p => p.trim());
@@ -137,6 +157,7 @@
 
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
+                <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Roster</h2>
                 <table class="min-w-full divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
                         <tr>
@@ -160,10 +181,9 @@
         `;
 
         roster.forEach(player => {
-            // Create the highlighted games list for the "This Week" column
+            // Create the highlighted games list based on optimal starts
             const gamesThisWeekHtml = player.games_this_week.map(day => {
-                if (day === todayAbbr) {
-                    // Use a bold tag and a brighter text color for today
+                if (playerStartsByDay[player.player_name] && playerStartsByDay[player.player_name].has(day)) {
                     return `<strong class="text-yellow-300">${day}</strong>`;
                 }
                 return day;
@@ -188,7 +208,8 @@
                 }
 
                 const color = getHeatmapColor(rank);
-                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-800" style="background-color: ${color};">${rank}</td>`;
+                // For pastel colors, a darker text provides better contrast
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-600" style="background-color: ${color};">${rank}</td>`;
             });
 
 
