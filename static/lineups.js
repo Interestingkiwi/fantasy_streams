@@ -105,6 +105,7 @@
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Games This Week</th>
+                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Games Next Week</th>
                         </tr>
                     </thead>
                     <tbody class="bg-gray-800 divide-y divide-gray-700">
@@ -117,6 +118,7 @@
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.team}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.join(', ')}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_next_week.join(', ')}</td>
                 </tr>
             `;
         });

@@ -491,6 +491,13 @@ def get_roster_data():
         start_date = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
         end_date = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
 
+        cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num + 1,))
+        week_dates_next = cursor.fetchone()
+        if not week_dates:
+            return jsonify({'error': f'Week not found: {week_num}'}), 404
+        start_date_next = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
+        end_date_next = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
+
         # Get roster and player info
         cursor.execute("""
             SELECT
@@ -517,8 +524,16 @@ def get_roster_data():
                 for game_date_str in schedule:
                     game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
                     if start_date <= game_date <= end_date:
-                        games_this_week.append(game_date.strftime('%A'))
+                        games_this_week.append(game_date.strftime('%a'))
             player['games_this_week'] = games_this_week
+            games_next_week = []
+            if schedule_row and schedule_row['schedule_json']:
+                schedule = json.loads(schedule_row['schedule_json'])
+                for game_date_str in schedule:
+                    game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
+                    if start_date_next <= game_date <= end_date_next:
+                        games_next_week.append(game_date.strftime('%a'))
+            player['games_next_week'] = games_next_week
 
         return jsonify(players)
 
