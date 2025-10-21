@@ -37,7 +37,7 @@
         const hue = (1 - percentage) * 120;
 
         // Return an HSL color string. Lower saturation and higher lightness create a pastel effect.
-        return `hsl(${hue}, 70%, 55%)`;
+        return `hsl(${hue}, 60%, 75%)`;
     }
 
     async function init() {
@@ -188,7 +188,7 @@
                 }
 
                 const color = getHeatmapColor(rank);
-                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-200" style="background-color: ${color};">${rank}</td>`;
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-800" style="background-color: ${color};">${rank}</td>`;
             });
 
 
