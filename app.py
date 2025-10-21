@@ -592,7 +592,7 @@ def get_roster_data():
                 WHERE normalized_name IN ({placeholders})
             """
             cursor.execute(query, normalized_names)
-            player_stats = {row['player_name_normalized']: dict(row) for row in cursor.fetchall()}
+            player_stats = {row['normalized_name']: dict(row) for row in cursor.fetchall()}
 
             for player in active_players:
                 stats = player_stats.get(player['normalized_name'])
