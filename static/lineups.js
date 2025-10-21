@@ -78,7 +78,7 @@
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Failed to fetch roster.');
 
-            renderTable(data.players);
+            renderTable(data.players, data.scoring_categories);
             renderOptimalLineup(data.optimal_lineup);
 
 
@@ -89,7 +89,7 @@
         }
     }
 
-    function renderTable(roster) {
+    function renderTable(roster, scoringCategories) {
         const positionOrder = ['C', 'LW', 'RW', 'D', 'G', 'IR', 'IR+'];
 
         roster.sort((a, b) => {
@@ -112,6 +112,13 @@
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Games This Week</th>
                             <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Games Next Week</th>
+        `;
+
+        scoringCategories.forEach(cat => {
+            tableHtml += `<th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">${cat}</th>`;
+        });
+
+        tableHtml += `
                         </tr>
                     </thead>
                     <tbody class="bg-gray-800 divide-y divide-gray-700">
@@ -125,6 +132,14 @@
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.join(', ')}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_next_week.join(', ')}</td>
+            `;
+
+            scoringCategories.forEach(cat => {
+                const rank = player[cat + '_cat_rank'] !== null && player[cat + '_cat_rank'] !== undefined ? player[cat + '_cat_rank'] : '-';
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${rank}</td>`;
+            });
+
+            tableHtml += `
                 </tr>
             `;
         });
@@ -137,6 +152,7 @@
         tableContainer.innerHTML = tableHtml;
     }
 
+    
     function renderOptimalLineup(lineup) {
         const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
         let tableHtml = `

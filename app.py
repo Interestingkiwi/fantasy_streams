@@ -599,6 +599,9 @@ def get_roster_data():
                 if stats:
                     total_rank = sum(stats.get(col, 0) or 0 for col in cat_rank_columns)
                     player['total_rank'] = total_rank
+                    for cat in scoring_categories:
+                        player[f"{cat}_cat_rank"] = stats.get(f"{cat}_cat_rank")
+
 
         # Get lineup settings
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
@@ -628,7 +631,11 @@ def get_roster_data():
                         games_next_week.append(game_date.strftime('%a'))
             player['games_next_week'] = games_next_week
 
-        return jsonify({'players': players, 'optimal_lineup': optimal_lineup})
+        return jsonify({
+            'players': players,
+            'optimal_lineup': optimal_lineup,
+            'scoring_categories': scoring_categories
+        })
 
     except Exception as e:
         logging.error(f"Error fetching roster data: {e}", exc_info=True)
