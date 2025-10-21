@@ -171,7 +171,7 @@
                 }
 
                 const color = getHeatmapColor(rank);
-                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-600" style="background-color: ${color};">${rank}</td>`;
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-200" style="background-color: ${color};">${rank}</td>`;
             });
 
 
@@ -189,7 +189,7 @@
     }
 
     function renderOptimalLineups(dailyLineups, lineupSettings) {
-        let finalHtml = '';
+        let finalHtml = '<div class="flex flex-wrap gap-4 justify-center">'; // Flex container
         const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
 
         // Get the day keys and sort them chronologically
@@ -205,10 +205,11 @@
         sortedDays.forEach(day => {
             const lineup = dailyLineups[day];
 
+            // Each table container will be a flex item
             let tableHtml = `
-                <div class="bg-gray-900 rounded-lg shadow mt-4">
+                <div class="bg-gray-900 rounded-lg shadow flex-grow" style="min-width: 300px;">
                     <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">${day}</h2>
-                    <table class="min-w-full divide-y divide-gray-700">
+                    <table class="w-full divide-y divide-gray-700">
                         <thead class="bg-gray-700/50">
                             <tr>
                                 <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Position</th>
@@ -254,9 +255,10 @@
             finalHtml += tableHtml;
         });
 
-        if(finalHtml === '') {
+        if (sortedDays.length === 0) {
             optimalLineupContainer.innerHTML = '<p class="text-gray-400">No games scheduled for active players this week.</p>';
         } else {
+            finalHtml += '</div>'; // Close the flex container
             optimalLineupContainer.innerHTML = finalHtml;
         }
     }
