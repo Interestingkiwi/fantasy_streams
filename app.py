@@ -491,12 +491,12 @@ def get_roster_data():
         start_date = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
         end_date = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
 
-        cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num + 1,))
+        cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (int(week_num) + 1,))
         week_dates_next = cursor.fetchone()
-        if not week_dates:
-            return jsonify({'error': f'Week not found: {week_num}'}), 404
-        start_date_next = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
-        end_date_next = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
+        if not week_dates_next:
+            return jsonify({'error': f'Week not found: {int(week_num) + 1}'}), 404
+        start_date_next = datetime.strptime(week_dates_next['start_date'], '%Y-%m-%d').date()
+        end_date_next = datetime.strptime(week_dates_next['end_date'], '%Y-%m-%d').date()
 
         # Get roster and player info
         cursor.execute("""
