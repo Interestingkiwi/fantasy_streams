@@ -125,7 +125,7 @@ class DBFinalizer:
                     proj.*
                 FROM main.players AS p
                 LEFT JOIN projections.projections AS proj
-                ON p.player_name_normalized = proj.normalized_name
+                ON p.player_name_normalized = proj.player_name_normalized
                 LEFT JOIN main.free_agents AS fa
                 ON p.player_id = fa.player_id
                 LEFT JOIN main.waiver_players AS w
@@ -898,6 +898,8 @@ def _update_league_scoring_settings(yq, cursor):
         for stat_item in settings.stat_categories.stats:
             stat_details = stat_item
             category = stat_details.display_name
+            if category == 'sv%':
+                category = 'svpct'
             scoring_group = stat_details.group
             stat_id = stat_details.stat_id
 
