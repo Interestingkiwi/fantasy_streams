@@ -587,15 +587,15 @@ def get_roster_data():
         if normalized_names:
             placeholders = ','.join('?' for _ in normalized_names)
             query = f"""
-                SELECT normalized_name, {', '.join(cat_rank_columns)}
+                SELECT player_name_normalized, {', '.join(cat_rank_columns)}
                 FROM joined_player_stats
-                WHERE normalized_name IN ({placeholders})
+                WHERE player_name_normalized IN ({placeholders})
             """
             cursor.execute(query, normalized_names)
-            player_stats = {row['normalized_name']: dict(row) for row in cursor.fetchall()}
+            player_stats = {row['player_name_normalized']: dict(row) for row in cursor.fetchall()}
 
             for player in active_players:
-                stats = player_stats.get(player['normalized_name'])
+                stats = player_stats.get(player['player_name_normalized'])
                 if stats:
                     total_rank = sum(stats.get(col, 0) or 0 for col in cat_rank_columns)
                     player['total_rank'] = total_rank
@@ -636,6 +636,7 @@ def get_roster_data():
     finally:
         if conn:
             conn.close()
+
 
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
