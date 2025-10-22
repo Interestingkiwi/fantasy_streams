@@ -383,12 +383,17 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
                 for player in players:
                     eligible = [p.strip() for p in player['eligible_positions'].split(',')]
                     for other_pos in eligible:
-                        if other_pos in open_slots and open_slots[other_pos] > 0:
-                             # This position is full, but one of its players is flexible enough to fill an empty slot elsewhere.
-                             open_slots[pos] = f"{open_slots[pos]}*"
-                             break # Break inner loop once an asterisk is added
+                        # **FIX**: Safely check the value before comparing
+                        current_val = open_slots.get(other_pos)
+                        # The value could be an int (e.g., 1) or a string (e.g., "0*")
+                        # We only care if the numeric part is greater than 0
+                        if current_val is not None:
+                            numeric_val = int(str(current_val).replace('*',''))
+                            if numeric_val > 0:
+                                open_slots[pos] = f"{open_slots[pos]}*"
+                                break
                     if isinstance(open_slots[pos], str):
-                        break # Break outer loop
+                        break
 
         unused_spots_data[day_name] = open_slots
 
