@@ -35,8 +35,20 @@
             return;
         }
 
-        // Sort players by total_cat_rank, lowest (best) first
-        players.sort((a, b) => a.total_cat_rank - b.total_cat_rank);
+        // **FIX**: Sort players by total_cat_rank, but move players with a rank of 0 to the bottom.
+        players.sort((a, b) => {
+            const rankA = a.total_cat_rank;
+            const rankB = b.total_cat_rank;
+
+            if (rankA === 0 && rankB !== 0) {
+                return 1; // Move a to the bottom
+            }
+            if (rankB === 0 && rankA !== 0) {
+                return -1; // Move b to the bottom
+            }
+            // Otherwise, sort normally (lower is better)
+            return rankA - rankB;
+        });
 
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
