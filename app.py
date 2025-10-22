@@ -545,7 +545,8 @@ def get_matchup_stats():
         cursor.execute("SELECT category FROM scoring")
         scoring_categories = [row['category'] for row in cursor.fetchall()]
 
-        # Ensure all necessary sub-categories for calculations are included
+        # **REVERTED FIX**: Ensure all necessary sub-categories for calculations are included
+        # These MUST be present in daily_player_stats for live calcs
         required_cats = {'SV', 'SA', 'GA', 'TOI/G'}
         all_categories_to_fetch = list(set(scoring_categories) | required_cats)
 
@@ -556,7 +557,7 @@ def get_matchup_stats():
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
 
 
-        # --- Calculate Live Stats ---
+        # --- Calculate Live Stats (Original Logic) ---
         cursor.execute("""
             SELECT team_id, category, SUM(stat_value) as total
             FROM daily_player_stats
@@ -567,21 +568,20 @@ def get_matchup_stats():
         live_stats_raw = cursor.fetchall()
         live_stats_decoded = decode_dict_values([dict(row) for row in live_stats_raw])
 
+        # Initialize with ALL potentially needed categories, including required ones
         stats = {
             'team1': {'live': {cat: 0 for cat in all_categories_to_fetch}, 'row': {}},
             'team2': {'live': {cat: 0 for cat in all_categories_to_fetch}, 'row': {}}
         }
-
+        # Populate live stats directly from the query result
         for row in live_stats_decoded:
             team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
+            # Only add if the category is expected (safeguard)
             if row['category'] in all_categories_to_fetch:
                 stats[team_key]['live'][row['category']] = row.get('total', 0)
 
-        # **FIX**: Explicitly calculate live Shots Against
-        for team_key in ['team1', 'team2']:
-            live_sv = stats[team_key]['live'].get('SV', 0)
-            live_ga = stats[team_key]['live'].get('GA', 0)
-            stats[team_key]['live']['SA'] = live_sv + live_ga
+        # Note: No backend calculation of live SA here, rely on fetched data
+
 
         # --- Calculate ROW (Rest of Week) Stats ---
         stats['team1']['row'] = copy.deepcopy(stats['team1']['live'])
@@ -651,7 +651,9 @@ def get_matchup_stats():
                 elif cat == 'SV%':
                     row_stats[cat] = round(sv_pct, 3)
                 elif isinstance(value, (int, float)):
-                    row_stats[cat] = round(value, 1)
+                    # Avoid rounding already calculated GAA/SV% again
+                    if cat not in ['GAA', 'SV%']:
+                         row_stats[cat] = round(value, 1)
 
         return jsonify(stats)
 
