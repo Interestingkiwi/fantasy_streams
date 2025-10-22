@@ -114,6 +114,14 @@
     }
 
     function renderTable(stats, yourTeamName, opponentName) {
+        // Define pastel colors
+        const colors = {
+            win: 'bg-green-800/50',
+            loss: 'bg-red-800/50',
+            tie: 'bg-yellow-800/50',
+            losingCategory: 'bg-yellow-800/50'
+        };
+
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
                 <table class="divide-y divide-gray-700">
@@ -129,51 +137,75 @@
                     <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
-        const goalieCats = {
-            'SV%': ['SV', 'SA'],
-            'GAA': ['GA', 'TOI/G']
-        };
+        const goalieCats = { 'SV%': ['SV', 'SA'], 'GAA': ['GA', 'TOI/G'] };
         const allGoalieSubCats = Object.values(goalieCats).flat();
 
         pageData.scoring_categories.forEach(cat => {
             const category = cat.category;
+            if (allGoalieSubCats.includes(category)) return;
 
-            if (allGoalieSubCats.includes(category)) {
-                return;
-            }
-
-            let t1_live_val = stats.team1.live[category] || 0;
-            let t2_live_val = stats.team2.live[category] || 0;
-            let t1_row_val = stats.team1.row[category] || 0;
-            let t2_row_val = stats.team2.row[category] || 0;
+            let t1_live_val, t2_live_val;
 
             if (category === 'SV%') {
                 const t1_sv = stats.team1.live['SV'] || 0;
                 const t1_sa = stats.team1.live['SA'] || 0;
-                t1_live_val = t1_sa > 0 ? (t1_sv / t1_sa).toFixed(3) : '0.000';
+                t1_live_val = t1_sa > 0 ? (t1_sv / t1_sa) : 0;
 
                 const t2_sv = stats.team2.live['SV'] || 0;
                 const t2_sa = stats.team2.live['SA'] || 0;
-                t2_live_val = t2_sa > 0 ? (t2_sv / t2_sa).toFixed(3) : '0.000';
-            }
-
-            if (category === 'GAA') {
+                t2_live_val = t2_sa > 0 ? (t2_sv / t2_sa) : 0;
+            } else if (category === 'GAA') {
                 const t1_ga = stats.team1.live['GA'] || 0;
                 const t1_toi = stats.team1.live['TOI/G'] || 0;
-                t1_live_val = t1_toi > 0 ? ((t1_ga * 60) / t1_toi).toFixed(2) : '0.00';
+                t1_live_val = t1_toi > 0 ? ((t1_ga * 60) / t1_toi) : Infinity; // Use Infinity for lower-is-better comparison
 
                 const t2_ga = stats.team2.live['GA'] || 0;
                 const t2_toi = stats.team2.live['TOI/G'] || 0;
-                t2_live_val = t2_toi > 0 ? ((t2_ga * 60) / t2_toi).toFixed(2) : '0.00';
+                t2_live_val = t2_toi > 0 ? ((t2_ga * 60) / t2_toi) : Infinity;
+            } else {
+                t1_live_val = stats.team1.live[category] || 0;
+                t2_live_val = stats.team2.live[category] || 0;
             }
+
+            let t1_row_val = stats.team1.row[category] || 0;
+            let t2_row_val = stats.team2.row[category] || 0;
+
+            // Determine colors
+            const isGaa = category === 'GAA';
+            let live_t1_class = colors.tie, live_t2_class = colors.tie;
+            let row_t1_class = colors.tie, row_t2_class = colors.tie;
+
+            // Live comparison
+            if (t1_live_val > t2_live_val) {
+                live_t1_class = isGaa ? colors.loss : colors.win;
+                live_t2_class = isGaa ? colors.win : colors.loss;
+            } else if (t1_live_val < t2_live_val) {
+                live_t1_class = isGaa ? colors.win : colors.loss;
+                live_t2_class = isGaa ? colors.loss : colors.win;
+            }
+
+            // ROW comparison
+            if (t1_row_val > t2_row_val) {
+                row_t1_class = isGaa ? colors.loss : colors.win;
+                row_t2_class = isGaa ? colors.win : colors.loss;
+            } else if (t1_row_val < t2_row_val) {
+                row_t1_class = isGaa ? colors.win : colors.loss;
+                row_t2_class = isGaa ? colors.loss : colors.win;
+            }
+
+            const categoryClass = (row_t1_class === colors.loss) ? colors.losingCategory : '';
+
+            // Format for display
+            const display_t1_live = (category === 'SV%') ? t1_live_val.toFixed(3) : (isGaa && t1_live_val === Infinity) ? '0.00' : (typeof t1_live_val === 'number' ? t1_live_val.toFixed(2) : t1_live_val);
+            const display_t2_live = (category === 'SV%') ? t2_live_val.toFixed(3) : (isGaa && t2_live_val === Infinity) ? '0.00' : (typeof t2_live_val === 'number' ? t2_live_val.toFixed(2) : t2_live_val);
 
             tableHtml += `
                 <tr class="hover:bg-gray-700/50">
-                    <td class="px-3 py-1 whitespace-nowrap text-sm font-bold text-gray-300">${category}</td>
-                    <td class="px-3 py-1 whitespace-nowrap text-sm text-center text-gray-300">${t1_live_val}</td>
-                    <td class="px-3 py-1 whitespace-nowrap text-sm text-center text-gray-300">${t1_row_val}</td>
-                    <td class="px-3 py-1 whitespace-nowrap text-sm text-center text-gray-300">${t2_live_val}</td>
-                    <td class="px-3 py-1 whitespace-nowrap text-sm text-center text-gray-300">${t2_row_val}</td>
+                    <td class="px-3 py-1 whitespace-nowrap text-sm font-bold text-gray-300 ${categoryClass}">${category}</td>
+                    <td class="px-3 py-1 whitespace-nowrap text-sm text-center ${live_t1_class}">${display_t1_live}</td>
+                    <td class="px-3 py-1 whitespace-nowrap text-sm text-center ${row_t1_class}">${t1_row_val}</td>
+                    <td class="px-3 py-1 whitespace-nowrap text-sm text-center ${live_t2_class}">${display_t2_live}</td>
+                    <td class="px-3 py-1 whitespace-nowrap text-sm text-center ${row_t2_class}">${t2_row_val}</td>
                 </tr>
             `;
 
@@ -236,7 +268,7 @@
                 const stringValue = String(value);
 
                 const highlightClass = (stringValue !== '0')
-                    ? 'bg-green-200 text-gray-800 font-bold'
+                    ? 'bg-green-200 text-gray-700 font-bold'
                     : 'text-gray-300';
 
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
