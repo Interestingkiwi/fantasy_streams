@@ -577,6 +577,12 @@ def get_matchup_stats():
             if row['category'] in all_categories_to_fetch:
                 stats[team_key]['live'][row['category']] = row.get('total', 0)
 
+        # **FIX**: Explicitly calculate live Shots Against
+        for team_key in ['team1', 'team2']:
+            live_sv = stats[team_key]['live'].get('SV', 0)
+            live_ga = stats[team_key]['live'].get('GA', 0)
+            stats[team_key]['live']['SA'] = live_sv + live_ga
+
         # --- Calculate ROW (Rest of Week) Stats ---
         stats['team1']['row'] = copy.deepcopy(stats['team1']['live'])
         stats['team2']['row'] = copy.deepcopy(stats['team2']['live'])
@@ -636,17 +642,14 @@ def get_matchup_stats():
         for team_key in ['team1', 'team2']:
             row_stats = stats[team_key]['row']
 
-            # Perform calculations before rounding
             gaa = (row_stats.get('GA', 0) * 60) / row_stats['TOI/G'] if row_stats.get('TOI/G', 0) > 0 else 0
             sv_pct = row_stats.get('SV', 0) / row_stats['SA'] if row_stats.get('SA', 0) > 0 else 0
 
-            # Apply rounding to all stats
             for cat, value in row_stats.items():
                 if cat == 'GAA':
                     row_stats[cat] = round(gaa, 2)
                 elif cat == 'SV%':
                     row_stats[cat] = round(sv_pct, 3)
-                # Ensure we only round numbers
                 elif isinstance(value, (int, float)):
                     row_stats[cat] = round(value, 1)
 
