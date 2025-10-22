@@ -329,7 +329,14 @@
                 <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
             positionOrder.forEach(pos => {
                 const value = unusedSpotsData[day][pos];
-                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${value}</td>`;
+                const stringValue = String(value);
+
+                // Highlight the cell if the value is not '0'
+                const highlightClass = (stringValue !== '0')
+                    ? 'bg-yellow-600 text-gray-900 font-bold'
+                    : 'text-gray-300';
+
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
             });
             tableHtml += `</tr>`;
         });
