@@ -6,7 +6,7 @@ Main run app for Fantasystreams.app
 
 Author: Jason Druckenmiller
 Date: 10/16/2025
-Updated: 10/21/2025
+Updated: 10/22/2025
 """
 
 import os
@@ -26,6 +26,7 @@ from datetime import date, timedelta, datetime
 import shutil
 from collections import defaultdict, Counter
 import itertools
+import copy
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
@@ -450,7 +451,7 @@ def get_matchup_stats():
     try:
         cursor = conn.cursor()
 
-        # Get team IDs from names, casting name to TEXT to handle potential BLOB storage
+        # Get team IDs from names
         cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team1_name,))
         team1_id_row = cursor.fetchone()
         if not team1_id_row: return jsonify({'error': f'Team not found: {team1_name}'}), 404
@@ -468,6 +469,10 @@ def get_matchup_stats():
         start_date = week_dates['start_date']
         end_date = week_dates['end_date']
 
+        # Get all scoring categories to initialize the dictionaries
+        cursor.execute("SELECT category FROM scoring")
+        all_categories = [row['category'] for row in cursor.fetchall()]
+
         # --- Calculate Live Stats ---
         cursor.execute("""
             SELECT team_id, category, SUM(stat_value) as total
@@ -480,23 +485,69 @@ def get_matchup_stats():
         live_stats_decoded = decode_dict_values([dict(row) for row in live_stats_raw])
 
         stats = {
-            'team1': {'live': {}, 'row': {}},
-            'team2': {'live': {}, 'row': {}}
+            'team1': {'live': {cat: 0 for cat in all_categories}, 'row': {}},
+            'team2': {'live': {cat: 0 for cat in all_categories}, 'row': {}}
         }
 
         for row in live_stats_decoded:
             team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
-            stats[team_key]['live'][row['category']] = row['total']
+            if row['category'] in all_categories:
+                stats[team_key]['live'][row['category']] = row.get('total', 0)
 
-        # --- Calculate ROW (Rest of Week) Stats (Placeholder) ---
-        cursor.execute("SELECT category FROM scoring")
-        all_categories_raw = cursor.fetchall()
-        all_categories_decoded = decode_dict_values([dict(row) for row in all_categories_raw])
+        # --- Calculate ROW (Rest of Week) Stats ---
+        # 1. Initialize ROW with live stats
+        stats['team1']['row'] = copy.deepcopy(stats['team1']['live'])
+        stats['team2']['row'] = copy.deepcopy(stats['team2']['live'])
 
-        for cat_dict in all_categories_decoded:
-            category = cat_dict['category']
-            stats['team1']['row'][category] = 0
-            stats['team2']['row'][category] = 0
+        # 2. Determine date range for projection
+        today = date.today()
+        start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+        projection_start_date = max(today, start_date_obj)
+
+        # 3. Loop through remaining days
+        current_date = projection_start_date
+        while current_date <= end_date_obj:
+            current_date_str = current_date.strftime('%Y-%m-%d')
+
+            # 4. Get optimized lineups for the day
+            cursor.execute("""
+                SELECT team_id, player_id FROM optimized_lineups
+                WHERE date_ = ? AND (team_id = ? OR team_id = ?)
+            """, (current_date_str, team1_id, team2_id))
+            lineup_raw = cursor.fetchall()
+
+            team1_players = [r['player_id'] for r in lineup_raw if str(r['team_id']) == str(team1_id)]
+            team2_players = [r['player_id'] for r in lineup_raw if str(r['team_id']) == str(team2_id)]
+            all_players_today = team1_players + team2_players
+
+            if all_players_today:
+                # 5. Get player stats for the players in the lineup
+                placeholders = ','.join('?' for _ in all_players_today)
+                query = f"""
+                    SELECT player_id, {', '.join(all_categories)}
+                    FROM joined_player_stats
+                    WHERE player_id IN ({placeholders})
+                """
+                cursor.execute(query, tuple(all_players_today))
+                player_stats_raw = cursor.fetchall()
+                player_stats = {row['player_id']: dict(row) for row in player_stats_raw}
+
+                # 6. Add projected stats to ROW
+                for player_id in team1_players:
+                    if player_id in player_stats:
+                        for category in all_categories:
+                            # Ensure value is not None before adding
+                            stat_val = player_stats[player_id].get(category) or 0
+                            stats['team1']['row'][category] += stat_val
+
+                for player_id in team2_players:
+                    if player_id in player_stats:
+                        for category in all_categories:
+                            stat_val = player_stats[player_id].get(category) or 0
+                            stats['team2']['row'][category] += stat_val
+
+            current_date += timedelta(days=1)
 
         return jsonify(stats)
 
