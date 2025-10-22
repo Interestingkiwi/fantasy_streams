@@ -314,7 +314,7 @@
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow mt-6">
                 <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
-                <table class="min-w-full divide-y divide-gray-700">
+                <table class="divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
                         <tr>
                             <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
@@ -333,7 +333,7 @@
 
                 // Highlight the cell if the value is not '0'
                 const highlightClass = (stringValue !== '0')
-                    ? 'bg-yellow-600 text-gray-900 font-bold'
+                    ? 'bg-yellow-500 text-gray-900 font-bold'
                     : 'text-gray-300';
 
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;

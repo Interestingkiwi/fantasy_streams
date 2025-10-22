@@ -233,7 +233,7 @@
 
                 // Highlight the cell if the value is not '0'
                 const highlightClass = (stringValue !== '0')
-                    ? 'bg-yellow-600 text-gray-900 font-bold'
+                    ? 'bg-yellow-300 text-gray-900 font-bold'
                     : 'text-gray-300';
 
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
