@@ -209,7 +209,11 @@
         }
 
         const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
-        const days = Object.keys(unusedSpotsData);
+        const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+        const sortedDays = Object.keys(unusedSpotsData).sort((a, b) => {
+            return dayOrder.indexOf(a) - dayOrder.indexOf(b);
+        });
 
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
@@ -224,16 +228,15 @@
                     <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
-        days.forEach(day => {
+        sortedDays.forEach(day => {
             tableHtml += `<tr class="hover:bg-gray-700/50">
                 <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
             positionOrder.forEach(pos => {
                 const value = unusedSpotsData[day][pos];
                 const stringValue = String(value);
 
-                // Highlight the cell if the value is not '0'
                 const highlightClass = (stringValue !== '0')
-                    ? 'bg-yellow-300 text-gray-900 font-bold'
+                    ? 'bg-yellow-100 text-gray-900 font-bold'
                     : 'text-gray-300';
 
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
