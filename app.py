@@ -550,8 +550,8 @@ def get_matchup_stats():
         all_categories_to_fetch = list(set(scoring_categories) | required_cats)
 
         # Categories to fetch from joined_player_stats (projections).
-        projection_cats = list(set(all_categories_to_fetch) - {'TOI/G', 'SA', 'SV%'})
-
+        # Exclude categories that are calculated or don't exist in projections.
+        projection_cats = list(set(all_categories_to_fetch) - {'TOI/G', 'SVpct'})
 
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
@@ -619,7 +619,6 @@ def get_matchup_stats():
                             stats['team1']['row'][category] += stat_val
                         if 'G' in starter['eligible_positions'].split(','):
                             stats['team1']['row']['TOI/G'] += 60
-                            stats['team1']['row']['SA'] += (player_proj.get('SV', 0) or 0) + (player_proj.get('GA', 0) or 0)
 
                 for starter in team2_starters:
                     if starter['player_id'] in player_avg_stats:
@@ -629,7 +628,6 @@ def get_matchup_stats():
                             stats['team2']['row'][category] += stat_val
                         if 'G' in starter['eligible_positions'].split(','):
                             stats['team2']['row']['TOI/G'] += 60
-                            stats['team2']['row']['SA'] += (player_proj.get('SV', 0) or 0) + (player_proj.get('GA', 0) or 0)
 
             current_date += timedelta(days=1)
 
