@@ -17,8 +17,8 @@
                 throw new Error(data.error || 'Failed to fetch free agent data.');
             }
 
-            renderPlayerTable('Waiver Players', data.waiver_players, data.scoring_categories, waiverContainer);
-            renderPlayerTable('Free Agents', data.free_agents, data.scoring_categories, freeAgentContainer);
+            renderPlayerTable('Waiver Players', data.waiver_players, data.scoring_categories, waiverContainer, false); // Don't cap waivers
+            renderPlayerTable('Free Agents', data.free_agents, data.scoring_categories, freeAgentContainer, true); // Cap free agents
 
         } catch (error) {
             console.error('Initialization error:', error);
@@ -29,13 +29,13 @@
         }
     }
 
-    function renderPlayerTable(title, players, scoringCategories, container) {
+    function renderPlayerTable(title, players, scoringCategories, container, shouldCap) {
         if (!players || players.length === 0) {
             container.innerHTML = `<h2 class="text-2xl font-bold text-white mb-3">${title}</h2><p class="text-gray-400">No players found.</p>`;
             return;
         }
 
-        // **FIX**: Sort players by total_cat_rank, but move players with a rank of 0 to the bottom.
+        // Sort players by total_cat_rank, but move players with a rank of 0 to the bottom.
         players.sort((a, b) => {
             const rankA = a.total_cat_rank;
             const rankB = b.total_cat_rank;
@@ -49,6 +49,8 @@
             // Otherwise, sort normally (lower is better)
             return rankA - rankB;
         });
+
+        const playersToDisplay = shouldCap ? players.slice(0, 100) : players;
 
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
@@ -72,7 +74,7 @@
                     <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
-        players.forEach(player => {
+        playersToDisplay.forEach(player => {
             tableHtml += `
                 <tr class="hover:bg-gray-700/50">
                     <td class="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
