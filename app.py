@@ -549,8 +549,8 @@ def get_matchup_stats():
         required_cats = {'SV', 'SA', 'GA', 'TOI/G'}
         all_categories_to_fetch = list(set(scoring_categories) | required_cats)
 
-        # Categories to fetch from joined_player_stats (projections). 'TOI/G' does not exist here.
-        projection_cats = list(set(all_categories_to_fetch) - {'TOI/G'})
+        # Categories to fetch from joined_player_stats (projections).
+        projection_cats = list(set(all_categories_to_fetch) - {'TOI/G', 'SA'})
 
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
@@ -604,14 +604,6 @@ def get_matchup_stats():
 
             all_starter_ids_today = [p['player_id'] for p in team1_starters + team2_starters]
 
-            # **FIX**: Handle GAA/TOI projection
-            for starter in team1_starters:
-                if 'G' in starter['eligible_positions'].split(','):
-                    stats['team1']['row']['TOI/G'] += 60
-            for starter in team2_starters:
-                if 'G' in starter['eligible_positions'].split(','):
-                    stats['team2']['row']['TOI/G'] += 60
-
             if all_starter_ids_today:
                 placeholders = ','.join('?' for _ in all_starter_ids_today)
                 query = f"SELECT player_id, {', '.join(projection_cats)} FROM joined_player_stats WHERE player_id IN ({placeholders})"
@@ -620,17 +612,43 @@ def get_matchup_stats():
 
                 for starter in team1_starters:
                     if starter['player_id'] in player_avg_stats:
+                        player_proj = player_avg_stats[starter['player_id']]
                         for category in projection_cats:
-                            stat_val = player_avg_stats[starter['player_id']].get(category) or 0
+                            stat_val = player_proj.get(category) or 0
                             stats['team1']['row'][category] += stat_val
+                        if 'G' in starter['eligible_positions'].split(','):
+                            stats['team1']['row']['TOI/G'] += 60
+                            stats['team1']['row']['SA'] += (player_proj.get('SV', 0) or 0) + (player_proj.get('GA', 0) or 0)
 
                 for starter in team2_starters:
                     if starter['player_id'] in player_avg_stats:
+                        player_proj = player_avg_stats[starter['player_id']]
                         for category in projection_cats:
-                            stat_val = player_avg_stats[starter['player_id']].get(category) or 0
+                            stat_val = player_proj.get(category) or 0
                             stats['team2']['row'][category] += stat_val
+                        if 'G' in starter['eligible_positions'].split(','):
+                            stats['team2']['row']['TOI/G'] += 60
+                            stats['team2']['row']['SA'] += (player_proj.get('SV', 0) or 0) + (player_proj.get('GA', 0) or 0)
 
             current_date += timedelta(days=1)
+
+        # --- Final ROW Calculations and Rounding ---
+        for team_key in ['team1', 'team2']:
+            row_stats = stats[team_key]['row']
+
+            # Perform calculations before rounding
+            gaa = (row_stats.get('GA', 0) * 60) / row_stats['TOI/G'] if row_stats.get('TOI/G', 0) > 0 else 0
+            sv_pct = row_stats.get('SV', 0) / row_stats['SA'] if row_stats.get('SA', 0) > 0 else 0
+
+            # Apply rounding to all stats
+            for cat, value in row_stats.items():
+                if cat == 'GAA':
+                    row_stats[cat] = round(gaa, 2)
+                elif cat == 'SV%':
+                    row_stats[cat] = round(sv_pct, 3)
+                # Ensure we only round numbers
+                elif isinstance(value, (int, float)):
+                    row_stats[cat] = round(value, 1)
 
         return jsonify(stats)
 
