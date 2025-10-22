@@ -268,7 +268,7 @@
                 const stringValue = String(value);
 
                 const highlightClass = (stringValue !== '0')
-                    ? 'bg-green-200 text-gray-700 font-bold'
+                    ? 'bg-green-800/50 text-gray-700 font-bold'
                     : 'text-gray-300';
 
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;

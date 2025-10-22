@@ -383,10 +383,7 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
                 for player in players:
                     eligible = [p.strip() for p in player['eligible_positions'].split(',')]
                     for other_pos in eligible:
-                        # **FIX**: Safely check the value before comparing
                         current_val = open_slots.get(other_pos)
-                        # The value could be an int (e.g., 1) or a string (e.g., "0*")
-                        # We only care if the numeric part is greater than 0
                         if current_val is not None:
                             numeric_val = int(str(current_val).replace('*',''))
                             if numeric_val > 0:
@@ -398,6 +395,34 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
         unused_spots_data[day_name] = open_slots
 
     return unused_spots_data
+
+def _get_ranked_players(cursor, player_ids, cat_rank_columns):
+    """
+    Internal helper to fetch player details and ranks for a list of player IDs.
+    """
+    if not player_ids:
+        return []
+
+    placeholders = ','.join('?' for _ in player_ids)
+
+    # Construct the full list of columns to select
+    columns_to_select = ['player_name', 'player_team', 'positions'] + cat_rank_columns
+
+    query = f"""
+        SELECT {', '.join(columns_to_select)}
+        FROM joined_player_stats
+        WHERE player_id IN ({placeholders})
+    """
+    cursor.execute(query, player_ids)
+    players_raw = cursor.fetchall()
+    players = decode_dict_values([dict(row) for row in players_raw])
+
+    # Calculate total rank for each player
+    for player in players:
+        total_rank = sum(player.get(col, 0) or 0 for col in cat_rank_columns)
+        player['total_cat_rank'] = round(total_rank, 2)
+
+    return players
 
 
 @app.route('/')
@@ -886,6 +911,46 @@ def get_roster_data():
 
     except Exception as e:
         logging.error(f"Error fetching roster data: {e}", exc_info=True)
+        return jsonify({'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@app.route('/api/free_agent_data')
+def get_free_agent_data():
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+
+    if not conn:
+        return jsonify({'error': error_msg}), 404
+
+    try:
+        cursor = conn.cursor()
+
+        # Get scoring categories to determine which rank columns to fetch
+        cursor.execute("SELECT category FROM scoring")
+        scoring_categories = [row['category'] for row in cursor.fetchall()]
+        cat_rank_columns = [f"{cat}_cat_rank" for cat in scoring_categories]
+
+        # Get waiver players
+        cursor.execute("SELECT player_id FROM waiver_players")
+        waiver_player_ids = [row['player_id'] for row in cursor.fetchall()]
+        waiver_players = _get_ranked_players(cursor, waiver_player_ids, cat_rank_columns)
+
+        # Get free agents
+        cursor.execute("SELECT player_id FROM free_agents")
+        free_agent_ids = [row['player_id'] for row in cursor.fetchall()]
+        free_agents = _get_ranked_players(cursor, free_agent_ids, cat_rank_columns)
+
+        return jsonify({
+            'waiver_players': waiver_players,
+            'free_agents': free_agents,
+            'scoring_categories': scoring_categories
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching free agent data: {e}", exc_info=True)
         return jsonify({'error': f"An error occurred: {e}"}), 500
     finally:
         if conn:
