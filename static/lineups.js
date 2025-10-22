@@ -6,6 +6,7 @@
     const controlsDiv = document.getElementById('lineup-controls');
     const tableContainer = document.getElementById('roster-table-container');
     const optimalLineupContainer = document.getElementById('optimal-lineup-container');
+    const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
 
@@ -93,6 +94,8 @@
 
         tableContainer.innerHTML = '<p class="text-gray-400">Loading roster...</p>';
         optimalLineupContainer.innerHTML = '<p class="text-gray-400">Calculating optimal lineups...</p>';
+        unusedRosterSpotsContainer.innerHTML = '';
+
 
         try {
             const response = await fetch('/api/roster_data', {
@@ -198,7 +201,7 @@
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${gamesThisWeekHtml}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.length}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.starts_this_week}</td>
-                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_next_week.join(', ')}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${(player.games_next_week || []).join(', ')}</td>
             `;
             (scoringCategories || []).forEach(cat => {
                 const rank_key = cat + '_cat_rank';
@@ -301,7 +304,7 @@
 
     function renderUnusedRosterSpotsTable(unusedSpotsData) {
         if (!unusedSpotsData) {
-            document.getElementById('unused-roster-spots-container').innerHTML = '';
+            unusedRosterSpotsContainer.innerHTML = '';
             return;
         }
 
@@ -309,7 +312,7 @@
         const days = Object.keys(unusedSpotsData);
 
         let tableHtml = `
-            <div class="bg-gray-900 rounded-lg shadow">
+            <div class="bg-gray-900 rounded-lg shadow mt-6">
                 <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
                 <table class="min-w-full divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
@@ -337,7 +340,7 @@
             </div>
         `;
 
-        document.getElementById('unused-roster-spots-container').innerHTML = tableHtml;
+        unusedRosterSpotsContainer.innerHTML = tableHtml;
     }
 
 

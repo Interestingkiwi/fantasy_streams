@@ -4,12 +4,13 @@
 
     const errorDiv = document.getElementById('db-error-message');
     const controlsDiv = document.getElementById('matchup-controls');
-    const tableContainer = document.getElementById('matchup-table-container');
+    const tableContainer = document.getElementById('table-container');
+    const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
     const opponentSelect = document.getElementById('opponent-select');
 
-    let pageData = null; // To store weeks, teams, matchups, etc.
+    let pageData = null; // To store weeks, teams, and matchups
 
     async function init() {
         try {
@@ -22,11 +23,13 @@
 
             pageData = data;
             populateDropdowns();
+            updateOpponentDropdown();
             setupEventListeners();
 
             // Initial data load
-            await updateOpponent();
             await fetchAndRenderTable();
+
+            controlsDiv.classList.remove('hidden');
 
         } catch (error) {
             console.error('Initialization error:', error);
@@ -52,25 +55,23 @@
         opponentSelect.innerHTML = teamOptions;
     }
 
-    async function updateOpponent() {
-        const selectedWeek = parseInt(weekSelect.value, 10);
+    function updateOpponentDropdown() {
+        const selectedWeek = weekSelect.value;
         const yourTeamName = yourTeamSelect.value;
 
+        // Find the matchup for the current week and your team
         const matchup = pageData.matchups.find(m =>
-            m.week === selectedWeek && (m.team1 === yourTeamName || m.team2 === yourTeamName)
+            m.week == selectedWeek && (m.team1 === yourTeamName || m.team2 === yourTeamName)
         );
 
         if (matchup) {
             const opponentName = matchup.team1 === yourTeamName ? matchup.team2 : matchup.team1;
             opponentSelect.value = opponentName;
         } else {
-            // If no matchup found (e.g., playoffs), just pick the next team in the list
-            const yourTeamIndex = yourTeamSelect.selectedIndex;
-            const opponentIndex = (yourTeamIndex + 1) % yourTeamSelect.options.length;
-            if(yourTeamIndex === opponentIndex) { // handle league with only one team
-                 opponentSelect.selectedIndex = yourTeamIndex;
-            } else {
-                 opponentSelect.selectedIndex = opponentIndex;
+             // If no specific matchup, just pick the first team that isn't your team
+            const firstOtherTeam = pageData.teams.find(t => t.name !== yourTeamName);
+            if (firstOtherTeam) {
+                opponentSelect.value = firstOtherTeam.name;
             }
         }
     }
@@ -86,6 +87,8 @@
         }
 
         tableContainer.innerHTML = '<p class="text-gray-400">Loading matchup stats...</p>';
+        unusedRosterSpotsContainer.innerHTML = '';
+
 
         try {
             const response = await fetch('/api/matchup_team_stats', {
@@ -127,7 +130,7 @@
         `;
 
         const goalieCats = {
-            'SVpct': ['SV', 'SA'],
+            'SV%': ['SV', 'SA'],
             'GAA': ['GA', 'TOI/G']
         };
         const allGoalieSubCats = Object.values(goalieCats).flat();
@@ -135,8 +138,6 @@
         pageData.scoring_categories.forEach(cat => {
             const category = cat.category;
 
-            // If this category is a sub-category of another, skip it in this main loop.
-            // It will be rendered under its parent category.
             if (allGoalieSubCats.includes(category)) {
                 return;
             }
@@ -146,7 +147,7 @@
             let t1_row_val = stats.team1.row[category] || 0;
             let t2_row_val = stats.team2.row[category] || 0;
 
-            if (category === 'SVpct') {
+            if (category === 'SV%') {
                 const t1_sv = stats.team1.live['SV'] || 0;
                 const t1_sa = stats.team1.live['SA'] || 0;
                 t1_live_val = t1_sa > 0 ? (t1_sv / t1_sa).toFixed(3) : '0.000';
@@ -176,10 +177,8 @@
                 </tr>
             `;
 
-            // If it's a parent goalie category, render its children now.
             if (goalieCats[category]) {
                 goalieCats[category].forEach(subCat => {
-                    // Check if the sub-category actually exists in the league settings
                     if(pageData.scoring_categories.some(c => c.category === subCat)) {
                         tableHtml += `
                             <tr class="hover:bg-gray-700/50">
@@ -203,14 +202,54 @@
         tableContainer.innerHTML = tableHtml;
     }
 
+    function renderUnusedRosterSpotsTable(unusedSpotsData) {
+        if (!unusedSpotsData) {
+            unusedRosterSpotsContainer.innerHTML = '';
+            return;
+        }
+
+        const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
+        const days = Object.keys(unusedSpotsData);
+
+        let tableHtml = `
+            <div class="bg-gray-900 rounded-lg shadow">
+                <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
+                <table class="divide-y divide-gray-700">
+                    <thead class="bg-gray-700/50">
+                        <tr>
+                            <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
+                            ${positionOrder.map(pos => `<th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${pos}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+        `;
+
+        days.forEach(day => {
+            tableHtml += `<tr class="hover:bg-gray-700/50">
+                <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
+            positionOrder.forEach(pos => {
+                const value = unusedSpotsData[day][pos];
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${value}</td>`;
+            });
+            tableHtml += `</tr>`;
+        });
+
+        tableHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        unusedRosterSpotsContainer.innerHTML = tableHtml;
+    }
 
     function setupEventListeners() {
         weekSelect.addEventListener('change', async () => {
-            await updateOpponent();
+            updateOpponentDropdown();
             await fetchAndRenderTable();
         });
         yourTeamSelect.addEventListener('change', async () => {
-            await updateOpponent();
+            updateOpponentDropdown();
             await fetchAndRenderTable();
         });
         opponentSelect.addEventListener('change', fetchAndRenderTable);
