@@ -550,7 +550,8 @@ def get_matchup_stats():
         all_categories_to_fetch = list(set(scoring_categories) | required_cats)
 
         # Categories to fetch from joined_player_stats (projections).
-        projection_cats = list(set(all_categories_to_fetch) - {'TOI/G', 'SA'})
+        projection_cats = list(set(all_categories_to_fetch) - {'TOI/G', 'SA', 'SV%'})
+
 
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
@@ -639,6 +640,7 @@ def get_matchup_stats():
             gaa = (row_stats.get('GA', 0) * 60) / row_stats['TOI/G'] if row_stats.get('TOI/G', 0) > 0 else 0
             sv_pct = row_stats.get('SV', 0) / row_stats['SA'] if row_stats.get('SA', 0) > 0 else 0
 
+            # Apply rounding to all stats
             for cat, value in row_stats.items():
                 if cat == 'GAA':
                     row_stats[cat] = round(gaa, 2)
