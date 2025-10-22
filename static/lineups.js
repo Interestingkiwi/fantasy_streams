@@ -109,6 +109,7 @@
 
             renderTable(data.players, data.scoring_categories, data.daily_optimal_lineups);
             renderOptimalLineups(data.daily_optimal_lineups, data.lineup_settings);
+            renderUnusedRosterSpotsTable(data.unused_roster_spots);
 
 
         } catch(error) {
@@ -296,6 +297,47 @@
             finalHtml += '</div>'; // Close the flex container
             optimalLineupContainer.innerHTML = finalHtml;
         }
+    }
+
+    function renderUnusedRosterSpotsTable(unusedSpotsData) {
+        if (!unusedSpotsData) {
+            document.getElementById('unused-roster-spots-container').innerHTML = '';
+            return;
+        }
+
+        const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
+        const days = Object.keys(unusedSpotsData);
+
+        let tableHtml = `
+            <div class="bg-gray-900 rounded-lg shadow">
+                <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-700/50">
+                        <tr>
+                            <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
+                            ${positionOrder.map(pos => `<th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${pos}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+        `;
+
+        days.forEach(day => {
+            tableHtml += `<tr class="hover:bg-gray-700/50">
+                <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
+            positionOrder.forEach(pos => {
+                const value = unusedSpotsData[day][pos];
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${value}</td>`;
+            });
+            tableHtml += `</tr>`;
+        });
+
+        tableHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        document.getElementById('unused-roster-spots-container').innerHTML = tableHtml;
     }
 
 

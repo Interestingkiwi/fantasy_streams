@@ -102,6 +102,7 @@
             if (!response.ok) throw new Error(stats.error || 'Failed to fetch stats.');
 
             renderTable(stats, yourTeamName, opponentName);
+            renderUnusedRosterSpotsTable(stats.team1_unused_spots);
 
         } catch(error) {
             console.error('Error fetching stats:', error);

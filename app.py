@@ -356,6 +356,44 @@ def _get_ranked_roster_for_week(cursor, team_id, week_num):
 
     return active_players
 
+def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
+    """
+    Calculates the unused roster spots for each day of the week and identifies
+    potential player movements.
+    """
+    unused_spots_data = {}
+    position_order = ['C', 'LW', 'RW', 'D', 'G']
+
+    for day_date in days_in_week:
+        day_str = day_date.strftime('%Y-%m-%d')
+        day_name = day_date.strftime('%a')
+
+        players_playing_today = [p for p in active_players if day_str in p.get('game_dates_this_week', [])]
+
+        daily_lineup = get_optimal_lineup(players_playing_today, lineup_settings)
+
+        open_slots = {pos: lineup_settings.get(pos, 0) - len(daily_lineup.get(pos, [])) for pos in position_order}
+
+        # Asterisk logic: check if a starter could move to an open slot
+        for pos, players in daily_lineup.items():
+            if pos not in position_order: continue
+
+            # If this position is full, check if any of its players could move
+            if open_slots[pos] == 0:
+                for player in players:
+                    eligible = [p.strip() for p in player['eligible_positions'].split(',')]
+                    for other_pos in eligible:
+                        if other_pos in open_slots and open_slots[other_pos] > 0:
+                             # This position is full, but one of its players is flexible enough to fill an empty slot elsewhere.
+                             open_slots[pos] = f"{open_slots[pos]}*"
+                             break # Break inner loop once an asterisk is added
+                    if isinstance(open_slots[pos], str):
+                        break # Break outer loop
+
+        unused_spots_data[day_name] = open_slots
+
+    return unused_spots_data
+
 
 @app.route('/')
 def index():
@@ -540,6 +578,10 @@ def get_matchup_stats():
         if not week_dates: return jsonify({'error': f'Week not found: {week_num}'}), 404
         start_date_str = week_dates['start_date']
         end_date_str = week_dates['end_date']
+        start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        days_in_week = [(start_date_obj + timedelta(days=i)) for i in range((end_date_obj - start_date_obj).days + 1)]
+
 
         # Get official scoring categories
         cursor.execute("SELECT category FROM scoring")
@@ -550,8 +592,7 @@ def get_matchup_stats():
         all_categories_to_fetch = list(set(scoring_categories) | required_cats)
 
         # Categories to fetch from joined_player_stats (projections).
-        # Exclude categories that are calculated or don't exist in projections.
-        projection_cats = list(set(all_categories_to_fetch) - {'TOI/G', 'SVpct'})
+        projection_cats = list(set(all_categories_to_fetch) - {'TOI/G', 'SV%'})
 
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
@@ -586,8 +627,6 @@ def get_matchup_stats():
         team2_ranked_roster = _get_ranked_roster_for_week(cursor, team2_id, week_num)
 
         today = date.today()
-        start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-        end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
         projection_start_date = max(today, start_date_obj)
 
         current_date = projection_start_date
@@ -642,10 +681,14 @@ def get_matchup_stats():
             for cat, value in row_stats.items():
                 if cat == 'GAA':
                     row_stats[cat] = round(gaa, 2)
-                elif cat == 'SVpct':
+                elif cat == 'SV%':
                     row_stats[cat] = round(sv_pct, 3)
-                elif isinstance(value, (int, float)) and cat not in ['GAA', 'SVpct']:
+                elif isinstance(value, (int, float)) and cat not in ['GAA', 'SV%']:
                     row_stats[cat] = round(value, 1)
+
+        # --- Calculate Unused Roster Spots for Team 1 ---
+        stats['team1_unused_spots'] = _calculate_unused_spots(days_in_week, team1_ranked_roster, lineup_settings)
+
 
         return jsonify(stats)
 
@@ -724,6 +767,8 @@ def get_roster_data():
             return jsonify({'error': f'Week not found: {week_num}'}), 404
         start_date = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
         end_date = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
+        days_in_week = [(start_date + timedelta(days=i)) for i in range((end_date - start_date).days + 1)]
+
 
         # Get next week's dates for the 'Next Week' column
         cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (int(week_num) + 1,))
@@ -804,33 +849,34 @@ def get_roster_data():
         daily_optimal_lineups = {}
         player_starts_counter = Counter()
 
-        current_date = start_date
-        while current_date <= end_date:
-            day_str = current_date.strftime('%Y-%m-%d')
+        for day_date in days_in_week:
+            day_str = day_date.strftime('%Y-%m-%d')
             players_playing_today = [
                 p for p in active_players if day_str in p.get('game_dates_this_week', [])
             ]
 
             if players_playing_today:
                 optimal_lineup_for_day = get_optimal_lineup(players_playing_today, lineup_settings)
-                display_date = current_date.strftime('%A, %b %d')
+                display_date = day_date.strftime('%A, %b %d')
                 daily_optimal_lineups[display_date] = optimal_lineup_for_day
 
                 for pos_players in optimal_lineup_for_day.values():
                     for player in pos_players:
                         player_starts_counter[player['player_name']] += 1
 
-            current_date += timedelta(days=1)
-
         # Add starts count to the final player list
         for player in all_players:
             player['starts_this_week'] = player_starts_counter.get(player['player_name'], 0)
+
+        # --- Calculate Unused Roster Spots ---
+        unused_roster_spots = _calculate_unused_spots(days_in_week, active_players, lineup_settings)
 
         return jsonify({
             'players': all_players,
             'daily_optimal_lineups': daily_optimal_lineups,
             'scoring_categories': scoring_categories,
-            'lineup_settings': lineup_settings
+            'lineup_settings': lineup_settings,
+            'unused_roster_spots': unused_roster_spots
         })
 
     except Exception as e:
