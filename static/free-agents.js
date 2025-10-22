@@ -4,6 +4,16 @@
     const errorDiv = document.getElementById('db-error-message');
     const waiverContainer = document.getElementById('waiver-players-container');
     const freeAgentContainer = document.getElementById('free-agent-players-container');
+    const playerSearchInput = document.getElementById('player-search');
+
+    // --- Global State ---
+    let allWaiverPlayers = [];
+    let allFreeAgents = [];
+    let scoringCategories = [];
+    let sortConfig = {
+        waivers: { key: 'total_cat_rank', direction: 'ascending' },
+        freeAgents: { key: 'total_cat_rank', direction: 'ascending' }
+    };
 
     async function init() {
         waiverContainer.innerHTML = '<p class="text-gray-400">Loading waiver players...</p>';
@@ -17,8 +27,12 @@
                 throw new Error(data.error || 'Failed to fetch free agent data.');
             }
 
-            renderPlayerTable('Waiver Players', data.waiver_players, data.scoring_categories, waiverContainer, false); // Don't cap waivers
-            renderPlayerTable('Free Agents', data.free_agents, data.scoring_categories, freeAgentContainer, true); // Cap free agents
+            allWaiverPlayers = data.waiver_players;
+            allFreeAgents = data.free_agents;
+            scoringCategories = data.scoring_categories;
+
+            filterAndSortPlayers(); // Initial render
+            setupEventListeners();
 
         } catch (error) {
             console.error('Initialization error:', error);
@@ -29,26 +43,46 @@
         }
     }
 
-    function renderPlayerTable(title, players, scoringCategories, container, shouldCap) {
-        if (!players || players.length === 0) {
+    function filterAndSortPlayers() {
+        const searchTerm = playerSearchInput.value.toLowerCase();
+
+        // --- Process Waivers ---
+        let filteredWaivers = searchTerm
+            ? allWaiverPlayers.filter(p => p.player_name.toLowerCase().includes(searchTerm))
+            : [...allWaiverPlayers];
+
+        sortPlayers(filteredWaivers, sortConfig.waivers);
+        renderPlayerTable('Waiver Players', filteredWaivers, waiverContainer, 'waivers');
+
+        // --- Process Free Agents ---
+        let filteredFreeAgents = searchTerm
+            ? allFreeAgents.filter(p => p.player_name.toLowerCase().includes(searchTerm))
+            : [...allFreeAgents];
+
+        sortPlayers(filteredFreeAgents, sortConfig.freeAgents);
+        renderPlayerTable('Free Agents', filteredFreeAgents, freeAgentContainer, 'freeAgents', true);
+    }
+
+    function sortPlayers(players, config) {
+        players.sort((a, b) => {
+            let valA = a[config.key] === 0 ? Infinity : a[config.key];
+            let valB = b[config.key] === 0 ? Infinity : b[config.key];
+
+            if (valA < valB) {
+                return config.direction === 'ascending' ? -1 : 1;
+            }
+            if (valA > valB) {
+                return config.direction === 'ascending' ? 1 : -1;
+            }
+            return 0;
+        });
+    }
+
+    function renderPlayerTable(title, players, container, tableType, shouldCap = false) {
+        if (!players) {
             container.innerHTML = `<h2 class="text-2xl font-bold text-white mb-3">${title}</h2><p class="text-gray-400">No players found.</p>`;
             return;
         }
-
-        // Sort players by total_cat_rank, but move players with a rank of 0 to the bottom.
-        players.sort((a, b) => {
-            const rankA = a.total_cat_rank;
-            const rankB = b.total_cat_rank;
-
-            if (rankA === 0 && rankB !== 0) {
-                return 1; // Move a to the bottom
-            }
-            if (rankB === 0 && rankA !== 0) {
-                return -1; // Move b to the bottom
-            }
-            // Otherwise, sort normally (lower is better)
-            return rankA - rankB;
-        });
 
         const playersToDisplay = shouldCap ? players.slice(0, 100) : players;
 
@@ -58,37 +92,42 @@
                 <table class="min-w-full divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
                         <tr>
-                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
+                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="player_name" data-table-type="${tableType}">Player Name</th>
                             <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
                             <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
-                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Total Cat Rank</th>
+                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="total_cat_rank" data-table-type="${tableType}">Total Cat Rank</th>
         `;
 
         scoringCategories.forEach(cat => {
-            tableHtml += `<th class="px-2 py-2 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${cat}</th>`;
+            tableHtml += `<th class="px-2 py-2 text-center text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="${cat}_cat_rank" data-table-type="${tableType}">${cat}</th>`;
         });
 
         tableHtml += `
                         </tr>
+                        <tr><td colspan="${4 + scoringCategories.length}" class="text-center text-xs text-gray-500 py-1">Click headers to sort</td></tr>
                     </thead>
                     <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
-        playersToDisplay.forEach(player => {
-            tableHtml += `
-                <tr class="hover:bg-gray-700/50">
-                    <td class="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
-                    <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.player_team}</td>
-                    <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.positions}</td>
-                    <td class="px-2 py-2 whitespace-nowrap text-sm font-bold text-yellow-300">${player.total_cat_rank}</td>
-            `;
-            scoringCategories.forEach(cat => {
-                const rankKey = `${cat}_cat_rank`;
-                const rank = (player[rankKey] !== null && player[rankKey] !== undefined) ? player[rankKey].toFixed(2) : '-';
-                tableHtml += `<td class="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-300">${rank}</td>`;
+        if (playersToDisplay.length === 0) {
+            tableHtml += `<tr><td colspan="${4 + scoringCategories.length}" class="text-center py-4">No players match the current filter.</td></tr>`;
+        } else {
+            playersToDisplay.forEach(player => {
+                tableHtml += `
+                    <tr class="hover:bg-gray-700/50">
+                        <td class="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
+                        <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.player_team}</td>
+                        <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.positions}</td>
+                        <td class="px-2 py-2 whitespace-nowrap text-sm font-bold text-yellow-300">${player.total_cat_rank}</td>
+                `;
+                scoringCategories.forEach(cat => {
+                    const rankKey = `${cat}_cat_rank`;
+                    const rank = (player[rankKey] !== null && player[rankKey] !== undefined) ? player[rankKey].toFixed(2) : '-';
+                    tableHtml += `<td class="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-300">${rank}</td>`;
+                });
+                tableHtml += `</tr>`;
             });
-            tableHtml += `</tr>`;
-        });
+        }
 
         tableHtml += `
                     </tbody>
@@ -96,6 +135,31 @@
             </div>
         `;
         container.innerHTML = tableHtml;
+
+        // Add sort indicators and attach new event listeners
+        document.querySelectorAll(`[data-table-type="${tableType}"].sortable`).forEach(header => {
+            if (header.dataset.sortKey === sortConfig[tableType].key) {
+                header.classList.add(sortConfig[tableType].direction === 'ascending' ? 'sort-asc' : 'sort-desc');
+            }
+            header.addEventListener('click', handleSortClick);
+        });
+    }
+
+    function handleSortClick(e) {
+        const key = e.target.dataset.sortKey;
+        const tableType = e.target.dataset.tableType;
+
+        if (sortConfig[tableType].key === key) {
+            sortConfig[tableType].direction = sortConfig[tableType].direction === 'ascending' ? 'descending' : 'ascending';
+        } else {
+            sortConfig[tableType].key = key;
+            sortConfig[tableType].direction = 'ascending';
+        }
+        filterAndSortPlayers();
+    }
+
+    function setupEventListeners() {
+        playerSearchInput.addEventListener('input', filterAndSortPlayers);
     }
 
     init();
