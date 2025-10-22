@@ -352,7 +352,8 @@ def _get_ranked_roster_for_week(cursor, team_id, week_num):
                 total_rank = sum(stats.get(col, 0) or 0 for col in cat_rank_columns)
                 player['total_rank'] = round(total_rank, 2)
             else:
-                player['total_rank'] = float('inf') # Ensure players with no stats are ranked last
+                # Use None for JSON compatibility if a player has no stats
+                player['total_rank'] = None
 
     return active_players
 
@@ -541,9 +542,15 @@ def get_matchup_stats():
         start_date_str = week_dates['start_date']
         end_date_str = week_dates['end_date']
 
-        # Get all scoring categories and lineup settings
+        # Get official scoring categories
         cursor.execute("SELECT category FROM scoring")
-        all_categories = [row['category'] for row in cursor.fetchall()]
+        scoring_categories = [row['category'] for row in cursor.fetchall()]
+
+        # **FIX**: Ensure all necessary sub-categories for calculations are included
+        required_cats = {'SV', 'SA', 'GA', 'TOI/G'}
+        all_categories_to_fetch = list(set(scoring_categories) | required_cats)
+
+
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
 
@@ -560,13 +567,13 @@ def get_matchup_stats():
         live_stats_decoded = decode_dict_values([dict(row) for row in live_stats_raw])
 
         stats = {
-            'team1': {'live': {cat: 0 for cat in all_categories}, 'row': {}},
-            'team2': {'live': {cat: 0 for cat in all_categories}, 'row': {}}
+            'team1': {'live': {cat: 0 for cat in all_categories_to_fetch}, 'row': {}},
+            'team2': {'live': {cat: 0 for cat in all_categories_to_fetch}, 'row': {}}
         }
 
         for row in live_stats_decoded:
             team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
-            if row['category'] in all_categories:
+            if row['category'] in all_categories_to_fetch:
                 stats[team_key]['live'][row['category']] = row.get('total', 0)
 
         # --- Calculate ROW (Rest of Week) Stats ---
@@ -606,7 +613,7 @@ def get_matchup_stats():
                 # Fetch their average stats from joined_player_stats
                 placeholders = ','.join('?' for _ in all_starters_today)
                 query = f"""
-                    SELECT player_id, {', '.join(all_categories)}
+                    SELECT player_id, {', '.join(all_categories_to_fetch)}
                     FROM joined_player_stats
                     WHERE player_id IN ({placeholders})
                 """
@@ -617,13 +624,13 @@ def get_matchup_stats():
                 # Add projected stats to the ROW totals
                 for player_id in team1_starters:
                     if player_id in player_avg_stats:
-                        for category in all_categories:
+                        for category in all_categories_to_fetch:
                             stat_val = player_avg_stats[player_id].get(category) or 0
                             stats['team1']['row'][category] += stat_val
 
                 for player_id in team2_starters:
                     if player_id in player_avg_stats:
-                        for category in all_categories:
+                        for category in all_categories_to_fetch:
                             stat_val = player_avg_stats[player_id].get(category) or 0
                             stats['team2']['row'][category] += stat_val
 
