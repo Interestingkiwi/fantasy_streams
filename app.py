@@ -352,8 +352,7 @@ def _get_ranked_roster_for_week(cursor, team_id, week_num):
                 total_rank = sum(stats.get(col, 0) or 0 for col in cat_rank_columns)
                 player['total_rank'] = round(total_rank, 2)
             else:
-                # Use None for JSON compatibility if a player has no stats
-                player['total_rank'] = None
+                player['total_rank'] = None # Use None for JSON compatibility
 
     return active_players
 
@@ -546,10 +545,12 @@ def get_matchup_stats():
         cursor.execute("SELECT category FROM scoring")
         scoring_categories = [row['category'] for row in cursor.fetchall()]
 
-        # **FIX**: Ensure all necessary sub-categories for calculations are included
+        # Ensure all necessary sub-categories for calculations are included
         required_cats = {'SV', 'SA', 'GA', 'TOI/G'}
         all_categories_to_fetch = list(set(scoring_categories) | required_cats)
 
+        # Categories to fetch from joined_player_stats (projections). 'TOI/G' does not exist here.
+        projection_cats = list(set(all_categories_to_fetch) - {'TOI/G'})
 
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
@@ -577,61 +578,56 @@ def get_matchup_stats():
                 stats[team_key]['live'][row['category']] = row.get('total', 0)
 
         # --- Calculate ROW (Rest of Week) Stats ---
-        # 1. Initialize ROW with live stats
         stats['team1']['row'] = copy.deepcopy(stats['team1']['live'])
         stats['team2']['row'] = copy.deepcopy(stats['team2']['live'])
 
-        # 2. Get the ranked rosters for the entire week for both teams
         team1_ranked_roster = _get_ranked_roster_for_week(cursor, team1_id, week_num)
         team2_ranked_roster = _get_ranked_roster_for_week(cursor, team2_id, week_num)
 
-        # 3. Determine date range for projection
         today = date.today()
         start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
         projection_start_date = max(today, start_date_obj)
 
-        # 4. Loop through remaining days and add projections
         current_date = projection_start_date
         while current_date <= end_date_obj:
             current_date_str = current_date.strftime('%Y-%m-%d')
 
-            # Get players playing today for each team
             team1_players_today = [p for p in team1_ranked_roster if current_date_str in p.get('game_dates_this_week', [])]
             team2_players_today = [p for p in team2_ranked_roster if current_date_str in p.get('game_dates_this_week', [])]
 
-            # Generate optimal lineup for each team
             team1_lineup = get_optimal_lineup(team1_players_today, lineup_settings)
             team2_lineup = get_optimal_lineup(team2_players_today, lineup_settings)
 
-            # Flatten the lineup dictionaries to get a list of player_ids
-            team1_starters = [player['player_id'] for pos_players in team1_lineup.values() for player in pos_players]
-            team2_starters = [player['player_id'] for pos_players in team2_lineup.values() for player in pos_players]
-            all_starters_today = team1_starters + team2_starters
+            team1_starters = [player for pos_players in team1_lineup.values() for player in pos_players]
+            team2_starters = [player for pos_players in team2_lineup.values() for player in pos_players]
 
-            if all_starters_today:
-                # Fetch their average stats from joined_player_stats
-                placeholders = ','.join('?' for _ in all_starters_today)
-                query = f"""
-                    SELECT player_id, {', '.join(all_categories_to_fetch)}
-                    FROM joined_player_stats
-                    WHERE player_id IN ({placeholders})
-                """
-                cursor.execute(query, tuple(all_starters_today))
-                player_stats_raw = cursor.fetchall()
-                player_avg_stats = {row['player_id']: dict(row) for row in player_stats_raw}
+            all_starter_ids_today = [p['player_id'] for p in team1_starters + team2_starters]
 
-                # Add projected stats to the ROW totals
-                for player_id in team1_starters:
-                    if player_id in player_avg_stats:
-                        for category in all_categories_to_fetch:
-                            stat_val = player_avg_stats[player_id].get(category) or 0
+            # **FIX**: Handle GAA/TOI projection
+            for starter in team1_starters:
+                if 'G' in starter['eligible_positions'].split(','):
+                    stats['team1']['row']['TOI/G'] += 60
+            for starter in team2_starters:
+                if 'G' in starter['eligible_positions'].split(','):
+                    stats['team2']['row']['TOI/G'] += 60
+
+            if all_starter_ids_today:
+                placeholders = ','.join('?' for _ in all_starter_ids_today)
+                query = f"SELECT player_id, {', '.join(projection_cats)} FROM joined_player_stats WHERE player_id IN ({placeholders})"
+                cursor.execute(query, tuple(all_starter_ids_today))
+                player_avg_stats = {row['player_id']: dict(row) for row in cursor.fetchall()}
+
+                for starter in team1_starters:
+                    if starter['player_id'] in player_avg_stats:
+                        for category in projection_cats:
+                            stat_val = player_avg_stats[starter['player_id']].get(category) or 0
                             stats['team1']['row'][category] += stat_val
 
-                for player_id in team2_starters:
-                    if player_id in player_avg_stats:
-                        for category in all_categories_to_fetch:
-                            stat_val = player_avg_stats[player_id].get(category) or 0
+                for starter in team2_starters:
+                    if starter['player_id'] in player_avg_stats:
+                        for category in projection_cats:
+                            stat_val = player_avg_stats[starter['player_id']].get(category) or 0
                             stats['team2']['row'][category] += stat_val
 
             current_date += timedelta(days=1)
@@ -774,7 +770,6 @@ def get_roster_data():
                     rank_key = f"{cat}_cat_rank"
                     player[rank_key] = round(p_stats.get(rank_key), 2) if p_stats.get(rank_key) is not None else None
 
-            # **FIX**: Calculate and add 'games_next_week'
             player['games_next_week'] = []
             if start_date_next and end_date_next:
                 cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player['team'],))
