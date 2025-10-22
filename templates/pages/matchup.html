@@ -13,18 +13,15 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="flex justify-start gap-4">
 
-        <div id="matchup-table-container" class="overflow-x-auto">
+        <div id="table-container">
             </div>
 
-        <div class="flex flex-col gap-4">
-            <div id="table-container">
-                </div>
-            <div id="unused-roster-spots-container">
-                </div>
-        </div>
+        <div id="unused-roster-spots-container">
+            </div>
 
+    </div>
     </div>
 
 <script src="{{ url_for('static', filename='matchup.js') }}"></script>
