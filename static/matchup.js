@@ -112,7 +112,7 @@
     function renderTable(stats, yourTeamName, opponentName) {
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
-                <table class="min-w-full divide-y divide-gray-700">
+                <table class="divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
                         <tr>
                             <th scope="col" class="px-4 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Category</th>
