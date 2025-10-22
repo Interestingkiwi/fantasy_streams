@@ -126,7 +126,7 @@
         `;
 
         const goalieCats = {
-            'SV%': ['SV', 'SA'],
+            'SVpct': ['SV', 'SA'],
             'GAA': ['GA', 'TOI/G']
         };
         const allGoalieSubCats = Object.values(goalieCats).flat();
@@ -145,7 +145,7 @@
             let t1_row_val = stats.team1.row[category] || 0;
             let t2_row_val = stats.team2.row[category] || 0;
 
-            if (category === 'SV%') {
+            if (category === 'SVpct') {
                 const t1_sv = stats.team1.live['SV'] || 0;
                 const t1_sa = stats.team1.live['SA'] || 0;
                 t1_live_val = t1_sa > 0 ? (t1_sv / t1_sa).toFixed(3) : '0.000';
