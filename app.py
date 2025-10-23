@@ -983,7 +983,7 @@ def get_free_agent_data():
         free_agents = _get_ranked_players(cursor, free_agent_ids, cat_rank_columns, current_week)
 
         # --- Calculate Unused Roster Spots for the SELECTED Team ---
-        unused_roster_spots = None
+        unused_roster_spots = None  # Default to None
         selected_team_name = request_data.get('team_name')
 
         if selected_team_name:
@@ -1002,7 +1002,10 @@ def get_free_agent_data():
                     lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
 
                     team_ranked_roster = _get_ranked_roster_for_week(cursor, team_id, current_week)
-                    unused_ro_spots = _calculate_unused_spots(days_in_week, team_ranked_roster, lineup_settings)
+
+                    # --- THIS IS THE FIX ---
+                    # The calculated value is now correctly assigned to the variable that gets returned.
+                    unused_roster_spots = _calculate_unused_spots(days_in_week, team_ranked_roster, lineup_settings)
 
         # Get all scoring categories for checkboxes
         cursor.execute("SELECT category FROM scoring")
@@ -1023,6 +1026,7 @@ def get_free_agent_data():
         if conn:
             conn.close()
 
+            
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
     yq = get_yfpy_instance()
