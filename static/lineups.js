@@ -9,6 +9,7 @@
     const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
+    const timestampText = document.getElementById('lineup-timestamp-text'); // Added for timestamp
 
     let pageData = null; // To store weeks and teams
 
@@ -41,8 +42,30 @@
         return `hsl(${hue}, 65%, 75%)`;
     }
 
+    async function getTimestamp() {
+        if (!timestampText) return;
+        try {
+            const response = await fetch('/api/available_players_timestamp');
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to fetch timestamp.');
+            }
+
+            if (data.timestamp) {
+                timestampText.textContent = `Available player data was last refreshed at: ${data.timestamp}`;
+            } else {
+                timestampText.textContent = 'Available player data has not been updated. Please run an update from the League Database page.';
+            }
+        } catch (error) {
+            console.error('Error setting timestamp:', error);
+            timestampText.textContent = 'Could not load data status.';
+        }
+    }
+
     async function init() {
         try {
+            await getTimestamp(); // Fetch the timestamp on initialization
             const response = await fetch('/api/lineup_page_data');
             const data = await response.json();
 
@@ -61,6 +84,7 @@
 
         } catch (error) {
             console.error('Initialization error:', error);
+            errorDiv.textContent = `Error: ${error.message}`;
             errorDiv.classList.remove('hidden');
             controlsDiv.classList.add('hidden');
             tableContainer.classList.add('hidden');
@@ -82,7 +106,6 @@
         ).join('');
         yourTeamSelect.innerHTML = teamOptions;
 
-        // --- EDITED SECTION ---
         // Restore team selection from localStorage
         const savedTeam = localStorage.getItem('selectedTeam');
         if (savedTeam) {
@@ -105,7 +128,6 @@
                 weekSelect.value = pageData.current_week;
             }
         }
-        // --- END EDITED SECTION ---
     }
 
     async function fetchAndRenderTable() {
@@ -160,7 +182,7 @@
         for (const dayString in dailyLineups) {
             const lineup = dailyLineups[dayString];
             const dayName = dayString.split(',')[0]; // e.g., "Monday"
-            const dayAbbr = dayAbbrMap[dayName];   // e.g., "Mon"
+            const dayAbbr = dayAbbrMap[dayName];    // e.g., "Mon"
 
             if (dayAbbr) {
                 for (const position in lineup) {
@@ -187,26 +209,27 @@
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
                 <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Roster</h2>
-                <table class="min-w-full divide-y divide-gray-700">
-                    <thead class="bg-gray-700/50">
-                        <tr>
-                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
-                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
-                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
-                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">This Week</th>
-                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider"># Games</th>
-                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Starts</th>
-                            <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Next Week</th>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-700/50">
+                            <tr>
+                                <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Name</th>
+                                <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
+                                <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
+                                <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">This Week</th>
+                                <th scope="col" class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider"># Games</th>
+                                <th scope="col" class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">Starts</th>
+                                <th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Next Week</th>
         `;
 
         (scoringCategories || []).forEach(cat => {
-            tableHtml += `<th scope="col" class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">${cat}</th>`;
+            tableHtml += `<th scope="col" class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${cat}</th>`;
         });
 
         tableHtml += `
-                        </tr>
-                    </thead>
-                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+                            </tr>
+                        </thead>
+                        <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
         roster.forEach(player => {
@@ -224,8 +247,8 @@
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.team}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${gamesThisWeekHtml}</td>
-                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.length}</td>
-                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.starts_this_week}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${player.games_this_week.length}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${player.starts_this_week}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${(player.games_next_week || []).join(', ')}</td>
             `;
             (scoringCategories || []).forEach(cat => {
@@ -238,7 +261,7 @@
 
                 const color = getHeatmapColor(rank);
                 // For pastel colors, a darker text provides better contrast
-                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-600" style="background-color: ${color};">${rank}</td>`;
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-800" style="background-color: ${color};">${rank}</td>`;
             });
 
 
@@ -248,8 +271,9 @@
         });
 
         tableHtml += `
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         `;
         tableContainer.innerHTML = tableHtml;
@@ -343,14 +367,15 @@
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow mt-6">
                 <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
-                <table class="divide-y divide-gray-700">
-                    <thead class="bg-gray-700/50">
-                        <tr>
-                            <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
-                            ${positionOrder.map(pos => `<th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${pos}</th>`).join('')}
-                        </tr>
-                    </thead>
-                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-700/50">
+                            <tr>
+                                <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
+                                ${positionOrder.map(pos => `<th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${pos}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
         sortedDays.forEach(day => {
@@ -360,9 +385,11 @@
                 const value = unusedSpotsData[day][pos];
                 const stringValue = String(value);
 
-                const highlightClass = (stringValue !== '0')
-                    ? 'bg-green-200 text-gray-900'
-                    : 'text-gray-300';
+                const highlightClass = (stringValue.includes('*'))
+                    ? 'text-yellow-300 font-bold'
+                    : (stringValue !== '0')
+                        ? 'text-green-300'
+                        : 'text-gray-400';
 
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
             });
@@ -370,8 +397,9 @@
         });
 
         tableHtml += `
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         `;
 
@@ -380,8 +408,14 @@
 
 
     function setupEventListeners() {
-        weekSelect.addEventListener('change', fetchAndRenderTable);
-        yourTeamSelect.addEventListener('change', fetchAndRenderTable);
+        weekSelect.addEventListener('change', () => {
+            localStorage.setItem('selectedWeek', weekSelect.value);
+            fetchAndRenderTable();
+        });
+        yourTeamSelect.addEventListener('change', () => {
+            localStorage.setItem('selectedTeam', yourTeamSelect.value);
+            fetchAndRenderTable();
+        });
     }
 
     init();

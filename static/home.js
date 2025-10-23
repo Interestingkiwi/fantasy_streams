@@ -13,7 +13,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function getTimestamp() {
         try {
-            timestampText.textContent = 'League data is loaded live from Yahoo.';
+            const response = await fetch('/api/db_timestamp');
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to fetch timestamp.');
+            }
+
+            if (data.timestamp) {
+                timestampText.textContent = `League data was last pulled from Yahoo at ${data.timestamp}`;
+            } else {
+                timestampText.textContent = 'League data has not been updated yet. Please visit the League Database page.';
+            }
         } catch (error) {
             console.error('Error setting timestamp:', error);
             timestampText.textContent = 'Error loading league data status.';

@@ -6,7 +6,7 @@ Main run app for Fantasystreams.app
 
 Author: Jason Druckenmiller
 Date: 10/16/2025
-Updated: 10/22/2025
+Updated: 10/23/2025
 """
 
 import os
@@ -1046,7 +1046,7 @@ def get_free_agent_data():
         if conn:
             conn.close()
 
-            
+
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
     yq = get_yfpy_instance()
@@ -1060,8 +1060,15 @@ def update_db_route():
 
     data = request.get_json() or {}
     capture_lineups = data.get('capture_lineups', False)
+    skip_static_info = data.get('skip_static_info', False)
+    skip_available_players = data.get('skip_available_players', False)
 
-    result = db_builder.update_league_db(yq, lg, league_id, DATA_DIR, capture_lineups=capture_lineups)
+    result = db_builder.update_league_db(
+        yq, lg, league_id, DATA_DIR,
+        capture_lineups=capture_lineups,
+        skip_static_info=skip_static_info,
+        skip_available_players=skip_available_players
+    )
 
     if result['success']:
         return jsonify(result)
@@ -1108,6 +1115,46 @@ def api_settings():
         session['use_test_db'] = use_test_db
         logging.info(f"Test DB mode set to: {use_test_db}")
         return jsonify({'success': True, 'use_test_db': use_test_db})
+
+@app.route('/api/db_timestamp')
+def db_timestamp():
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg or "Database not found."}), 404
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM db_metadata WHERE key = 'last_updated_timestamp'")
+        row = cursor.fetchone()
+        timestamp = row['value'] if row else None
+        return jsonify({'timestamp': timestamp})
+    except Exception as e:
+        logging.error(f"Error fetching timestamp: {e}", exc_info=True)
+        return jsonify({'error': 'Could not retrieve timestamp.'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/available_players_timestamp')
+def available_players_timestamp():
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg or "Database not found."}), 404
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM db_metadata WHERE key = 'available_players_last_updated_timestamp'")
+        row = cursor.fetchone()
+        timestamp = row['value'] if row else None
+        return jsonify({'timestamp': timestamp})
+    except Exception as e:
+        logging.error(f"Error fetching available players timestamp: {e}", exc_info=True)
+        return jsonify({'error': 'Could not retrieve timestamp.'}), 500
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/pages/<path:page_name>')
 def serve_page(page_name):

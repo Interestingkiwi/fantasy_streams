@@ -4,7 +4,16 @@
     <p class="font-bold">Database Not Found!</p>
     <p class="text-sm">Please go to the "League Database" page and initialize your league's data before using this feature.</p>
 </div>
+<div class="space-y-4">
+    <h2 class="text-xl font-bold text-white">Optimal Lineups by Day</h2>
+    <p id="lineup-timestamp-text" class="text-sm text-gray-400"></p>
+    <div id="roster-table-container">
+        </div>
+    <div id="daily-lineups-container">
+        </div>
+</div>
 
+<script src="{{ url_for('static', filename='lineups.js') }}"></script>
 <div id="lineup-controls" class="hidden">
     <div class="grid grid-cols-4 gap-4 mb-6">
         <div id="roster-table-container" class="col-span-4">

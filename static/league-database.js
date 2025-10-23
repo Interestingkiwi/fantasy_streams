@@ -6,8 +6,10 @@
     const statusText = document.getElementById('db-status-text');
     const actionButton = document.getElementById('db-action-button');
     const captureLineupsCheckbox = document.getElementById('capture-daily-lineups');
+    const skipStaticInfoCheckbox = document.getElementById('skip-static-info');
+    const skipAvailablePlayersCheckbox = document.getElementById('skip-available-players');
 
-    if (!statusText || !actionButton || !captureLineupsCheckbox) {
+    if (!statusText || !actionButton || !captureLineupsCheckbox || !skipStaticInfoCheckbox || !skipAvailablePlayersCheckbox) {
         console.error('Database page elements not found.');
         return;
     }
@@ -54,6 +56,8 @@
         statusText.textContent = 'Building database file, this may take a few minutes.';
 
         const captureLineups = captureLineupsCheckbox.checked;
+        const skipStaticInfo = skipStaticInfoCheckbox.checked;
+        const skipAvailablePlayers = skipAvailablePlayersCheckbox.checked;
 
         try {
             const response = await fetch('/api/update_db', {
@@ -62,7 +66,9 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    capture_lineups: captureLineups
+                    capture_lineups: captureLineups,
+                    skip_static_info: skipStaticInfo,
+                    skip_available_players: skipAvailablePlayers
                 })
             });
             const data = await response.json();
