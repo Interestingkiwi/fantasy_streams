@@ -288,14 +288,12 @@
             tableHtml += `<tr class="hover:bg-gray-700/50">
                 <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
             positionOrder.forEach(pos => {
-                const value = unusedSpotsData[day][pos];
-                const stringValue = String(value);
+              const value = unusedSpotsData[day][pos];
+              const stringValue = String(value);
 
-                const highlightClass = (stringValue.includes('*'))
-                    ? 'text-yellow-300 font-bold'
-                    : (stringValue !== '0')
-                        ? 'text-green-300'
-                        : 'text-gray-400';
+              const highlightClass = (stringValue !== '0')
+                  ? 'bg-green-200 text-gray-900'
+                  : 'text-gray-300';
 
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
             });
