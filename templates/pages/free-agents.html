@@ -4,10 +4,17 @@
     </div>
 
 <div id="controls-container" class="bg-gray-900 p-4 rounded-lg mb-4">
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
         <div>
             <label for="player-search" class="block text-sm font-medium text-gray-300">Search Player Name:</label>
             <input type="text" id="player-search" class="mt-1 block w-full bg-gray-700 border-gray-600 text-white rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+        </div>
+        <div id="category-checkboxes-container" class="md:col-span-2"></div>
+
+        <div class="md:col-span-3 flex justify-end">
+             <button id="recalculate-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md">
+                Recalculate Ranks
+            </button>
         </div>
     </div>
 </div>

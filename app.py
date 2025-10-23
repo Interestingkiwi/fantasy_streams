@@ -396,17 +396,32 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
 
     return unused_spots_data
 
-def _get_ranked_players(cursor, player_ids, cat_rank_columns):
+def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
     """
-    Internal helper to fetch player details and ranks for a list of player IDs.
+    Internal helper to fetch player details, ranks, and schedules for a list of player IDs.
     """
     if not player_ids:
         return []
 
+    # Get dates for current and next week
+    cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num,))
+    week_dates = cursor.fetchone()
+    start_date, end_date = None, None
+    if week_dates:
+        start_date = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
+        end_date = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
+
+    cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num + 1,))
+    week_dates_next = cursor.fetchone()
+    start_date_next, end_date_next = None, None
+    if week_dates_next:
+        start_date_next = datetime.strptime(week_dates_next['start_date'], '%Y-%m-%d').date()
+        end_date_next = datetime.strptime(week_dates_next['end_date'], '%Y-%m-%d').date()
+
     placeholders = ','.join('?' for _ in player_ids)
 
     # Construct the full list of columns to select
-    columns_to_select = ['player_name', 'player_team', 'positions'] + cat_rank_columns
+    columns_to_select = ['player_id', 'player_name', 'player_team', 'positions'] + cat_rank_columns
 
     query = f"""
         SELECT {', '.join(columns_to_select)}
@@ -417,10 +432,24 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns):
     players_raw = cursor.fetchall()
     players = decode_dict_values([dict(row) for row in players_raw])
 
-    # Calculate total rank for each player
+    # Calculate total rank and add schedules
     for player in players:
         total_rank = sum(player.get(col, 0) or 0 for col in cat_rank_columns)
         player['total_cat_rank'] = round(total_rank, 2)
+
+        # Get schedules
+        player['games_this_week'] = []
+        player['games_next_week'] = []
+        cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player.get('player_team'),))
+        schedule_row = cursor.fetchone()
+        if schedule_row and schedule_row['schedule_json']:
+            schedule = json.loads(schedule_row['schedule_json'])
+            for game_date_str in schedule:
+                game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
+                if start_date and end_date and start_date <= game_date <= end_date:
+                    player['games_this_week'].append(game_date.strftime('%a'))
+                if start_date_next and end_date_next and start_date_next <= game_date <= end_date_next:
+                    player['games_next_week'].append(game_date.strftime('%a'))
 
     return players
 
@@ -917,7 +946,7 @@ def get_roster_data():
             conn.close()
 
 
-@app.route('/api/free_agent_data')
+@app.route('/api/free_agent_data', methods=['GET', 'POST'])
 def get_free_agent_data():
     league_id = session.get('league_id')
     conn, error_msg = get_db_connection_for_league(league_id)
@@ -928,25 +957,48 @@ def get_free_agent_data():
     try:
         cursor = conn.cursor()
 
-        # Get scoring categories to determine which rank columns to fetch
-        cursor.execute("SELECT category FROM scoring")
-        scoring_categories = [row['category'] for row in cursor.fetchall()]
+        # Determine which categories to use for ranking
+        if request.method == 'POST' and request.get_json() and 'categories' in request.get_json():
+            scoring_categories = request.get_json()['categories']
+        else:
+            cursor.execute("SELECT category FROM scoring")
+            scoring_categories = [row['category'] for row in cursor.fetchall()]
+
         cat_rank_columns = [f"{cat}_cat_rank" for cat in scoring_categories]
+
+        # Determine current week (needed for schedule calculation)
+        today = date.today().isoformat()
+        cursor.execute("SELECT week_num FROM weeks WHERE start_date <= ? AND end_date >= ?", (today, today))
+        current_week_row = cursor.fetchone()
+
+        current_week = 1
+        if current_week_row:
+             current_week = current_week_row['week_num']
+        else:
+             cursor.execute("SELECT MIN(week_num) as min_week FROM weeks")
+             min_week_row = cursor.fetchone()
+             if min_week_row and min_week_row['min_week']:
+                 current_week = min_week_row['min_week']
 
         # Get waiver players
         cursor.execute("SELECT player_id FROM waiver_players")
         waiver_player_ids = [row['player_id'] for row in cursor.fetchall()]
-        waiver_players = _get_ranked_players(cursor, waiver_player_ids, cat_rank_columns)
+        waiver_players = _get_ranked_players(cursor, waiver_player_ids, cat_rank_columns, current_week)
 
         # Get free agents
         cursor.execute("SELECT player_id FROM free_agents")
         free_agent_ids = [row['player_id'] for row in cursor.fetchall()]
-        free_agents = _get_ranked_players(cursor, free_agent_ids, cat_rank_columns)
+        free_agents = _get_ranked_players(cursor, free_agent_ids, cat_rank_columns, current_week)
+
+        # Return all categories for checkbox creation on initial load
+        cursor.execute("SELECT category FROM scoring")
+        all_scoring_categories = [row['category'] for row in cursor.fetchall()]
 
         return jsonify({
             'waiver_players': waiver_players,
             'free_agents': free_agents,
-            'scoring_categories': scoring_categories
+            'scoring_categories': all_scoring_categories,
+            'ranked_categories': scoring_categories # The categories used for this ranking
         })
 
     except Exception as e:
