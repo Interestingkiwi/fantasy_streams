@@ -46,43 +46,57 @@
 
 
     async function fetchData(selectedCategories = null) {
-        waiverContainer.innerHTML = '<p class="text-gray-400">Loading waiver players...</p>';
-        freeAgentContainer.innerHTML = '<p class="text-gray-400">Loading free agents...</p>';
+            waiverContainer.innerHTML = '<p class="text-gray-400">Loading waiver players...</p>';
+            freeAgentContainer.innerHTML = '<p class="text-gray-400">Loading free agents...</p>';
 
-        try {
-            const body = selectedCategories ? JSON.stringify({ categories: selectedCategories }) : null;
-            const response = await fetch('/api/free_agent_data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: body
-            });
-            const data = await response.json();
+            // Get the currently selected team from the dropdown
+            const yourTeamSelect = document.getElementById('your-team-select');
+            const selectedTeam = yourTeamSelect ? yourTeamSelect.value : null;
 
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to fetch free agent data.');
+            try {
+                const payload = {
+                    team_name: selectedTeam
+                };
+                // Add categories only if they are provided (for recalculation)
+                if (selectedCategories) {
+                    payload.categories = selectedCategories;
+                }
+
+                const body = JSON.stringify(payload);
+
+                // Always use POST to send the payload
+                const response = await fetch('/api/free_agent_data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: body
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to fetch free agent data.');
+                }
+
+                allWaiverPlayers = data.waiver_players;
+                allFreeAgents = data.free_agents;
+                rankedCategories = data.ranked_categories;
+
+                // Only populate all categories on the initial load
+                if (allScoringCategories.length === 0 && data.scoring_categories) {
+                    allScoringCategories = data.scoring_categories;
+                    renderCategoryCheckboxes();
+                }
+                renderUnusedRosterSpotsTable(data.unused_roster_spots);
+                filterAndSortPlayers();
+
+            } catch (error) {
+                console.error('Fetch error:', error);
+                errorDiv.textContent = `Error: ${error.message}`;
+                errorDiv.classList.remove('hidden');
+                waiverContainer.innerHTML = '';
+                freeAgentContainer.innerHTML = '';
+                unusedRosterSpotsContainer.innerHTML = '';
             }
-
-            allWaiverPlayers = data.waiver_players;
-            allFreeAgents = data.free_agents;
-            rankedCategories = data.ranked_categories;
-
-            // Only populate all categories on the initial load
-            if (allScoringCategories.length === 0) {
-                allScoringCategories = data.scoring_categories;
-                renderCategoryCheckboxes();
-            }
-            renderUnusedRosterSpotsTable(data.unused_roster_spots);
-            filterAndSortPlayers();
-
-        } catch (error) {
-            console.error('Fetch error:', error);
-            errorDiv.textContent = `Error: ${error.message}`;
-            errorDiv.classList.remove('hidden');
-            waiverContainer.innerHTML = '';
-            freeAgentContainer.innerHTML = '';
-            unusedRosterSpotsContainer.innerHTML = '';
         }
-    }
 
     function renderCategoryCheckboxes() {
         let checkboxHtml = '<label class="block text-sm font-medium text-gray-300 mb-2">Recalculate Rank Based On:</label><div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">';
@@ -285,9 +299,19 @@
 
 
     function setupEventListeners() {
-        playerSearchInput.addEventListener('input', filterAndSortPlayers);
-        recalculateButton.addEventListener('click', handleRecalculateClick);
-    }
+            playerSearchInput.addEventListener('input', filterAndSortPlayers);
+            recalculateButton.addEventListener('click', handleRecalculateClick);
+
+            // Add an event listener for the team dropdown
+            const yourTeamSelect = document.getElementById('your-team-select');
+            if (yourTeamSelect) {
+                yourTeamSelect.addEventListener('change', () => {
+                    // When team changes, refetch data using current category selections
+                    const selectedCategories = Array.from(document.querySelectorAll('#category-checkboxes-container input:checked')).map(cb => cb.value);
+                    fetchData(selectedCategories);
+                });
+            }
+        }
 
     setupEventListeners();
     fetchData(); // Initial data load

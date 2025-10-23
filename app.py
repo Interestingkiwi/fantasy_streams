@@ -957,52 +957,62 @@ def get_free_agent_data():
 
     try:
         cursor = conn.cursor()
-
-        # **FIX**: Use silent=True to avoid an error on empty POST requests
-        request_data = request.get_json(silent=True)
+        request_data = request.get_json(silent=True) or {}
 
         # Determine which categories to use for ranking
-        if request.method == 'POST' and request_data and 'categories' in request_data:
-            scoring_categories = request_data['categories']
-        else:
+        scoring_categories = request_data.get('categories')
+        if not scoring_categories:
             cursor.execute("SELECT category FROM scoring")
             scoring_categories = [row['category'] for row in cursor.fetchall()]
 
         cat_rank_columns = [f"{cat}_cat_rank" for cat in scoring_categories]
 
-        # Determine current week (needed for schedule calculation)
+        # Determine current week
         today = date.today().isoformat()
         cursor.execute("SELECT week_num FROM weeks WHERE start_date <= ? AND end_date >= ?", (today, today))
         current_week_row = cursor.fetchone()
+        current_week = current_week_row['week_num'] if current_week_row else 1
 
-        current_week = 1
-        if current_week_row:
-             current_week = current_week_row['week_num']
-        else:
-             cursor.execute("SELECT MIN(week_num) as min_week FROM weeks")
-             min_week_row = cursor.fetchone()
-             if min_week_row and min_week_row['min_week']:
-                 current_week = min_week_row['min_week']
-
-        # Get waiver players
+        # Get waiver and free agent players
         cursor.execute("SELECT player_id FROM waiver_players")
         waiver_player_ids = [row['player_id'] for row in cursor.fetchall()]
         waiver_players = _get_ranked_players(cursor, waiver_player_ids, cat_rank_columns, current_week)
 
-        # Get free agents
         cursor.execute("SELECT player_id FROM free_agents")
         free_agent_ids = [row['player_id'] for row in cursor.fetchall()]
         free_agents = _get_ranked_players(cursor, free_agent_ids, cat_rank_columns, current_week)
-        unused_roster_spots = _get_unused_roster_spots(cursor, current_week)
-        # Return all categories for checkbox creation on initial load
+
+        # --- Calculate Unused Roster Spots for the SELECTED Team ---
+        unused_roster_spots = None
+        selected_team_name = request_data.get('team_name')
+
+        if selected_team_name:
+            cursor.execute("SELECT team_id FROM teams WHERE name = ?", (selected_team_name,))
+            team_row = cursor.fetchone()
+            if team_row:
+                team_id = team_row['team_id']
+                cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (current_week,))
+                week_dates = cursor.fetchone()
+                if week_dates:
+                    start_date_obj = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
+                    end_date_obj = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
+                    days_in_week = [(start_date_obj + timedelta(days=i)) for i in range((end_date_obj - start_date_obj).days + 1)]
+
+                    cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
+                    lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
+
+                    team_ranked_roster = _get_ranked_roster_for_week(cursor, team_id, current_week)
+                    unused_ro_spots = _calculate_unused_spots(days_in_week, team_ranked_roster, lineup_settings)
+
+        # Get all scoring categories for checkboxes
         cursor.execute("SELECT category FROM scoring")
         all_scoring_categories = [row['category'] for row in cursor.fetchall()]
 
         return jsonify({
             'waiver_players': waiver_players,
-            'free_agents': free_agents, # Send the full list
+            'free_agents': free_agents,
             'scoring_categories': all_scoring_categories,
-            'ranked_categories': scoring_categories, # The categories used for this ranking
+            'ranked_categories': scoring_categories,
             'unused_roster_spots': unused_roster_spots
         })
 
@@ -1012,7 +1022,6 @@ def get_free_agent_data():
     finally:
         if conn:
             conn.close()
-
 
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
