@@ -6,6 +6,7 @@
     const checkboxesContainer = document.getElementById('category-checkboxes-container');
     const recalculateButton = document.getElementById('recalculate-button');
     const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
+    const timestampText = document.getElementById('available-players-timestamp-text');
 
     // --- Caching Configuration ---
     const CACHE_KEY = 'freeAgentsCache';
@@ -67,6 +68,27 @@
         const percentage = (clampedRank - minRank) / (maxRank - minRank);
         const hue = (1 - percentage) * 120;
         return `hsl(${hue}, 65%, 75%)`;
+    }
+
+    async function getTimestamp() {
+        if (!timestampText) return;
+        try {
+            const response = await fetch('/api/available_players_timestamp');
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to fetch timestamp.');
+            }
+
+            if (data.timestamp) {
+                timestampText.textContent = `Available player data was last refreshed at: ${data.timestamp}`;
+            } else {
+                timestampText.textContent = 'Available player data has not been updated. Please run an update from the League Database page.';
+            }
+        } catch (error) {
+            console.error('Error setting timestamp:', error);
+            timestampText.textContent = 'Could not load data status.';
+        }
     }
 
     async function fetchData(selectedCategories = null) {
@@ -167,15 +189,16 @@
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
                 <h2 class="text-2xl font-bold text-white p-4 bg-gray-800 rounded-t-lg">${title}</h2>
-                <table class="divide-y divide-gray-700">
-                    <thead class="bg-gray-700/50">
-                        <tr>
-                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="player_name" data-table-type="${tableType}">Player Name</th>
-                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
-                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
-                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">This Week</th>
-                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Next Week</th>
-                            <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="total_cat_rank" data-table-type="${tableType}">Total Cat Rank</th>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-700/50">
+                            <tr>
+                                <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="player_name" data-table-type="${tableType}">Player Name</th>
+                                <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
+                                <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
+                                <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">This Week</th>
+                                <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Next Week</th>
+                                <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="total_cat_rank" data-table-type="${tableType}">Total Cat Rank</th>
         `;
         rankedCategories.forEach(cat => {
             const isChecked = checkedCategories.includes(cat);
@@ -183,10 +206,10 @@
             tableHtml += `<th class="px-2 py-2 text-center text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="${cat}_cat_rank" data-table-type="${tableType}">${headerText}</th>`;
         });
         tableHtml += `
-                        </tr>
-                        <tr><td colspan="${6 + rankedCategories.length}" class="text-center text-xs text-gray-500 py-1">Click headers to sort</td></tr>
-                    </thead>
-                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+                            </tr>
+                            <tr><td colspan="${6 + rankedCategories.length}" class="text-center text-xs text-gray-500 py-1">Click headers to sort</td></tr>
+                        </thead>
+                        <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
         if (playersToDisplay.length === 0) {
             tableHtml += `<tr><td colspan="${6 + rankedCategories.length}" class="text-center py-4">No players match the current filter.</td></tr>`;
@@ -205,12 +228,12 @@
                     const rankKey = `${cat}_cat_rank`;
                     const rank = (player[rankKey] !== null && player[rankKey] !== undefined) ? player[rankKey].toFixed(2) : '-';
                     const color = getHeatmapColor(rank);
-                    tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-600" style="background-color: ${color};">${rank}</td>`;
+                    tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-800" style="background-color: ${color};">${rank}</td>`;
                 });
                 tableHtml += `</tr>`;
             });
         }
-        tableHtml += `</tbody></table></div>`;
+        tableHtml += `</tbody></table></div></div>`;
         container.innerHTML = tableHtml;
         document.querySelectorAll(`[data-table-type="${tableType}"].sortable`).forEach(header => {
             header.classList.remove('sort-asc', 'sort-desc');
@@ -251,26 +274,34 @@
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
                 <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
-                <table class="divide-y divide-gray-700">
-                    <thead class="bg-gray-700/50">
-                        <tr>
-                            <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
-                            ${positionOrder.map(pos => `<th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${pos}</th>`).join('')}
-                        </tr>
-                    </thead>
-                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-700/50">
+                            <tr>
+                                <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
+                                ${positionOrder.map(pos => `<th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${pos}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
         sortedDays.forEach(day => {
             tableHtml += `<tr class="hover:bg-gray-700/50">
                 <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
             positionOrder.forEach(pos => {
                 const value = unusedSpotsData[day][pos];
-                const highlightClass = (String(value) !== '0') ? 'bg-green-800/50 text-white font-bold' : 'text-gray-300';
+                const stringValue = String(value);
+
+                const highlightClass = (stringValue.includes('*'))
+                    ? 'text-yellow-300 font-bold'
+                    : (stringValue !== '0')
+                        ? 'text-green-300'
+                        : 'text-gray-400';
+
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
             });
             tableHtml += `</tr>`;
         });
-        tableHtml += `</tbody></table></div>`;
+        tableHtml += `</tbody></table></div></div>`;
         unusedRosterSpotsContainer.innerHTML = tableHtml;
     }
 
@@ -290,31 +321,36 @@
     }
 
     // --- Initial Load ---
-    const cachedState = loadStateFromCache();
-    if (cachedState) {
-        console.log("Loading Free Agents page from cache.");
-        allWaiverPlayers = cachedState.allWaiverPlayers;
-        allFreeAgents = cachedState.allFreeAgents;
-        allScoringCategories = cachedState.allScoringCategories;
-        rankedCategories = cachedState.rankedCategories;
-        checkedCategories = cachedState.checkedCategories;
-        sortConfig = cachedState.sortConfig;
+    async function init() {
+        await getTimestamp(); // Fetch timestamp on initial load
+        const cachedState = loadStateFromCache();
+        if (cachedState) {
+            console.log("Loading Free Agents page from cache.");
+            allWaiverPlayers = cachedState.allWaiverPlayers;
+            allFreeAgents = cachedState.allFreeAgents;
+            allScoringCategories = cachedState.allScoringCategories;
+            rankedCategories = cachedState.rankedCategories;
+            checkedCategories = cachedState.checkedCategories;
+            sortConfig = cachedState.sortConfig;
 
-        await new Promise(resolve => setTimeout(resolve, 0)); // Ensure DOM is ready for value setting
+            await new Promise(resolve => setTimeout(resolve, 0)); // Ensure DOM is ready for value setting
 
-        if (cachedState.selectedTeam) {
-            const teamSelect = document.getElementById('your-team-select');
-            if (teamSelect) teamSelect.value = cachedState.selectedTeam;
+            if (cachedState.selectedTeam) {
+                const teamSelect = document.getElementById('your-team-select');
+                if (teamSelect) teamSelect.value = cachedState.selectedTeam;
+            }
+            playerSearchInput.value = cachedState.searchTerm;
+            unusedRosterSpotsContainer.innerHTML = cachedState.unusedRosterSpotsHTML;
+
+            renderCategoryCheckboxes();
+            filterAndSortPlayers();
+            setupEventListeners();
+        } else {
+            console.log("No valid cache. Fetching fresh data for Free Agents page.");
+            setupEventListeners();
+            fetchData();
         }
-        playerSearchInput.value = cachedState.searchTerm;
-        unusedRosterSpotsContainer.innerHTML = cachedState.unusedRosterSpotsHTML;
-
-        renderCategoryCheckboxes();
-        filterAndSortPlayers();
-        setupEventListeners();
-    } else {
-        console.log("No valid cache. Fetching fresh data for Free Agents page.");
-        setupEventListeners();
-        fetchData();
     }
+
+    init();
 })();
