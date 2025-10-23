@@ -1,6 +1,4 @@
 (async function() {
-    await new Promise(resolve => setTimeout(resolve, 0)); // Ensure DOM is ready
-
     const errorDiv = document.getElementById('db-error-message');
     const waiverContainer = document.getElementById('waiver-players-container');
     const freeAgentContainer = document.getElementById('free-agent-players-container');
@@ -9,23 +7,62 @@
     const recalculateButton = document.getElementById('recalculate-button');
     const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
 
+    // --- Caching Configuration ---
+    const CACHE_KEY = 'freeAgentsCache';
+    const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
     // --- Global State ---
     let allWaiverPlayers = [];
     let allFreeAgents = [];
-    let allScoringCategories = []; // Full list for creating checkboxes
-    let rankedCategories = []; // List used for the current ranking (will now contain ALL categories)
-    let checkedCategories = []; // New state to track which categories are checked
+    let allScoringCategories = [];
+    let rankedCategories = [];
+    let checkedCategories = [];
     let sortConfig = {
         waivers: { key: 'total_cat_rank', direction: 'ascending' },
         freeAgents: { key: 'total_cat_rank', direction: 'ascending' }
     };
 
-    function getHeatmapColor(rank) {
-        if (rank === null || rank === undefined || rank === '-') {
-            return ''; // No color for empty ranks
+    // --- Caching Functions ---
+    function saveStateToCache() {
+        try {
+            const state = {
+                allWaiverPlayers,
+                allFreeAgents,
+                allScoringCategories,
+                rankedCategories,
+                checkedCategories,
+                sortConfig,
+                unusedRosterSpotsHTML: unusedRosterSpotsContainer.innerHTML,
+                selectedTeam: document.getElementById('your-team-select')?.value,
+                searchTerm: playerSearchInput.value,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(CACHE_KEY, JSON.stringify(state));
+        } catch (error) {
+            console.warn("Could not save state to local storage.", error);
         }
-        const minRank = 1;
-        const maxRank = 20;
+    }
+
+    function loadStateFromCache() {
+        try {
+            const cachedJSON = localStorage.getItem(CACHE_KEY);
+            if (!cachedJSON) return null;
+
+            const cachedState = JSON.parse(cachedJSON);
+            if (Date.now() - cachedState.timestamp > CACHE_TTL_MS) {
+                localStorage.removeItem(CACHE_KEY);
+                return null;
+            }
+            return cachedState;
+        } catch (error) {
+            console.warn("Could not load state from local storage.", error);
+            return null;
+        }
+    }
+
+    function getHeatmapColor(rank) {
+        if (rank === null || rank === undefined || rank === '-') return '';
+        const minRank = 1, maxRank = 20;
         const clampedRank = Math.max(minRank, Math.min(rank, maxRank));
         const percentage = (clampedRank - minRank) / (maxRank - minRank);
         const hue = (1 - percentage) * 120;
@@ -40,37 +77,35 @@
         const selectedTeam = yourTeamSelect ? yourTeamSelect.value : null;
 
         try {
-            const payload = {
-                team_name: selectedTeam
-            };
+            const payload = { team_name: selectedTeam };
             if (selectedCategories) {
                 payload.categories = selectedCategories;
             }
 
-            const body = JSON.stringify(payload);
-
             const response = await fetch('/api/free_agent_data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: body
+                body: JSON.stringify(payload)
             });
             const data = await response.json();
 
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to fetch free agent data.');
-            }
+            if (!response.ok) throw new Error(data.error || 'Failed to fetch free agent data.');
 
             allWaiverPlayers = data.waiver_players;
             allFreeAgents = data.free_agents;
-            rankedCategories = data.ranked_categories; // This will now be ALL scoring categories
-            checkedCategories = data.checked_categories || data.ranked_categories; // Store checked categories
+            rankedCategories = data.ranked_categories;
+            checkedCategories = data.checked_categories || data.ranked_categories;
 
             if (allScoringCategories.length === 0 && data.scoring_categories) {
                 allScoringCategories = data.scoring_categories;
                 renderCategoryCheckboxes();
+            } else if (allScoringCategories.length > 0) {
+                renderCategoryCheckboxes();
             }
+
             renderUnusedRosterSpotsTable(data.unused_roster_spots);
             filterAndSortPlayers();
+            saveStateToCache();
 
         } catch (error) {
             console.error('Fetch error:', error);
@@ -85,7 +120,6 @@
     function renderCategoryCheckboxes() {
         let checkboxHtml = '<label class="block text-sm font-medium text-gray-300 mb-2">Recalculate Rank Based On:</label><div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">';
         allScoringCategories.forEach(cat => {
-            // Use the new checkedCategories state to determine if the box is checked
             const isChecked = checkedCategories.includes(cat);
             checkboxHtml += `
                 <div class="flex items-center">
@@ -101,15 +135,11 @@
     function filterAndSortPlayers() {
         const searchTerm = playerSearchInput.value.toLowerCase();
 
-        let filteredWaivers = searchTerm
-            ? allWaiverPlayers.filter(p => p.player_name.toLowerCase().includes(searchTerm))
-            : [...allWaiverPlayers];
+        let filteredWaivers = searchTerm ? allWaiverPlayers.filter(p => p.player_name.toLowerCase().includes(searchTerm)) : [...allWaiverPlayers];
         sortPlayers(filteredWaivers, sortConfig.waivers);
         renderPlayerTable('Waiver Players', filteredWaivers, waiverContainer, 'waivers');
 
-        let filteredFreeAgents = searchTerm
-            ? allFreeAgents.filter(p => p.player_name.toLowerCase().includes(searchTerm))
-            : [...allFreeAgents];
+        let filteredFreeAgents = searchTerm ? allFreeAgents.filter(p => p.player_name.toLowerCase().includes(searchTerm)) : [...allFreeAgents];
         sortPlayers(filteredFreeAgents, sortConfig.freeAgents);
         renderPlayerTable('Free Agents', filteredFreeAgents, freeAgentContainer, 'freeAgents', true);
     }
@@ -148,9 +178,7 @@
                             <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="total_cat_rank" data-table-type="${tableType}">Total Cat Rank</th>
         `;
         rankedCategories.forEach(cat => {
-            // Check if the category is in our 'checked' list
             const isChecked = checkedCategories.includes(cat);
-            // Add an asterisk to the header if the category was unchecked
             const headerText = isChecked ? cat : `${cat}*`;
             tableHtml += `<th class="px-2 py-2 text-center text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="${cat}_cat_rank" data-table-type="${tableType}">${headerText}</th>`;
         });
@@ -182,11 +210,7 @@
                 tableHtml += `</tr>`;
             });
         }
-        tableHtml += `
-                    </tbody>
-                </table>
-            </div>
-        `;
+        tableHtml += `</tbody></table></div>`;
         container.innerHTML = tableHtml;
         document.querySelectorAll(`[data-table-type="${tableType}"].sortable`).forEach(header => {
             header.classList.remove('sort-asc', 'sort-desc');
@@ -208,6 +232,7 @@
             sortConfig[tableType].direction = 'ascending';
         }
         filterAndSortPlayers();
+        saveStateToCache();
     }
 
     function handleRecalculateClick() {
@@ -222,9 +247,7 @@
         }
         const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
         const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const sortedDays = Object.keys(unusedSpotsData).sort((a, b) => {
-            return dayOrder.indexOf(a) - dayOrder.indexOf(b);
-        });
+        const sortedDays = Object.keys(unusedSpotsData).sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
                 <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
@@ -242,24 +265,20 @@
                 <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
             positionOrder.forEach(pos => {
                 const value = unusedSpotsData[day][pos];
-                const stringValue = String(value);
-                const highlightClass = (stringValue !== '0')
-                    ? 'bg-green-800/50 text-white font-bold'
-                    : 'text-gray-300';
+                const highlightClass = (String(value) !== '0') ? 'bg-green-800/50 text-white font-bold' : 'text-gray-300';
                 tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
             });
             tableHtml += `</tr>`;
         });
-        tableHtml += `
-                    </tbody>
-                </table>
-            </div>
-        `;
+        tableHtml += `</tbody></table></div>`;
         unusedRosterSpotsContainer.innerHTML = tableHtml;
     }
 
     function setupEventListeners() {
-        playerSearchInput.addEventListener('input', filterAndSortPlayers);
+        playerSearchInput.addEventListener('input', () => {
+            filterAndSortPlayers();
+            saveStateToCache();
+        });
         recalculateButton.addEventListener('click', handleRecalculateClick);
         const yourTeamSelect = document.getElementById('your-team-select');
         if (yourTeamSelect) {
@@ -270,6 +289,32 @@
         }
     }
 
-    setupEventListeners();
-    fetchData(); // Initial data load
+    // --- Initial Load ---
+    const cachedState = loadStateFromCache();
+    if (cachedState) {
+        console.log("Loading Free Agents page from cache.");
+        allWaiverPlayers = cachedState.allWaiverPlayers;
+        allFreeAgents = cachedState.allFreeAgents;
+        allScoringCategories = cachedState.allScoringCategories;
+        rankedCategories = cachedState.rankedCategories;
+        checkedCategories = cachedState.checkedCategories;
+        sortConfig = cachedState.sortConfig;
+
+        await new Promise(resolve => setTimeout(resolve, 0)); // Ensure DOM is ready for value setting
+
+        if (cachedState.selectedTeam) {
+            const teamSelect = document.getElementById('your-team-select');
+            if (teamSelect) teamSelect.value = cachedState.selectedTeam;
+        }
+        playerSearchInput.value = cachedState.searchTerm;
+        unusedRosterSpotsContainer.innerHTML = cachedState.unusedRosterSpotsHTML;
+
+        renderCategoryCheckboxes();
+        filterAndSortPlayers();
+        setupEventListeners();
+    } else {
+        console.log("No valid cache. Fetching fresh data for Free Agents page.");
+        setupEventListeners();
+        fetchData();
+    }
 })();
