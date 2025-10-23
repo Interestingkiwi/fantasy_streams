@@ -18,6 +18,32 @@
         freeAgents: { key: 'total_cat_rank', direction: 'ascending' }
     };
 
+
+    function getHeatmapColor(rank) {
+        if (rank === null || rank === undefined || rank === '-') {
+            return ''; // No color for empty ranks
+        }
+
+        const minRank = 1;
+        const maxRank = 20;
+
+        // Clamp the rank to be within our min/max range for color calculation
+        const clampedRank = Math.max(minRank, Math.min(rank, maxRank));
+
+        // Calculate the percentage of where the rank falls between min and max.
+        // A rank of 1 will be 0%, a rank of 20 will be 100%.
+        const percentage = (clampedRank - minRank) / (maxRank - minRank);
+
+        // We want green (hue 120) at 0% and red (hue 0) at 100%.
+        // So, we calculate the hue by scaling (1 - percentage) over the 120-degree hue range.
+        const hue = (1 - percentage) * 120;
+
+        // Return a very pastel HSL color. Low saturation and high lightness create a soft effect.
+        return `hsl(${hue}, 65%, 75%)`;
+    }
+
+
+
     async function fetchData(selectedCategories = null) {
         waiverContainer.innerHTML = '<p class="text-gray-400">Loading waiver players...</p>';
         freeAgentContainer.innerHTML = '<p class="text-gray-400">Loading free agents...</p>';
@@ -122,7 +148,7 @@
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
                 <h2 class="text-2xl font-bold text-white p-4 bg-gray-800 rounded-t-lg">${title}</h2>
-                <table class="min-w-full divide-y divide-gray-700">
+                <table class="divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
                         <tr>
                             <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="player_name" data-table-type="${tableType}">Player Name</th>
@@ -200,6 +226,60 @@
         const selectedCategories = Array.from(document.querySelectorAll('#category-checkboxes-container input:checked')).map(cb => cb.value);
         fetchData(selectedCategories);
     }
+
+
+    function renderUnusedRosterSpotsTable(unusedSpotsData) {
+        if (!unusedSpotsData) {
+            unusedRosterSpotsContainer.innerHTML = '';
+            return;
+        }
+
+        const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
+        const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+        const sortedDays = Object.keys(unusedSpotsData).sort((a, b) => {
+            return dayOrder.indexOf(a) - dayOrder.indexOf(b);
+        });
+
+        let tableHtml = `
+            <div class="bg-gray-900 rounded-lg shadow">
+                <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
+                <table class="divide-y divide-gray-700">
+                    <thead class="bg-gray-700/50">
+                        <tr>
+                            <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
+                            ${positionOrder.map(pos => `<th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${pos}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+        `;
+
+        sortedDays.forEach(day => {
+            tableHtml += `<tr class="hover:bg-gray-700/50">
+                <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
+            positionOrder.forEach(pos => {
+                const value = unusedSpotsData[day][pos];
+                const stringValue = String(value);
+
+                const highlightClass = (stringValue !== '0')
+                    ? 'bg-green-800/50 text-white font-bold'
+                    : 'text-gray-300';
+
+                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
+            });
+            tableHtml += `</tr>`;
+        });
+
+        tableHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        unusedRosterSpotsContainer.innerHTML = tableHtml;
+    }
+
+
 
     function setupEventListeners() {
         playerSearchInput.addEventListener('input', filterAndSortPlayers);
