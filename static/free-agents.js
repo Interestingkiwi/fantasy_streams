@@ -186,7 +186,8 @@
                 rankedCategories.forEach(cat => {
                     const rankKey = `${cat}_cat_rank`;
                     const rank = (player[rankKey] !== null && player[rankKey] !== undefined) ? player[rankKey].toFixed(2) : '-';
-                    tableHtml += `<td class="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-300">${rank}</td>`;
+                    const color = getHeatmapColor(rank);
+                    tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-semibold text-gray-600" style="background-color: ${color};">${rank}</td>`;
                 });
                 tableHtml += `</tr>`;
             });
