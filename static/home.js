@@ -1,8 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     const logoutButton = document.getElementById('logout-button');
     const timestampText = document.getElementById('timestamp-text');
-    const weekSelect = document.getElementById('week-select');
-    const yourTeamSelect = document.getElementById('your-team-select');
     const dropdownContainer = document.getElementById('dropdown-container');
 
     let pageData = null; // To store weeks, teams, etc.
@@ -39,20 +37,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!response.ok || !data.db_exists) {
                 // If DB doesn't exist, show a button to retry
-                dropdownContainer.innerHTML = `<button id="reload-dropdowns" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Click Here After Creating Database</button>`;
+                dropdownContainer.innerHTML = `<button id="reload-dropdowns" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Create DB then press to load</button>`;
                 document.getElementById('reload-dropdowns').addEventListener('click', initDropdowns);
                 return; // Stop further execution
             }
 
-            // If DB exists, show and populate dropdowns
+            // If DB exists, show and populate dropdowns with titles and side-by-side layout
             dropdownContainer.innerHTML = `
-                <select id="week-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
-                    <option selected>Choose a week</option>
-                </select>
-                <select id="your-team-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
-                    <option selected>Choose your team</option>
-                </select>
+                <div class="flex items-center gap-2">
+                    <label for="week-select" class="text-sm font-medium text-gray-300">Fantasy Week:</label>
+                    <select id="week-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                        <option selected>Choose a week</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2">
+                    <label for="your-team-select" class="text-sm font-medium text-gray-300">Your Team:</label>
+                    <select id="your-team-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                        <option selected>Choose your team</option>
+                    </select>
+                </div>
             `;
+            // Add the flex class back to the container itself
+            dropdownContainer.classList.add('flex', 'items-center', 'gap-4');
+
 
             pageData = data;
             populateDropdowns();
