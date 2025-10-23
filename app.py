@@ -993,7 +993,7 @@ def get_free_agent_data():
         cursor.execute("SELECT player_id FROM free_agents")
         free_agent_ids = [row['player_id'] for row in cursor.fetchall()]
         free_agents = _get_ranked_players(cursor, free_agent_ids, cat_rank_columns, current_week)
-
+        unused_roster_spots = _get_unused_roster_spots(cursor, current_week)
         # Return all categories for checkbox creation on initial load
         cursor.execute("SELECT category FROM scoring")
         all_scoring_categories = [row['category'] for row in cursor.fetchall()]
@@ -1003,6 +1003,7 @@ def get_free_agent_data():
             'free_agents': free_agents, # Send the full list
             'scoring_categories': all_scoring_categories,
             'ranked_categories': scoring_categories # The categories used for this ranking
+            'unused_roster_spots': unused_roster_spots
         })
 
     except Exception as e:
