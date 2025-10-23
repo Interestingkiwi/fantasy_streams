@@ -12,6 +12,15 @@
 </head>
 <body class="bg-gray-900 text-white">
 
+    <div id="help-modal" class="modal">
+        <div class="modal-content bg-gray-800 text-white">
+            <span class="close-button">&times;</span>
+            <h2 id="modal-title" class="text-xl font-bold mb-2">Help</h2>
+            <p id="modal-text">This is placeholder help text. You can replace it with specific instructions for each page.</p>
+        </div>
+    </div>
+
+
     <div class="p-4">
         <div class="flex justify-between items-start mb-4">
             <div class="flex items-center gap-4">
@@ -165,6 +174,39 @@
                 });
                 loadPage(firstButton.getAttribute('data-page'));
             }
+
+            // Modal script
+            const modal = document.getElementById('help-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const modalText = document.getElementById('modal-text');
+            const closeButton = document.querySelector('.close-button');
+
+            // Function to open the modal with specific content
+            function openModal(title, text) {
+                modalTitle.textContent = title;
+                modalText.textContent = text;
+                modal.style.display = 'block';
+            }
+
+            // Close the modal
+            closeButton.onclick = () => {
+                modal.style.display = 'none';
+            }
+
+            window.onclick = (event) => {
+                if (event.target == modal) {
+                    modal.style.display = 'none';
+                }
+            }
+
+            // Attach event listener to a parent element (delegation)
+            document.body.addEventListener('click', (event) => {
+                if (event.target.classList.contains('help-icon')) {
+                    const title = event.target.dataset.title || 'Help';
+                    const text = event.target.dataset.text || 'Placeholder help text.';
+                    openModal(title, text);
+                }
+            });
         });
     </script>
 </body>
