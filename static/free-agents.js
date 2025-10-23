@@ -7,6 +7,7 @@
     const playerSearchInput = document.getElementById('player-search');
     const checkboxesContainer = document.getElementById('category-checkboxes-container');
     const recalculateButton = document.getElementById('recalculate-button');
+    const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
 
     // --- Global State ---
     let allWaiverPlayers = [];
@@ -70,7 +71,7 @@
                 allScoringCategories = data.scoring_categories;
                 renderCategoryCheckboxes();
             }
-
+            renderUnusedRosterSpotsTable(data.unused_roster_spots);
             filterAndSortPlayers();
 
         } catch (error) {
@@ -79,6 +80,7 @@
             errorDiv.classList.remove('hidden');
             waiverContainer.innerHTML = '';
             freeAgentContainer.innerHTML = '';
+            unusedRosterSpotsContainer.innerHTML = '';
         }
     }
 
