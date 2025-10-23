@@ -1002,7 +1002,7 @@ def get_free_agent_data():
             'waiver_players': waiver_players,
             'free_agents': free_agents, # Send the full list
             'scoring_categories': all_scoring_categories,
-            'ranked_categories': scoring_categories # The categories used for this ranking
+            'ranked_categories': scoring_categories, # The categories used for this ranking
             'unused_roster_spots': unused_roster_spots
         })
 
