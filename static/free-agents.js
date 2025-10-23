@@ -48,7 +48,7 @@
     async function fetchData(selectedCategories = null) {
             waiverContainer.innerHTML = '<p class="text-gray-400">Loading waiver players...</p>';
             freeAgentContainer.innerHTML = '<p class="text-gray-400">Loading free agents...</p>';
-
+            unusedRosterSpotsContainer.innerHTML = '<p class="text-gray-400">Loading unused spots...</p>';
             // Get the currently selected team from the dropdown
             const yourTeamSelect = document.getElementById('your-team-select');
             const selectedTeam = yourTeamSelect ? yourTeamSelect.value : null;
@@ -94,7 +94,7 @@
                 errorDiv.classList.remove('hidden');
                 waiverContainer.innerHTML = '';
                 freeAgentContainer.innerHTML = '';
-                unusedRosterSpotsContainer.innerHTML = 'Test';
+                unusedRosterSpotsContainer.innerHTML = '';
             }
         }
 
