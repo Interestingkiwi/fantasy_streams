@@ -289,5 +289,6 @@
         recalculateButton.addEventListener('click', handleRecalculateClick);
     }
 
+    setupEventListeners();
     fetchData(); // Initial data load
 })();
