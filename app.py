@@ -959,13 +959,19 @@ def get_free_agent_data():
         cursor = conn.cursor()
         request_data = request.get_json(silent=True) or {}
 
-        # Determine which categories to use for ranking
-        scoring_categories = request_data.get('categories')
-        if not scoring_categories:
-            cursor.execute("SELECT category FROM scoring")
-            scoring_categories = [row['category'] for row in cursor.fetchall()]
+        # Get all scoring categories from the database
+        cursor.execute("SELECT category FROM scoring")
+        all_scoring_categories = [row['category'] for row in cursor.fetchall()]
 
-        cat_rank_columns = [f"{cat}_cat_rank" for cat in scoring_categories]
+        # Determine which categories are checked. If none are sent, assume all are.
+        checked_categories = request_data.get('categories')
+        if checked_categories is None:
+            checked_categories = all_scoring_categories
+
+        unchecked_categories = [cat for cat in all_scoring_categories if cat not in checked_categories]
+
+        # We will always fetch all category rank columns to display every stat.
+        all_cat_rank_columns = [f"{cat}_cat_rank" for cat in all_scoring_categories]
 
         # Determine current week
         today = date.today().isoformat()
@@ -973,22 +979,36 @@ def get_free_agent_data():
         current_week_row = cursor.fetchone()
         current_week = current_week_row['week_num'] if current_week_row else 1
 
-        # Get waiver and free agent players
+        # Get waiver and free agent players.
+        # Note: This call to _get_ranked_players will fetch ranks for ALL categories.
+        # The total_cat_rank it returns will be based on all stats, so we will recalculate it below.
         cursor.execute("SELECT player_id FROM waiver_players")
         waiver_player_ids = [row['player_id'] for row in cursor.fetchall()]
-        waiver_players = _get_ranked_players(cursor, waiver_player_ids, cat_rank_columns, current_week)
+        waiver_players = _get_ranked_players(cursor, waiver_player_ids, all_cat_rank_columns, current_week)
 
         cursor.execute("SELECT player_id FROM free_agents")
         free_agent_ids = [row['player_id'] for row in cursor.fetchall()]
-        free_agents = _get_ranked_players(cursor, free_agent_ids, cat_rank_columns, current_week)
+        free_agents = _get_ranked_players(cursor, free_agent_ids, all_cat_rank_columns, current_week)
+
+        # Recalculate total_cat_rank based on checked/unchecked categories
+        for player_list in [waiver_players, free_agents]:
+            for player in player_list:
+                total_rank = 0
+                for cat in all_scoring_categories:
+                    rank_key = f"{cat}_cat_rank"
+                    rank_value = player.get(rank_key)
+                    if rank_value is not None:
+                        if cat in unchecked_categories:
+                            total_rank += rank_value / 2.0  # Halve the value for unchecked categories
+                        else:
+                            total_rank += rank_value
+                player['total_cat_rank'] = round(total_rank, 2)
 
         # --- Calculate Unused Roster Spots for the SELECTED Team ---
         unused_roster_spots = None
         selected_team_name = request_data.get('team_name')
 
         if selected_team_name:
-            # --- THIS IS THE FIX ---
-            # Using CAST ensures the name lookup works reliably, just like on the matchup page.
             cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (selected_team_name,))
             team_row = cursor.fetchone()
             if team_row:
@@ -1008,13 +1028,14 @@ def get_free_agent_data():
 
         # Get all scoring categories for checkboxes
         cursor.execute("SELECT category FROM scoring")
-        all_scoring_categories = [row['category'] for row in cursor.fetchall()]
+        all_scoring_categories_for_checkboxes = [row['category'] for row in cursor.fetchall()]
 
         return jsonify({
             'waiver_players': waiver_players,
             'free_agents': free_agents,
-            'scoring_categories': all_scoring_categories,
-            'ranked_categories': scoring_categories,
+            'scoring_categories': all_scoring_categories_for_checkboxes,
+            'ranked_categories': all_scoring_categories,  # Send all categories for table columns
+            'checked_categories': checked_categories,  # Send the list of checked categories
             'unused_roster_spots': unused_roster_spots
         })
 
@@ -1025,6 +1046,7 @@ def get_free_agent_data():
         if conn:
             conn.close()
 
+            
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
     yq = get_yfpy_instance()
