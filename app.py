@@ -983,11 +983,13 @@ def get_free_agent_data():
         free_agents = _get_ranked_players(cursor, free_agent_ids, cat_rank_columns, current_week)
 
         # --- Calculate Unused Roster Spots for the SELECTED Team ---
-        unused_roster_spots = None  # Default to None
+        unused_roster_spots = None
         selected_team_name = request_data.get('team_name')
 
         if selected_team_name:
-            cursor.execute("SELECT team_id FROM teams WHERE name = ?", (selected_team_name,))
+            # --- THIS IS THE FIX ---
+            # Using CAST ensures the name lookup works reliably, just like on the matchup page.
+            cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (selected_team_name,))
             team_row = cursor.fetchone()
             if team_row:
                 team_id = team_row['team_id']
@@ -1002,9 +1004,6 @@ def get_free_agent_data():
                     lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
 
                     team_ranked_roster = _get_ranked_roster_for_week(cursor, team_id, current_week)
-
-                    # --- THIS IS THE FIX ---
-                    # The calculated value is now correctly assigned to the variable that gets returned.
                     unused_roster_spots = _calculate_unused_spots(days_in_week, team_ranked_roster, lineup_settings)
 
         # Get all scoring categories for checkboxes
@@ -1026,7 +1025,6 @@ def get_free_agent_data():
         if conn:
             conn.close()
 
-            
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
     yq = get_yfpy_instance()
