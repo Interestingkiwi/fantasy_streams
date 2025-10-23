@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function populateDropdowns() {
         // Populate Weeks
         weekSelect.innerHTML = pageData.weeks.map(week =>
-            `<option value="${week.week_num}" ${week.week_num === pageData.current_week ? 'selected' : ''}>
+            `<option value="${week.week_num}">
                 Week ${week.week_num} (${week.start_date} to ${week.end_date})
             </option>`
         ).join('');
@@ -53,6 +53,20 @@ document.addEventListener('DOMContentLoaded', () => {
             `<option value="${team.name}">${team.name}</option>`
         ).join('');
         yourTeamSelect.innerHTML = teamOptions;
+
+        // Restore and set default dropdown values
+        const savedWeek = localStorage.getItem('selectedWeek');
+        if (savedWeek) {
+            weekSelect.value = savedWeek;
+        } else {
+            // Set to current week if nothing is saved
+            weekSelect.value = pageData.current_week;
+        }
+
+        const savedTeam = localStorage.getItem('selectedTeam');
+        if (savedTeam) {
+            yourTeamSelect.value = savedTeam;
+        }
     }
 
     if(logoutButton) {
@@ -62,6 +76,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if(timestampText) {
         getTimestamp();
     }
+
+    // Add event listeners to save dropdown values
+    weekSelect.addEventListener('change', () => {
+        localStorage.setItem('selectedWeek', weekSelect.value);
+    });
+
+    yourTeamSelect.addEventListener('change', () => {
+        localStorage.setItem('selectedTeam', yourTeamSelect.value);
+    });
+
 
     // Initialize the dropdowns
     initDropdowns();
