@@ -3,7 +3,7 @@ Queries to create and update fantasystreams.app db
 
 Author: Jason Druckenmiller
 Date: 10/17/2025
-Updated: 10/23/2025
+Updated: 10/18/2025
 """
 
 import os
@@ -1186,32 +1186,23 @@ def _update_rostered_players(lg, conn):
         conn.rollback()
 
 
-def _update_db_metadata(cursor, update_available_players_timestamp=False):
+def _update_db_metadata(cursor):
     """
     Updates the db_metadata table with the current timestamp.
-    Can also be used to specifically update the timestamp for available players.
     """
+    logging.info("Updating db_metadata table...")
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
 
-    if update_available_players_timestamp:
-        logging.info("Updating available players timestamp in db_metadata...")
-        cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
-                       ('available_players_last_updated_date', date_str))
-        cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
-                       ('available_players_last_updated_timestamp', timestamp_str))
-        logging.info("Successfully updated available players timestamp.")
-    else:
-        logging.info("Updating general db_metadata timestamp...")
-        cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
-                       ('last_updated_date', date_str))
-        cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
-                       ('last_updated_timestamp', timestamp_str))
-        logging.info("Successfully updated general db_metadata timestamp.")
+    cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
+                   ('last_updated_date', date_str))
+    cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
+                   ('last_updated_timestamp', timestamp_str))
+    logging.info("Successfully updated db_metadata.")
 
 
-def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False, skip_static_info=False, skip_available_players=False):
+def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
     """
     Creates or updates the league-specific SQLite database by calling
     individual query and update functions.
@@ -1222,8 +1213,6 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False, skip_st
         league_id: The ID of the fantasy league.
         data_dir: The directory where the database file should be stored.
         capture_lineups: Boolean to determine if daily lineups should be captured in full (True) or weekly (False).
-        skip_static_info: Boolean to skip fetching static league data.
-        skip_available_players: Boolean to skip fetching available player data (FA, Waivers).
 
     Returns:
         A dictionary with the success status and database info, or an error message.
@@ -1255,36 +1244,24 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False, skip_st
 
         # --- yfpy API Call Functions ---
         _create_tables(cursor)
-        _update_db_metadata(cursor) # This will set the main 'last_updated' timestamp
-
-        if not skip_static_info:
-            _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
-            _update_teams_info(yq, cursor)
-            playoff_start_week = _update_league_scoring_settings(yq, cursor)
-            _update_lineup_settings(yq, cursor)
-            _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
-            _update_league_matchups(yq, cursor, playoff_start_week)
-        else:
-            logging.info("Skipping static league info update as requested.")
-            cursor.execute("SELECT value FROM league_info WHERE key = 'playoff_start_week'")
-            playoff_row = cursor.fetchone()
-            playoff_start_week = int(playoff_row[0]) if playoff_row else 16 # Default if not found
+        _update_db_metadata(cursor)
+        _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
+        _update_teams_info(yq, cursor)
+        playoff_start_week = _update_league_scoring_settings(yq, cursor)
+        _update_lineup_settings(yq, cursor)
+        _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
 
         # Always run lineup updates, but mode depends on 'capture_lineups'
         _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date, capture_lineups)
 
+        _update_league_matchups(yq, cursor, playoff_start_week)
         _update_current_rosters(yq, cursor, conn, league_metadata.num_teams)
         _create_rosters_tall_and_drop_rosters(cursor, conn)
 
         # --- yfa API Call Functions ---
-        if not skip_available_players:
-            _update_free_agents(lg, conn)
-            _update_waivers(lg, conn)
-            _update_rostered_players(lg, conn)
-            # Now, specifically update the timestamp for available players
-            _update_db_metadata(cursor, update_available_players_timestamp=True)
-        else:
-            logging.info("Skipping available players update as requested.")
+        _update_free_agents(lg, conn)
+        _update_waivers(lg, conn)
+        _update_rostered_players(lg, conn)
 
 
         conn.commit()

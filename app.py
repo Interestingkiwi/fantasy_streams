@@ -13,7 +13,7 @@ import os
 import json
 import logging
 import sqlite3
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory, Response
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from yfpy.query import YahooFantasySportsQuery
 import yahoo_fantasy_api as yfa
 from yahoo_oauth import OAuth2
@@ -27,8 +27,7 @@ import shutil
 from collections import defaultdict, Counter
 import itertools
 import copy
-import queue
-import threading
+
 
 # --- Flask App Configuration ---
 # Assume a 'data' directory exists for storing database files
@@ -39,7 +38,6 @@ if not os.path.exists(DATA_DIR):
 SERVER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'server')
 TEST_DB_FILENAME = 'yahoo-22705-Albany Hockey Hooligans Test.db'
 TEST_DB_PATH = os.path.join(SERVER_DIR, TEST_DB_FILENAME)
-log_queue = queue.Queue()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-strong-dev-secret-key-for-local-testing")
@@ -488,18 +486,6 @@ def login():
     authorization_url, state = yahoo.authorization_url(authorization_base_url)
     session['oauth_state'] = state
     return jsonify({'auth_url': authorization_url})
-
-
-@app.route('/stream')
-def stream():
-    def event_stream():
-        while True:
-            message = log_queue.get()
-            if message == "---END---":
-                break
-            yield f"data: {message}\n\n"
-    return Response(event_stream(), mimetype='text/event-stream')
-
 
 @app.route('/callback')
 def callback():
@@ -1078,26 +1064,18 @@ def update_db_route():
     skip_static_info = data.get('skip_static_info', False)
     skip_available_players = data.get('skip_available_players', False)
 
-    def db_worker():
-        # This is where you would ideally pass a logging callback to the db_builder
-        # For now, we will simulate the log messages
-        log_queue.put("Starting database update...")
-        time.sleep(1)
-        log_queue.put("Fetching league settings...")
-        time.sleep(1)
-        log_queue.put("Fetching teams and rosters...")
-        time.sleep(2)
-        log_queue.put("Fetching player stats...")
-        time.sleep(3)
-        log_queue.put("Update complete.")
-        log_queue.put("---END---")
+    result = db_builder.update_league_db(
+        yq, lg, league_id, DATA_DIR,
+        capture_lineups=capture_lineups,
+        skip_static_info=skip_static_info,
+        skip_available_players=skip_available_players
+    )
 
-    thread = threading.Thread(target=db_worker)
-    thread.start()
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 500
 
-    return jsonify({'success': True, 'message': 'Database update started.'})
-
-    
 @app.route('/api/download_db')
 def download_db():
     if session.get('use_test_db'):
