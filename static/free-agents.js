@@ -94,7 +94,7 @@
                 errorDiv.classList.remove('hidden');
                 waiverContainer.innerHTML = '';
                 freeAgentContainer.innerHTML = '';
-                unusedRosterSpotsContainer.innerHTML = '';
+                unusedRosterSpotsContainer.innerHTML = 'Test';
             }
         }
 
