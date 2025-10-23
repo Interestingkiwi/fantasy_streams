@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const timestampText = document.getElementById('timestamp-text');
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
+    const dropdownContainer = document.getElementById('dropdown-container');
 
     let pageData = null; // To store weeks, teams, etc.
 
@@ -37,21 +38,42 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (!response.ok || !data.db_exists) {
-                throw new Error(data.error || 'Database has not been initialized.');
+                // If DB doesn't exist, show a button to retry
+                dropdownContainer.innerHTML = `<button id="reload-dropdowns" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Click Here After Creating Database</button>`;
+                document.getElementById('reload-dropdowns').addEventListener('click', initDropdowns);
+                return; // Stop further execution
             }
+
+            // If DB exists, show and populate dropdowns
+            dropdownContainer.innerHTML = `
+                <select id="week-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                    <option selected>Choose a week</option>
+                </select>
+                <select id="your-team-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                    <option selected>Choose your team</option>
+                </select>
+            `;
 
             pageData = data;
             populateDropdowns();
 
+            // Re-add event listeners after recreating the dropdowns
+            document.getElementById('week-select').addEventListener('change', (e) => {
+                localStorage.setItem('selectedWeek', e.target.value);
+            });
+            document.getElementById('your-team-select').addEventListener('change', (e) => {
+                localStorage.setItem('selectedTeam', e.target.value);
+            });
+
         } catch (error) {
-            console.error('Initialization error for dropdowns:', error);
-            // Optionally hide or disable dropdowns
-            weekSelect.style.display = 'none';
-            yourTeamSelect.style.display = 'none';
+            console.error('Initialization error for dropdowns:', error.message);
         }
     }
 
     function populateDropdowns() {
+        const weekSelect = document.getElementById('week-select');
+        const yourTeamSelect = document.getElementById('your-team-select');
+
         // Populate Weeks
         weekSelect.innerHTML = pageData.weeks.map(week =>
             `<option value="${week.week_num}">
@@ -65,7 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ).join('');
         yourTeamSelect.innerHTML = teamOptions;
 
-        // --- EDITED SECTION ---
         // Restore team selection from localStorage
         const savedTeam = localStorage.getItem('selectedTeam');
         if (savedTeam) {
@@ -91,7 +112,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 weekSelect.value = pageData.current_week;
             }
         }
-        // --- END EDITED SECTION ---
     }
 
     if(logoutButton) {
@@ -102,16 +122,6 @@ document.addEventListener('DOMContentLoaded', () => {
         getTimestamp();
     }
 
-    // Add event listeners to save dropdown values
-    weekSelect.addEventListener('change', () => {
-        localStorage.setItem('selectedWeek', weekSelect.value);
-    });
-
-    yourTeamSelect.addEventListener('change', () => {
-        localStorage.setItem('selectedTeam', yourTeamSelect.value);
-    });
-
-
-    // Initialize the dropdowns
+    // Initialize the dropdowns on page load
     initDropdowns();
 });

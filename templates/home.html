@@ -33,15 +33,16 @@
                     <p class="text-gray-400 text-xs">Projection data is sourced by reddit user: <a href="https://www.reddit.com/r/fantasyhockey/comments/1n1wsqc/dtz_20252026_nhl_projections/" target="_blank" class="text-blue-400 hover:underline">Datsyuktozetterberg</a></p>
                 </main>
                 <div class="flex items-center gap-2">
-                    <select id="week-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
-                        <option selected>Choose a week</option>
-                    </select>
-                    <select id="your-team-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
-                        <option selected>Choose your team</option>
-                    </select>
+                    <div id="dropdown-container">
+                        <select id="week-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                            <option selected>Choose a week</option>
+                        </select>
+                        <select id="your-team-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                            <option selected>Choose your team</option>
+                        </select>
+                    </div>
                 </div>
-            </div>
-
+                
             <button id="logout-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 ease-in-out">
                 Logout
             </button>
