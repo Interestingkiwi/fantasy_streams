@@ -71,7 +71,7 @@
     function populateDropdowns() {
         // Populate Weeks
         weekSelect.innerHTML = pageData.weeks.map(week =>
-            `<option value="${week.week_num}" ${week.week_num === pageData.current_week ? 'selected' : ''}>
+            `<option value="${week.week_num}">
                 Week ${week.week_num} (${week.start_date} to ${week.end_date})
             </option>`
         ).join('');
@@ -81,6 +81,22 @@
             `<option value="${team.name}">${team.name}</option>`
         ).join('');
         yourTeamSelect.innerHTML = teamOptions;
+
+        // --- EDITED SECTION ---
+        // Restore saved selections from localStorage
+        const savedWeek = localStorage.getItem('selectedWeek');
+        if (savedWeek) {
+            weekSelect.value = savedWeek;
+        } else {
+            // Fallback to current week if nothing is saved
+            weekSelect.value = pageData.current_week;
+        }
+
+        const savedTeam = localStorage.getItem('selectedTeam');
+        if (savedTeam) {
+            yourTeamSelect.value = savedTeam;
+        }
+        // --- END EDITED SECTION ---
     }
 
     async function fetchAndRenderTable() {
@@ -135,7 +151,7 @@
         for (const dayString in dailyLineups) {
             const lineup = dailyLineups[dayString];
             const dayName = dayString.split(',')[0]; // e.g., "Monday"
-            const dayAbbr = dayAbbrMap[dayName];     // e.g., "Mon"
+            const dayAbbr = dayAbbrMap[dayName];   // e.g., "Mon"
 
             if (dayAbbr) {
                 for (const position in lineup) {
