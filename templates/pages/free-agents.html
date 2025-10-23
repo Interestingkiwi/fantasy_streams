@@ -19,12 +19,12 @@
     </div>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <div id="waiver-players-container"></div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div id="waiver-players-container" class="lg:col-span-2"></div>
 
     <div id="unused-roster-spots-container"></div>
 
-    <div id="free-agent-players-container" class="lg:col-span-2"></div>
+    <div id="free-agent-players-container" class="lg:col-span-3"></div>
 </div>
 
 <script src="{{ url_for('static', filename='free-agents.js') }}"></script>
