@@ -83,18 +83,27 @@
         yourTeamSelect.innerHTML = teamOptions;
 
         // --- EDITED SECTION ---
-        // Restore saved selections from localStorage
-        const savedWeek = localStorage.getItem('selectedWeek');
-        if (savedWeek) {
-            weekSelect.value = savedWeek;
-        } else {
-            // Fallback to current week if nothing is saved
-            weekSelect.value = pageData.current_week;
-        }
-
+        // Restore team selection from localStorage
         const savedTeam = localStorage.getItem('selectedTeam');
         if (savedTeam) {
             yourTeamSelect.value = savedTeam;
+        }
+
+        // Check if a session has started to handle the week selection
+        if (!sessionStorage.getItem('fantasySessionStarted')) {
+            // This is a new session. Default to the current week.
+            const currentWeek = pageData.current_week;
+            weekSelect.value = currentWeek;
+            localStorage.setItem('selectedWeek', currentWeek);
+            sessionStorage.setItem('fantasySessionStarted', 'true');
+        } else {
+            // A session is active. Restore from localStorage.
+            const savedWeek = localStorage.getItem('selectedWeek');
+            if (savedWeek) {
+                weekSelect.value = savedWeek;
+            } else {
+                weekSelect.value = pageData.current_week;
+            }
         }
         // --- END EDITED SECTION ---
     }

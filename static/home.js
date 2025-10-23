@@ -54,19 +54,33 @@ document.addEventListener('DOMContentLoaded', () => {
         ).join('');
         yourTeamSelect.innerHTML = teamOptions;
 
-        // Restore and set default dropdown values
-        const savedWeek = localStorage.getItem('selectedWeek');
-        if (savedWeek) {
-            weekSelect.value = savedWeek;
-        } else {
-            // Set to current week if nothing is saved
-            weekSelect.value = pageData.current_week;
-        }
-
+        // --- EDITED SECTION ---
+        // Restore team selection from localStorage
         const savedTeam = localStorage.getItem('selectedTeam');
         if (savedTeam) {
             yourTeamSelect.value = savedTeam;
         }
+
+        // Check if a session has started to handle the week selection
+        if (!sessionStorage.getItem('fantasySessionStarted')) {
+            // This is a new session. Default to the current week.
+            const currentWeek = pageData.current_week;
+            weekSelect.value = currentWeek;
+            // Save it to localStorage so it persists during navigation
+            localStorage.setItem('selectedWeek', currentWeek);
+            // Mark the session as started
+            sessionStorage.setItem('fantasySessionStarted', 'true');
+        } else {
+            // A session is active. Restore the last selected week from localStorage.
+            const savedWeek = localStorage.getItem('selectedWeek');
+            if (savedWeek) {
+                weekSelect.value = savedWeek;
+            } else {
+                 // As a fallback, use the current week if nothing is in localStorage
+                weekSelect.value = pageData.current_week;
+            }
+        }
+        // --- END EDITED SECTION ---
     }
 
     if(logoutButton) {
