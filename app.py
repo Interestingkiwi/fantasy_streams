@@ -385,6 +385,7 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
                     for other_pos in eligible:
                         current_val = open_slots.get(other_pos)
                         if current_val is not None:
+                            # Safely check the value before comparing
                             numeric_val = int(str(current_val).replace('*',''))
                             if numeric_val > 0:
                                 open_slots[pos] = f"{open_slots[pos]}*"
@@ -957,9 +958,12 @@ def get_free_agent_data():
     try:
         cursor = conn.cursor()
 
+        # **FIX**: Use silent=True to avoid an error on empty POST requests
+        request_data = request.get_json(silent=True)
+
         # Determine which categories to use for ranking
-        if request.method == 'POST' and request.get_json() and 'categories' in request.get_json():
-            scoring_categories = request.get_json()['categories']
+        if request.method == 'POST' and request_data and 'categories' in request_data:
+            scoring_categories = request_data['categories']
         else:
             cursor.execute("SELECT category FROM scoring")
             scoring_categories = [row['category'] for row in cursor.fetchall()]
@@ -996,7 +1000,7 @@ def get_free_agent_data():
 
         return jsonify({
             'waiver_players': waiver_players,
-            'free_agents': free_agents,
+            'free_agents': free_agents, # Send the full list
             'scoring_categories': all_scoring_categories,
             'ranked_categories': scoring_categories # The categories used for this ranking
         })
