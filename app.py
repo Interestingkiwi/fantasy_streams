@@ -28,6 +28,7 @@ from collections import defaultdict, Counter
 import itertools
 import copy
 from queue import Queue
+import threading
 
 
 # --- Flask App Configuration ---
@@ -58,7 +59,7 @@ class QueueLogHandler(logging.Handler):
 
 # Add the queue handler to the root logger
 queue_handler = QueueLogHandler(log_queue)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter('%(message)s')
 queue_handler.setFormatter(formatter)
 logging.getLogger().addHandler(queue_handler)
 
@@ -1066,16 +1067,32 @@ def get_free_agent_data():
         if conn:
             conn.close()
 
-
 @app.route('/stream')
 def stream():
     def event_stream():
         while True:
-            # Wait for a message to be put on the queue
             message = log_queue.get()
+            if message is None:
+                break
             yield f"data: {message}\n\n"
     return Response(event_stream(), mimetype='text/event-stream')
 
+def update_db_in_background(yq, lg, league_id, data_dir, capture_lineups, skip_static_info, skip_available_players):
+    """Function to run in a separate thread."""
+    try:
+        db_builder.update_league_db(
+            yq, lg, league_id, data_dir,
+            capture_lineups=capture_lineups,
+            skip_static_info=skip_static_info,
+            skip_available_players=skip_available_players
+        )
+        log_queue.put("SUCCESS: Database update complete.")
+    except Exception as e:
+        logging.error(f"Error in background DB update: {e}", exc_info=True)
+        log_queue.put(f"ERROR: {e}")
+    finally:
+        # Signal the end of the stream
+        log_queue.put(None)
 
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
@@ -1093,17 +1110,15 @@ def update_db_route():
     skip_static_info = data.get('skip_static_info', False)
     skip_available_players = data.get('skip_available_players', False)
 
-    result = db_builder.update_league_db(
-        yq, lg, league_id, DATA_DIR,
-        capture_lineups=capture_lineups,
-        skip_static_info=skip_static_info,
-        skip_available_players=skip_available_players
+    # Run the database update in a background thread
+    thread = threading.Thread(
+        target=update_db_in_background,
+        args=(yq, lg, league_id, DATA_DIR, capture_lineups, skip_static_info, skip_available_players)
     )
+    thread.start()
 
-    if result['success']:
-        return jsonify(result)
-    else:
-        return jsonify(result), 500
+    return jsonify({'success': True, 'message': 'Database update started.'})
+
 
 @app.route('/api/download_db')
 def download_db():
@@ -1151,7 +1166,7 @@ def db_timestamp():
     league_id = session.get('league_id')
     conn, error_msg = get_db_connection_for_league(league_id)
     if not conn:
-        return jsonify({'error': error_.message or "Database not found."}), 404
+        return jsonify({'error': error_msg or "Database not found."}), 404
 
     try:
         cursor = conn.cursor()
