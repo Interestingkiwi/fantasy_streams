@@ -13,7 +13,7 @@
         // if (data.error) {
         //     throw new Error(data.error);
         // }
-        dbContent.innerHTML = '<p class="text-gray-400">Database inspection is not yet implemented.</p>';
+        dbContent.innerHTML = '<p class="text-gray-400"></p>';
 
     } catch (error) {
         dbContent.innerHTML = `<p class="text-red-400">Error loading database content: ${error.message}</p>`;
