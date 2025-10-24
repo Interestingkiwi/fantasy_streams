@@ -227,8 +227,15 @@ def get_optimal_lineup(players, lineup_settings):
     Calculates the optimal lineup using a three-pass greedy algorithm that prioritizes
     maximizing player starts and then optimizing for the best rank.
     """
+    processed_players = []
+    for p in players:
+        player_copy = p.copy()
+        if player_copy.get('total_rank') is None:
+            player_copy['total_rank'] = 60
+        processed_players.append(player_copy)
+
     ranked_players = sorted(
-        [p for p in players if 'total_rank' in p and p['total_rank'] is not None],
+        processed_players,
         key=lambda p: p['total_rank']
     )
 
@@ -304,7 +311,6 @@ def get_optimal_lineup(players, lineup_settings):
                 break # Move to the next benched player
 
     return lineup
-
 
 def _get_ranked_roster_for_week(cursor, team_id, week_num):
     """
