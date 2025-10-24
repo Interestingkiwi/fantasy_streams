@@ -13,7 +13,7 @@ import os
 import json
 import logging
 import sqlite3
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
+from flask import Flask, Response, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from yfpy.query import YahooFantasySportsQuery
 import yahoo_fantasy_api as yfa
 from yahoo_oauth import OAuth2
@@ -27,6 +27,7 @@ import shutil
 from collections import defaultdict, Counter
 import itertools
 import copy
+from queue import Queue
 
 
 # --- Flask App Configuration ---
@@ -41,7 +42,25 @@ TEST_DB_PATH = os.path.join(SERVER_DIR, TEST_DB_FILENAME)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-strong-dev-secret-key-for-local-testing")
+# Configure root logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- Logging Queue for Streaming ---
+log_queue = Queue()
+
+class QueueLogHandler(logging.Handler):
+    def __init__(self, queue):
+        super().__init__()
+        self.queue = queue
+
+    def emit(self, record):
+        self.queue.put(self.format(record))
+
+# Add the queue handler to the root logger
+queue_handler = QueueLogHandler(log_queue)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+queue_handler.setFormatter(formatter)
+logging.getLogger().addHandler(queue_handler)
 
 # --- Yahoo OAuth2 Settings ---
 authorization_base_url = 'https://api.login.yahoo.com/oauth2/request_auth'
@@ -1048,6 +1067,16 @@ def get_free_agent_data():
             conn.close()
 
 
+@app.route('/stream')
+def stream():
+    def event_stream():
+        while True:
+            # Wait for a message to be put on the queue
+            message = log_queue.get()
+            yield f"data: {message}\n\n"
+    return Response(event_stream(), mimetype='text/event-stream')
+
+
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
     yq = get_yfpy_instance()
@@ -1122,7 +1151,7 @@ def db_timestamp():
     league_id = session.get('league_id')
     conn, error_msg = get_db_connection_for_league(league_id)
     if not conn:
-        return jsonify({'error': error_msg or "Database not found."}), 404
+        return jsonify({'error': error_.message or "Database not found."}), 404
 
     try:
         cursor = conn.cursor()
