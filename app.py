@@ -701,7 +701,7 @@ def get_matchup_stats():
             'team2': {'live': {cat: 0 for cat in all_categories_to_fetch}, 'row': {}}
         }
 
-for row in live_stats_decoded:
+        for row in live_stats_decoded:
           team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
           if row['category'] in all_categories_to_fetch:
               stats[team_key]['live'][row['category']] = row.get('total', 0)
