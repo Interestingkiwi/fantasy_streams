@@ -6,11 +6,11 @@
     const statusText = document.getElementById('db-status-text');
     const actionButton = document.getElementById('db-action-button');
     const captureLineupsCheckbox = document.getElementById('capture-daily-lineups');
-    const skipStaticInfoCheckbox = document.getElementById('skip-static-info');
-    const skipAvailablePlayersCheckbox = document.getElementById('skip-available-players');
+/*    const skipStaticInfoCheckbox = document.getElementById('skip-static-info');
+    const skipAvailablePlayersCheckbox = document.getElementById('skip-available-players'); */
     const logContainer = document.getElementById('log-container'); // Get the new log container
 
-    if (!statusText || !actionButton || !captureLineupsCheckbox || !skipStaticInfoCheckbox || !skipAvailablePlayersCheckbox || !logContainer) {
+    if (!statusText || !actionButton || !captureLineupsCheckbox || /*!skipStaticInfoCheckbox || !skipAvailablePlayersCheckbox ||*/ !logContainer) {
         console.error('Database page elements not found.');
         return;
     }

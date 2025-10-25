@@ -701,10 +701,31 @@ def get_matchup_stats():
             'team2': {'live': {cat: 0 for cat in all_categories_to_fetch}, 'row': {}}
         }
 
-        for row in live_stats_decoded:
-            team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
-            if row['category'] in all_categories_to_fetch:
-                stats[team_key]['live'][row['category']] = row.get('total', 0)
+for row in live_stats_decoded:
+          team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
+          if row['category'] in all_categories_to_fetch:
+              stats[team_key]['live'][row['category']] = row.get('total', 0)
+
+      # --- [START] NEW BLOCK: Calculate Live Derived Stats & Apply SHO Fix ---
+        for team_key in ['team1', 'team2']:
+          live_stats = stats[team_key]['live']
+
+          # Apply TOI/G fix for shutouts
+          # This assumes daily_player_stats stores 0 TOI/G for shutouts,
+          # but does store 1.0 for the SHO category itself.
+          if 'SHO' in live_stats and live_stats['SHO'] > 0:
+              # live_stats['SHO'] is the SUM of shutouts (e.g., 2.0)
+              # We add 60 minutes to TOI/G for *each* shutout.
+              live_stats['TOI/G'] += (live_stats['SHO'] * 60)
+
+          # Re-calculate live GAA and SVpct based on summed components
+          # The values from the DB are just sums of daily GAA/SVpct, which is incorrect.
+          if 'GAA' in live_stats:
+              live_stats['GAA'] = (live_stats.get('GA', 0) * 60) / live_stats['TOI/G'] if live_stats.get('TOI/G', 0) > 0 else 0
+
+          if 'SVpct' in live_stats:
+              live_stats['SVpct'] = live_stats.get('SV', 0) / live_stats['SA'] if live_stats.get('SA', 0) > 0 else 0
+              # --- [END] NEW BLOCK ---
 
         # --- Calculate ROW (Rest of Week) Stats ---
         stats['team1']['row'] = copy.deepcopy(stats['team1']['live'])
