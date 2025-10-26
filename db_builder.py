@@ -1214,7 +1214,8 @@ def _update_db_metadata(cursor, update_available_players_timestamp=False):
         logging.info("Successfully updated general db_metadata timestamp.")
 
 
-def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False, skip_static_info=False, skip_available_players=False):
+#def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False, skip_static_info=False, skip_available_players=False):
+def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
     """
     Creates or updates the league-specific SQLite database by calling
     individual query and update functions.
@@ -1254,18 +1255,18 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False, skip_st
         _create_tables(cursor)
         _update_db_metadata(cursor) # This will set the main 'last_updated' timestamp
 
-        if not skip_static_info:
-            _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
-            _update_teams_info(yq, cursor)
-            playoff_start_week = _update_league_scoring_settings(yq, cursor)
-            _update_lineup_settings(yq, cursor)
-            _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
-            _update_league_matchups(yq, cursor, playoff_start_week)
-        else:
-            logging.info("Skipping static league info update as requested.")
-            cursor.execute("SELECT value FROM league_info WHERE key = 'playoff_start_week'")
-            playoff_row = cursor.fetchone()
-            playoff_start_week = int(playoff_row[0]) if playoff_row else 16 # Default if not found
+#        if not skip_static_info:
+        _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata)
+        _update_teams_info(yq, cursor)
+        playoff_start_week = _update_league_scoring_settings(yq, cursor)
+        _update_lineup_settings(yq, cursor)
+        _update_fantasy_weeks(yq, cursor, league_metadata.league_key)
+        _update_league_matchups(yq, cursor, playoff_start_week)
+#        else:
+#            logging.info("Skipping static league info update as requested.")
+#            cursor.execute("SELECT value FROM league_info WHERE key = 'playoff_start_week'")
+#            playoff_row = cursor.fetchone()
+#            playoff_start_week = int(playoff_row[0]) if playoff_row else 16 # Default if not found
 
         # Always run lineup updates, but mode depends on 'capture_lineups'
         _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date, capture_lineups)
@@ -1274,14 +1275,14 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False, skip_st
         _create_rosters_tall_and_drop_rosters(cursor, conn)
 
         # --- yfa API Call Functions ---
-        if not skip_available_players:
-            _update_free_agents(lg, conn)
-            _update_waivers(lg, conn)
-            _update_rostered_players(lg, conn)
-            # Now, specifically update the timestamp for available players
-            _update_db_metadata(cursor, update_available_players_timestamp=True)
-        else:
-            logging.info("Skipping available players update as requested.")
+#        if not skip_available_players:
+        _update_free_agents(lg, conn)
+        _update_waivers(lg, conn)
+        _update_rostered_players(lg, conn)
+        # Now, specifically update the timestamp for available players
+        _update_db_metadata(cursor, update_available_players_timestamp=True)
+#        else:
+#            logging.info("Skipping available players update as requested.")
 
 
         conn.commit()
