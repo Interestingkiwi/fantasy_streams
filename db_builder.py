@@ -1247,6 +1247,24 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False):
         db_filename = f"yahoo-{league_id}-{sanitized_name}.db"
         db_path = os.path.join(data_dir, db_filename)
 
+        # --- NEW CONDITIONAL DELETION ---
+        if capture_lineups:
+            logging.info("Full mode selected (capture_lineups=True). Checking for existing database file...")
+            if os.path.exists(db_path):
+                try:
+                    logging.warning(f"Deleting existing database file: {db_path}")
+                    os.remove(db_path)
+                    logging.info("Existing database file deleted successfully.")
+                except OSError as e:
+                    logging.error(f"Error deleting database file {db_path}: {e}", exc_info=True)
+                    # Decide if you want to stop the script here or try to continue
+                    # return {'success': False, 'error': f"Could not delete existing DB file: {e}"}
+            else:
+                logging.info("No existing database file found to delete.")
+        else:
+            logging.info("Update mode selected (capture_lineups=False). Existing database file will be updated.")
+        # --- END NEW CONDITIONAL DELETION ---
+
         logging.info(f"Connecting to database: {db_path}")
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
