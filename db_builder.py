@@ -463,9 +463,10 @@ def _create_tables(cursor):
     #daily_lineups_dump
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS daily_lineups_dump (
-          date_ TEXT NOT NULL,
-          team_id INTEGER NOT NULL,
-          c1 TEXT,
+          lineup_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date_ TEXT NOT NULL,
+          team_id INTEGER NOT NULL,
+          c1 TEXT,
           c2 TEXT,
           l1 TEXT,
           l2 TEXT,
@@ -500,8 +501,7 @@ def _create_tables(cursor):
           i2 TEXT,
           i3 TEXT,
           i4 TEXT,
-          i5 TEXT,
-          PRIMARY KEY (date_, team_id)
+          i5 TEXT
         )
     ''')
     #players - will be imported from static db later
@@ -718,7 +718,7 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, league_start_date, is_ful
             # CHECKED: full history from league start or last entry
             start_date_for_fetch = league_start_date
             if last_fetch_date_plus_one:
-                    start_date_for_fetch = last_fetch_date_plus_one
+                 start_date_for_fetch = last_fetch_date_plus_one
 
             if last_fetch_date_str:
                 logging.info(f"Capture Daily Lineups is CHECKED. Resuming full history fetch from {start_date_for_fetch}.")
@@ -726,32 +726,22 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, league_start_date, is_ful
                 logging.info(f"Capture Daily Lineups is CHECKED. Starting full history fetch from league start date: {start_date_for_fetch}.")
         else:
             # UNCHECKED: current week or last entry, whichever is newer
-            current_week_start_date_str = _get_current_week_start_date(cursor)
-
-            # --- MODIFICATION: Calculate one day *before* the week start to catch Sundays ---
-            current_week_start_obj = date.fromisoformat(current_week_start_date_str)
-            start_of_week_minus_one_obj = current_week_start_obj - timedelta(days=1)
-            start_of_week_minus_one_str = start_of_week_minus_one_obj.isoformat()
-            # --- END MODIFICATION ---
+            current_week_start_date = _get_current_week_start_date(cursor)
 
             if last_fetch_date_plus_one:
-                # --- MODIFIED: Use the new date string in the max() function ---
-                start_date_for_fetch = max(start_of_week_minus_one_str, last_fetch_date_plus_one)
-                logging.info(f"Capture Daily Lineups is UNCHECKED. Resuming from more recent of week start-1 ({start_of_week_minus_one_str}) or last fetch+1 ({last_fetch_date_plus_one}): {start_date_for_fetch}.")
+                start_date_for_fetch = max(current_week_start_date, last_fetch_date_plus_one)
+                logging.info(f"Capture Daily Lineups is UNCHECKED. Resuming from more recent of week start ({current_week_start_date}) or last fetch+1 ({last_fetch_date_plus_one}): {start_date_for_fetch}.")
             else:
-                # --- MODIFIED: Use the new date string as the fallback ---
-                start_date_for_fetch = start_of_week_minus_one_str
-                logging.info(f"No existing lineup data. Capture is UNCHECKED, starting from current week start date - 1 day: {start_date_for_fetch}.")
+                start_date_for_fetch = current_week_start_date
+                logging.info(f"No existing lineup data. Capture is UNCHECKED, starting from current week start date: {start_date_for_fetch}.")
 
 
         team_id = 1
-        # stop_date is today. The loop runs *until* today (current_date < stop_date)
-        # This correctly fetches all data up to and including yesterday.
         stop_date = date.today().isoformat()
         lineup_data_to_insert = []
 
         if start_date_for_fetch >= stop_date:
-            logging.info(f"Daily lineups are already up to date (Start: {start_date_for_fetch}, Stop: {stop_date}).")
+            logging.info("Daily lineups are already up to date.")
             return
 
         while team_id <= num_teams:
@@ -830,7 +820,7 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, league_start_date, is_ful
 
         placeholders = ', '.join(['?'] * 38)
         sql = f"""
-            INSERT OR REPLACE INTO daily_lineups_dump (
+            INSERT INTO daily_lineups_dump (
                 date_, team_id, c1, c2, l1, l2, r1, r2, d1, d2, d3, d4, g1, g2,
                 b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
                 b16, b17, b18, b19, i1, i2, i3, i4, i5
@@ -839,9 +829,10 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, league_start_date, is_ful
 
 
         cursor.executemany(sql, lineup_data_to_insert)
-        logging.info(f"Successfully inserted or replaced data for {len(lineup_data_to_insert)} dates.")
+        logging.info(f"Successfully inserted or ignored data for {len(lineup_data_to_insert)} dates.")
     except Exception as e:
         logging.error(f"Failed to update lineup info: {e}", exc_info=True)
+
 
 def _update_player_id(yq, cursor):
     """
@@ -1248,6 +1239,12 @@ def update_league_db(yq, lg, league_id, data_dir, capture_lineups=False, skip_st
             league_name_str = league_name_str.decode('utf-8', 'ignore')
 
         sanitized_name = re.sub(r'[\\/*?:"<>|]', "", league_name_str)
+
+        # Clean up any old database files for this league ID
+        for f in os.listdir(data_dir):
+            if f.startswith(f"yahoo-{league_id}-") and f.endswith(".db"):
+                logging.info(f"Removing old database file: {f}")
+                os.remove(os.path.join(data_dir, f))
 
         db_filename = f"yahoo-{league_id}-{sanitized_name}.db"
         db_path = os.path.join(data_dir, db_filename)
