@@ -93,10 +93,18 @@ def get_yfpy_instance():
     if 'yahoo_token' not in session:
         return None
 
+    # Dev mode will have a mock token, which is fine for bypassing checks
+    # but will fail on actual API calls, which is expected.
+    if session.get('dev_mode'):
+        logging.info("Dev mode: Skipping real yfpy init.")
+        # Return a mock object or None, depending on what's safer.
+        # Let's try to initialize it; it will fail on use, which is fine.
+        pass # Fall through to normal init, it will use the 'dev_token'
+
     token = session['yahoo_token']
     auth_data = {
-        'consumer_key': session['consumer_key'],
-        'consumer_secret': session['consumer_secret'],
+        'consumer_key': session.get('consumer_key', 'dev_key'), # Add defaults for dev_mode
+        'consumer_secret': session.get('consumer_secret', 'dev_secret'), # Add defaults for dev_mode
         'access_token': token.get('access_token'),
         'refresh_token': token.get('refresh_token'),
         'token_type': token.get('token_type', 'bearer'),
@@ -111,13 +119,17 @@ def get_yfpy_instance():
         )
         return yq
     except Exception as e:
-        logging.error(f"Failed to init yfpy: {e}", exc_info=True)
+        logging.error(f"Failed to init yfpy (expected in dev mode): {e}", exc_info=True)
         return None
 
 def get_yfa_lg_instance():
     """Helper function to get an authenticated yfa league instance."""
     if 'yahoo_token' not in session:
         return None
+
+    if session.get('dev_mode'):
+        logging.info("Dev mode: Skipping real yfa init.")
+        return None # YFA logic is more complex, safer to return None.
 
     token = session['yahoo_token']
     consumer_key = session.get('consumer_key')
@@ -497,7 +509,25 @@ def home():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-    session['league_id'] = data.get('league_id')
+    league_id = data.get('league_id')
+
+    # --- [START] DEV CODE BYPASS ---
+    if league_id == '99999':
+        session['league_id'] = '22705' # Use the test DB's league ID
+        session['use_test_db'] = True
+        session['dev_mode'] = True
+        # Create a mock token to pass authentication checks
+        session['yahoo_token'] = {
+            'access_token': 'dev_token',
+            'refresh_token': 'dev_refresh',
+            'expires_at': time.time() + 3600
+        }
+        logging.info("Developer login successful using code 99999. Using test DB.")
+        # Send a specific response for the frontend to handle
+        return jsonify({'dev_login': True, 'redirect_url': url_for('home')})
+    # --- [END] DEV CODE BYPASS ---
+
+    session['league_id'] = league_id # Original logic
     session['consumer_key'] = os.environ.get("YAHOO_CONSUMER_KEY")
     session['consumer_secret'] = os.environ.get("YAHOO_CONSUMER_SECRET")
 
@@ -511,6 +541,7 @@ def login():
     yahoo = OAuth2Session(session['consumer_key'], redirect_uri=redirect_uri)
     authorization_url, state = yahoo.authorization_url(authorization_base_url)
     session['oauth_state'] = state
+    # Original response
     return jsonify({'auth_url': authorization_url})
 
 @app.route('/callback')
@@ -1124,6 +1155,9 @@ def update_db_in_background(yq, lg, league_id, data_dir, capture_lineups):
 
 @app.route('/api/update_db', methods=['POST'])
 def update_db_route():
+    if session.get('dev_mode'):
+        return jsonify({'success': False, 'error': 'Database updates are disabled in dev mode.'}), 403
+
     yq = get_yfpy_instance()
     lg = get_yfa_lg_instance()
     if not yq or not lg:
@@ -1185,9 +1219,15 @@ def api_settings():
     elif request.method == 'POST':
         data = request.get_json()
         use_test_db = data.get('use_test_db', False)
-        session['use_test_db'] = use_test_db
-        logging.info(f"Test DB mode set to: {use_test_db}")
-        return jsonify({'success': True, 'use_test_db': use_test_db})
+
+        # Dev mode forces the test DB on, don't let it be turned off
+        if session.get('dev_mode'):
+             session['use_test_db'] = True
+        else:
+            session['use_test_db'] = use_test_db
+
+        logging.info(f"Test DB mode set to: {session['use_test_db']}")
+        return jsonify({'success': True, 'use_test_db': session['use_test_db']})
 
 @app.route('/api/db_timestamp')
 def db_timestamp():
