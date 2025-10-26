@@ -460,59 +460,54 @@ def _create_tables(cursor):
             manager_nickname TEXT
         )
     ''')
+
     #daily_lineups_dump
+    # This version is cleaned of any invisible characters and
+    # uses the correct (date_, team_id) Primary Key.
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS daily_lineups_dump (
-          date_ TEXT NOT NULL,
-          team_id INTEGER NOT NULL,
-          c1 TEXT,
-          c2 TEXT,
-          l1 TEXT,
-          l2 TEXT,
-          r1 TEXT,
-          r2 TEXT,
-          d1 TEXT,
-          d2 TEXT,
-          d3 TEXT,
-          d4 TEXT,
-          g1 TEXT,
-          g2 TEXT,
-          b1 TEXT,
-          b2 TEXT,
-          b3 TEXT,
-          b4 TEXT,
-          b5 TEXT,
-          b6 TEXT,
-          b7 TEXT,
-          b8 TEXT,
-          b9 TEXT,
-          b10 TEXT,
-          b11 TEXT,
-          b12 TEXT,
-          b13 TEXT,
-          b14 TEXT,
-          b15 TEXT,
-          b16 TEXT,
-          b17 TEXT,
-          b18 TEXT,
-          b19 TEXT,
-          i1 TEXT,
-          i2 TEXT,
-          i3 TEXT,
-          i4 TEXT,
-          i5 TEXT,
-          PRIMARY KEY (date_, team_id)
+            date_ TEXT NOT NULL,
+            team_id INTEGER NOT NULL,
+            c1 TEXT,
+            c2 TEXT,
+            l1 TEXT,
+            l2 TEXT,
+            r1 TEXT,
+            r2 TEXT,
+            d1 TEXT,
+            d2 TEXT,
+            d3 TEXT,
+            d4 TEXT,
+            g1 TEXT,
+            g2 TEXT,
+            b1 TEXT,
+            b2 TEXT,
+            b3 TEXT,
+            b4 TEXT,
+            b5 TEXT,
+            b6 TEXT,
+            b7 TEXT,
+            b8 TEXT,
+            b9 TEXT,
+            b10 TEXT,
+            b11 TEXT,
+            b12 TEXT,
+            b13 TEXT,
+            b14 TEXT,
+            b15 TEXT,
+            b16 TEXT,
+            b17 TEXT,
+            b18 TEXT,
+            b19 TEXT,
+            i1 TEXT,
+            i2 TEXT,
+            i3 TEXT,
+            i4 TEXT,
+            i5 TEXT,
+            PRIMARY KEY (date_, team_id)
         )
     ''')
-    #players - will be imported from static db later
-#    cursor.execute('''
-#        CREATE TABLE IF NOT EXISTS players (
-#            player_id TEXT NOT NULL UNIQUE,
-#            player_name TEXT NOT NULL,
-#            player_team TEXT,
-#            player_name_normalized TEXT NOT NULL
-#        )
-#    ''')
+
     #scoring
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scoring (
@@ -609,7 +604,6 @@ def _create_tables(cursor):
             value TEXT
         )
     ''')
-
 
 def _update_league_info(yq, cursor, league_id, league_name, league_metadata):
     """
