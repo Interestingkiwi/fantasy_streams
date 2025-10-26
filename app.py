@@ -1104,14 +1104,15 @@ def stream():
             yield f"data: {message}\n\n"
     return Response(event_stream(), mimetype='text/event-stream')
 
-def update_db_in_background(yq, lg, league_id, data_dir, capture_lineups, skip_static_info, skip_available_players):
+#def update_db_in_background(yq, lg, league_id, data_dir, capture_lineups, skip_static_info, skip_available_players):
+def update_db_in_background(yq, lg, league_id, data_dir, capture_lineups):
     """Function to run in a separate thread."""
     try:
         db_builder.update_league_db(
             yq, lg, league_id, data_dir,
-            capture_lineups=capture_lineups,
-            skip_static_info=skip_static_info,
-            skip_available_players=skip_available_players
+            capture_lineups=capture_lineups#,
+#            skip_static_info=skip_static_info,
+#            skip_available_players=skip_available_players
         )
         log_queue.put("SUCCESS: Database update complete.")
     except Exception as e:
@@ -1134,13 +1135,13 @@ def update_db_route():
 
     data = request.get_json() or {}
     capture_lineups = data.get('capture_lineups', False)
-    skip_static_info = data.get('skip_static_info', False)
-    skip_available_players = data.get('skip_available_players', False)
+#    skip_static_info = data.get('skip_static_info', False)
+#    skip_available_players = data.get('skip_available_players', False)
 
     # Run the database update in a background thread
     thread = threading.Thread(
         target=update_db_in_background,
-        args=(yq, lg, league_id, DATA_DIR, capture_lineups, skip_static_info, skip_available_players)
+        args=(yq, lg, league_id, DATA_DIR, capture_lineups)#, skip_static_info, skip_available_players)
     )
     thread.start()
 
