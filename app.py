@@ -392,7 +392,9 @@ def _get_ranked_roster_for_week(cursor, team_id, week_num):
                 player['total_rank'] = round(total_rank, 2)
             else:
                 player['total_rank'] = None # Use None for JSON compatibility
-
+            if stats:
+                for col in cat_rank_columns:
+                    player[col] = stats.get(col) if stats.get(col) is not None else None
     return active_players
 
 def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
@@ -403,6 +405,7 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
     unused_spots_data = {}
     position_order = ['C', 'LW', 'RW', 'D', 'G']
 
+    today = date.today()
     for day_date in days_in_week:
         day_str = day_date.strftime('%Y-%m-%d')
         day_name = day_date.strftime('%a')
@@ -411,7 +414,10 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
 
         daily_lineup = get_optimal_lineup(players_playing_today, lineup_settings)
 
-        open_slots = {pos: lineup_settings.get(pos, 0) - len(daily_lineup.get(pos, [])) for pos in position_order}
+        if day_date < today:
+            open_slots = {pos: '-' for pos in position_order}
+        else:
+            open_slots = {pos: lineup_settings.get(pos, 0) - len(daily_lineup.get(pos, [])) for pos in position_order}
 
         # Asterisk logic: check if a starter could move to an open slot
         for pos, players in daily_lineup.items():
@@ -892,6 +898,14 @@ def get_roster_data():
     try:
         cursor = conn.cursor()
 
+        cursor.execute("SELECT category FROM scoring")
+        all_scoring_categories = [row['category'] for row in cursor.fetchall()]
+
+        checked_categories = data.get('categories')
+        if checked_categories is None:
+            checked_categories = all_scoring_categories
+
+        unchecked_categories = [cat for cat in all_scoring_categories if cat not in checked_categories]
         # Get team ID
         cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
         team_id_row = cursor.fetchone()
@@ -962,6 +976,24 @@ def get_roster_data():
                 player['games_this_week'] = []
                 player['game_dates_this_week'] = []
 
+            p_stats = player_stats.get(player['player_name_normalized'])
+            new_total_rank = 0
+            if p_stats:
+                for cat in all_scoring_categories:
+                    rank_key = f"{cat}_cat_rank"
+                    rank_value = p_stats.get(rank_key)
+
+                    # Store individual rank for the table
+                    player[rank_key] = round(rank_value, 2) if rank_value is not None else None
+
+                    # Calculate custom total_rank
+                    if rank_value is not None:
+                        if cat in unchecked_categories:
+                            new_total_rank += rank_value / 2.0
+                        else:
+                            new_total_rank += rank_value
+            player['total_rank'] = round(new_total_rank, 2) if p_stats else None
+
             # Add category ranks for all players (active and inactive)
             p_stats = player_stats.get(player['player_name_normalized'])
             if p_stats:
@@ -995,7 +1027,10 @@ def get_roster_data():
             ]
 
             if players_playing_today:
-                optimal_lineup_for_day = get_optimal_lineup(players_playing_today, lineup_settings)
+                optimal_lineup_for_day = get_optimal_lineup(
+                    players_playing_today,
+                    lineup_settings
+                )
                 display_date = day_date.strftime('%A, %b %d')
                 daily_optimal_lineups[display_date] = optimal_lineup_for_day
 
@@ -1013,8 +1048,9 @@ def get_roster_data():
         return jsonify({
             'players': all_players,
             'daily_optimal_lineups': daily_optimal_lineups,
-            'scoring_categories': scoring_categories,
+            'scoring_categories': all_scoring_categories,
             'lineup_settings': lineup_settings,
+            'checked_categories': checked_categories,
             'unused_roster_spots': unused_roster_spots
         })
 
