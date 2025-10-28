@@ -746,7 +746,13 @@ def get_matchup_stats():
 
         stats = {
             'team1': {'live': {cat: 0 for cat in all_categories_to_fetch}, 'row': {}},
-            'team2': {'live': {cat: 0 for cat in all_categories_to_fetch}, 'row': {}}
+            'team2': {'live': {cat: 0 for cat in all_categories_to_fetch}, 'row': {}},
+            'game_counts': {
+                'team1_total': 0,
+                'team2_total': 0,
+                'team1_remaining': 0,
+                'team2_remaining': 0
+            }
         }
 
         for row in live_stats_decoded:
@@ -827,6 +833,9 @@ def get_matchup_stats():
             team1_starters = [player for pos_players in team1_lineup.values() for player in pos_players]
             team2_starters = [player for pos_players in team2_lineup.values() for player in pos_players]
 
+            stats['game_counts']['team1_remaining'] += len(team1_starters)
+            stats['game_counts']['team2_remaining'] += len(team2_starters)
+
             all_starter_ids_today = [p['player_id'] for p in team1_starters + team2_starters]
 
             if all_starter_ids_today:
@@ -870,7 +879,20 @@ def get_matchup_stats():
                     row_stats[cat] = round(sv_pct, 3)
                 elif isinstance(value, (int, float)) and cat not in ['GAA', 'SVpct']:
                     row_stats[cat] = round(value, 1)
+        for day_date in days_in_week:
+            day_str = day_date.strftime('%Y-%m-%d')
 
+            team1_players_today = [p for p in team1_ranked_roster if day_str in p.get('game_dates_this_week', [])]
+            team2_players_today = [p for p in team2_ranked_roster if day_str in p.get('game_dates_this_week', [])]
+
+            team1_lineup = get_optimal_lineup(team1_players_today, lineup_settings)
+            team2_lineup = get_optimal_lineup(team2_players_today, lineup_settings)
+
+            team1_starters = [player for pos_players in team1_lineup.values() for player in pos_players]
+            team2_starters = [player for pos_players in team2_lineup.values() for player in pos_players]
+
+            stats['game_counts']['team1_total'] += len(team1_starters)
+            stats['game_counts']['team2_total'] += len(team2_starters)
         # --- Calculate Unused Roster Spots for Team 1 ---
         stats['team1_unused_spots'] = _calculate_unused_spots(days_in_week, team1_ranked_roster, lineup_settings)
 

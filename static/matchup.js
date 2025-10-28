@@ -6,6 +6,7 @@
     const controlsDiv = document.getElementById('matchup-controls');
     const tableContainer = document.getElementById('table-container');
     const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
+    const gameCountsContainer = document.getElementById('game-counts-container');
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
     const opponentSelect = document.getElementById('opponent-select');
@@ -114,6 +115,7 @@
 
         tableContainer.innerHTML = '<p class="text-gray-400">Loading matchup stats...</p>';
         unusedRosterSpotsContainer.innerHTML = '';
+        gameCountsContainer.innerHTML = '';
 
         // --- NEW: Read category preferences from localStorage ---
         const savedCategories = localStorage.getItem(CATEGORY_PREF_KEY);
@@ -138,6 +140,7 @@
 
             renderTable(stats, yourTeamName, opponentName);
             renderUnusedRosterSpotsTable(stats.team1_unused_spots);
+            renderGameCounts(stats.game_counts, yourTeamName, opponentName);
 
         } catch(error) {
             console.error('Error fetching stats:', error);
@@ -316,6 +319,44 @@
 
         unusedRosterSpotsContainer.innerHTML = tableHtml;
     }
+
+
+    function renderGameCounts(gameCounts, yourTeamName, opponentName) {
+        if (!gameCounts) {
+            gameCountsContainer.innerHTML = '';
+            return;
+        }
+
+        let tableHtml = `
+            <div class="bg-gray-900 rounded-lg shadow">
+                <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Total Player Starts</h2>
+                <table class="divide-y divide-gray-700 w-full">
+                    <thead class="bg-gray-700/50">
+                        <tr>
+                            <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
+                            <th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">Total</th>
+                            <th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">Remaining</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+                        <tr class="hover:bg-gray-700/50">
+                            <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${yourTeamName}</td>
+                            <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team1_total}</td>
+                            <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team1_remaining}</td>
+                        </tr>
+                       <tr class="hover:bg-gray-700/50">
+                            <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${opponentName}</td>
+                            <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team2_total}</td>
+                            <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team2_remaining}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        gameCountsContainer.innerHTML = tableHtml;
+    }
+
 
     function setupEventListeners() {
         weekSelect.addEventListener('change', async () => {
