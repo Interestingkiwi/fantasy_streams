@@ -989,17 +989,17 @@ def get_roster_data():
                     # Calculate custom total_rank
                     if rank_value is not None:
                         if cat in unchecked_categories:
-                            new_total_rank += rank_value / 4.0
+                            new_total_rank += rank_value / 2.0
                         else:
                             new_total_rank += rank_value
             player['total_rank'] = round(new_total_rank, 2) if p_stats else None
 
             # Add category ranks for all players (active and inactive)
-            p_stats = player_stats.get(player['player_name_normalized'])
-            if p_stats:
-                for cat in scoring_categories:
-                    rank_key = f"{cat}_cat_rank"
-                    player[rank_key] = round(p_stats.get(rank_key), 2) if p_stats.get(rank_key) is not None else None
+#            p_stats = player_stats.get(player['player_name_normalized'])
+#            if p_stats:
+#                for cat in scoring_categories:
+#                    rank_key = f"{cat}_cat_rank"
+#                    player[rank_key] = round(p_stats.get(rank_key), 2) if p_stats.get(rank_key) is not None else None
 
             player['games_next_week'] = []
             if start_date_next and end_date_next:
