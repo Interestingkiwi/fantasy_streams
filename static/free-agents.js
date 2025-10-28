@@ -440,7 +440,7 @@
                 return;
             }
 
-            // --- NEW: Validation for simulated player drop ---
+            // --- Validation for simulated player drop ---
             if (droppedPlayerOption.dataset.type === 'simulated') {
                 const addDate = droppedPlayerOption.dataset.addDate;
                 if (transactionDate < addDate) {
@@ -452,9 +452,10 @@
             // --- MODIFIED SECTION: Find player objects with validation ---
 
             // Find Added Player
-            const addedPlayerId = parseInt(checkedBox.value, 10);
+            // MODIFIED: Removed parseInt and using loose equality (==) for comparison
+            const addedPlayerId = checkedBox.value;
             const tableType = checkedBox.dataset.table;
-            const addedPlayer = (tableType === 'waivers' ? allWaiverPlayers : allFreeAgents).find(p => p.player_id === addedPlayerId);
+            const addedPlayer = (tableType === 'waivers' ? allWaiverPlayers : allFreeAgents).find(p => p.player_id == addedPlayerId);
 
             if (!addedPlayer) {
                 console.error("Could not find added player object for ID:", addedPlayerId);
@@ -463,12 +464,14 @@
             }
 
             // Find Dropped Player
-            const droppedPlayerId = parseInt(droppedPlayerOption.value, 10);
+            // MODIFIED: Removed parseInt and using loose equality (==) for comparison
+            const droppedPlayerId = droppedPlayerOption.value;
             let droppedPlayer;
             if (droppedPlayerOption.dataset.type === 'roster') {
-                droppedPlayer = currentTeamRoster.find(p => p.player_id === droppedPlayerId);
+                droppedPlayer = currentTeamRoster.find(p => p.player_id == droppedPlayerId);
             } else {
-                const sourceMove = simulatedMoves.find(m => m.added_player.player_id === droppedPlayerId);
+                // Find in simulated moves
+                const sourceMove = simulatedMoves.find(m => m.added_player.player_id == droppedPlayerId);
                 if (sourceMove) {
                     droppedPlayer = sourceMove.added_player;
                 }
