@@ -989,7 +989,7 @@ def get_roster_data():
                     # Calculate custom total_rank
                     if rank_value is not None:
                         if cat in unchecked_categories:
-                            new_total_rank += rank_value / 2.0
+                            new_total_rank += rank_value / 4.0
                         else:
                             new_total_rank += rank_value
             player['total_rank'] = round(new_total_rank, 2) if p_stats else None
