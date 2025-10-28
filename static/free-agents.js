@@ -7,10 +7,16 @@
     const recalculateButton = document.getElementById('recalculate-button');
     const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
     const timestampText = document.getElementById('available-players-timestamp-text');
+    const playerDropDropdown = document.getElementById('player-drop-dropdown');
+    const transactionDatePicker = document.getElementById('transaction-date-picker');
+    const simulateButton = document.getElementById('simulate-add-drop-button');
+    const resetButton = document.getElementById('reset-add-drops-button');
+    const simLogContainer = document.getElementById('simulated-moves-log');
 
     // --- Caching Configuration ---
     const CACHE_KEY = 'freeAgentsCache';
-    const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+/*    const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes */
+    const SIMULATION_KEY = 'simulationCache';
 
     // --- Global State ---
     let allWaiverPlayers = [];
@@ -19,6 +25,8 @@
     let rankedCategories = [];
     let checkedCategories = [];
     let currentUnusedSpots = null;
+    let currentTeamRoster = [];
+    let simulatedMoves = [];
     let sortConfig = {
         waivers: { key: 'total_cat_rank', direction: 'ascending' },
         freeAgents: { key: 'total_cat_rank', direction: 'ascending' }
@@ -48,11 +56,15 @@
 
     function loadStateFromCache() {
         try {
+             const cachedSim = localStorage.getItem(SIMULATION_KEY);
+             simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
+
             const cachedJSON = localStorage.getItem(CACHE_KEY);
             if (!cachedJSON) return null;
 
             const cachedState = JSON.parse(cachedJSON);
-            if (Date.now() - cachedState.timestamp > CACHE_TTL_MS) {
+            const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+            if (Date.now() - cachedState.timestamp > CACHE_TTL_MS) {
                 localStorage.removeItem(CACHE_KEY);
                 return null;
             }
@@ -121,6 +133,7 @@
             rankedCategories = data.ranked_categories;
             checkedCategories = data.checked_categories || data.ranked_categories;
             currentUnusedSpots = data.unused_roster_spots;
+            currentTeamRoster = data.team_roster;
 
             if (allScoringCategories.length === 0 && data.scoring_categories) {
                 allScoringCategories = data.scoring_categories;
@@ -128,7 +141,9 @@
             } else if (allScoringCategories.length > 0) {
                 renderCategoryCheckboxes();
             }
-
+            populateDropPlayerDropdown();
+            populateTransactionDatePicker(data.week_dates);
+            renderSimulatedMovesLog();
             renderUnusedRosterSpotsTable(currentUnusedSpots);
             filterAndSortPlayers();
             saveStateToCache();
@@ -210,6 +225,7 @@
                     <table class="min-w-full divide-y divide-gray-700">
                         <thead class="bg-gray-700/50">
                             <tr>
+                                <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Add</th>
                                 <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider sortable" data-sort-key="player_name" data-table-type="${tableType}">Player Name</th>
                                 <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
                                 <th class="px-2 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Positions</th>
@@ -224,14 +240,17 @@
         });
         tableHtml += `
                             </tr>
-                            <tr><td colspan="${6 + rankedCategories.length}" class="text-center text-xs text-gray-500 py-1">Click headers to sort</td></tr>
+                            <tr><td colspan="${7 + rankedCategories.length}" class="text-center text-xs text-gray-500 py-1">Click headers to sort</td></tr>
                         </thead>
                         <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
         if (playersToDisplay.length === 0) {
-            tableHtml += `<tr><td colspan="${6 + rankedCategories.length}" class="text-center py-4">No players match the current filter.</td></tr>`;
+            tableHtml += `<tr><td colspan="${7 + rankedCategories.length}" class="text-center py-4">No players match the current filter.</td></tr>`;
         } else {
             playersToDisplay.forEach(player => {
+
+                const isAlreadyAdded = simulatedMoves.some(m => m.added_player.player_id === player.player_id);
+                const checkboxDisabled = isAlreadyAdded ? 'disabled' : '';
 
                 let gamesThisWeekHtml = '';
                 const playerPositions = player.positions ? player.positions.split(',') : [];
@@ -265,6 +284,12 @@
 
                 tableHtml += `
                     <tr class="hover:bg-gray-700/50">
+
+                    <td class="px-2 py-2 whitespace-nowrap text-sm text-center">
+                            <input type="checkbox" name="player-to-add" class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-600 focus:ring-indigo-500 rounded"
+                                   value="${player.player_id}" data-table="${tableType}" ${checkboxDisabled}>
+                        </td>
+
                         <td class="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.player_team}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.positions}</td>
@@ -310,6 +335,134 @@
         const selectedCategories = Array.from(document.querySelectorAll('#category-checkboxes-container input:checked')).map(cb => cb.value);
         fetchData(selectedCategories);
     }
+
+
+    function populateDropPlayerDropdown() {
+        // Create a set of player IDs that have been dropped in the simulation
+        const droppedPlayerIds = new Set(simulatedMoves.map(m => m.dropped_player.player_id));
+
+        let optionsHtml = '<option selected value="">Select player to drop...</option>';
+       
+        // Add players from the original roster
+        currentTeamRoster.forEach(player => {
+            // Only add if they haven't been dropped
+            if (!droppedPlayerIds.has(player.player_id)) {
+                optionsHtml += `<option value="${player.player_id}" data-type="roster">${player.player_name} (${player.player_team}) - ${player.eligible_positions}</option>`;
+            }
+        });
+
+        // Add players from the simulation
+        simulatedMoves.forEach(move => {
+            const player = move.added_player;
+            optionsHtml += `<option value="${player.player_id}" data-type="simulated" data-add-date="${move.date}">
+                ${player.player_name} (${player.player_team}) - ${player.positions} (Added ${move.date})
+            </option>`;
+        });
+
+        playerDropDropdown.innerHTML = optionsHtml;
+    }
+
+    function populateTransactionDatePicker(dates) {
+        let optionsHtml = '<option selected value="">Select date...</option>';
+        dates.forEach(date => {
+            optionsHtml += `<option value="${date}">${date}</option>`;
+        });
+        transactionDatePicker.innerHTML = optionsHtml;
+    }
+
+    function renderSimulatedMovesLog() {
+        if (simulatedMoves.length === 0) {
+            simLogContainer.innerHTML = '';
+            return;
+        }
+
+        let logHtml = `<h4 class="text-lg font-semibold text-white mt-4 mb-2">Simulated Moves</h4>
+            <div class="bg-gray-800 rounded-lg p-3 space-y-2">`;
+
+        simulatedMoves.forEach((move, index) => {
+            logHtml += `
+                <div class="text-sm text-gray-300">
+                    <strong>Move ${index + 1} (On ${move.date}):</strong><br>
+                    <span class="text-green-400">ADD:</span> ${move.added_player.player_name}<br>
+                    <span class="text-red-400">DROP:</span> ${move.dropped_player.player_name}
+                </div>
+            `;
+        });
+
+        logHtml += '</div>';
+        simLogContainer.innerHTML = logHtml;
+    }
+
+    function handleSimulateClick() {
+        const checkedBox = document.querySelector('input[name="player-to-add"]:checked');
+        const droppedPlayerOption = playerDropDropdown.options[playerDropDropdown.selectedIndex];
+        const transactionDate = transactionDatePicker.value;
+
+        if (!checkedBox) {
+            alert("Please check a player to add.");
+            return;
+        }
+        if (!droppedPlayerOption.value) {
+            alert("Please select a player to drop.");
+            return;
+        }
+        if (!transactionDate) {
+            alert("Please select a transaction date.");
+            return;
+        }
+
+        // --- NEW: Validation for simulated player drop ---
+        if (droppedPlayerOption.dataset.type === 'simulated') {
+            const addDate = droppedPlayerOption.dataset.addDate;
+            if (transactionDate < addDate) {
+                alert(`Error: Cannot drop ${droppedPlayerOption.text.split('(')[0].trim()} on ${transactionDate} because they are not scheduled to be added until ${addDate}.`);
+                return;
+            }
+        }
+
+        // Find the player objects
+        const addedPlayerId = parseInt(checkedBox.value, 10);
+        const tableType = checkedBox.dataset.table;
+        const addedPlayer = (tableType === 'waivers' ? allWaiverPlayers : allFreeAgents).find(p => p.player_id === addedPlayerId);
+
+        const droppedPlayerId = parseInt(droppedPlayerOption.value, 10);
+        let droppedPlayer;
+        if (droppedPlayerOption.dataset.type === 'roster') {
+            droppedPlayer = currentTeamRoster.find(p => p.player_id === droppedPlayerId);
+        } else {
+            droppedPlayer = simulatedMoves.find(m => m.added_player.player_id === droppedPlayerId).added_player;
+        }
+
+        // Add to simulation
+        simulatedMoves.push({
+            date: transactionDate,
+            added_player: addedPlayer,
+            dropped_player: droppedPlayer
+        });
+
+        // Save to localStorage
+        localStorage.setItem(SIMULATION_KEY, JSON.stringify(simulatedMoves));
+
+        // Update UI
+        populateDropPlayerDropdown();
+        renderSimulatedMovesLog();
+        checkedBox.checked = false;
+        checkedBox.disabled = true; // Disable to prevent re-adding
+       
+        // Alert user
+        alert('Simulation added! Navigate to Lineups or Matchups to see the effect.');
+    }
+
+    function handleResetClick() {
+        if (confirm("Are you sure you want to reset all simulated moves?")) {
+            simulatedMoves = [];
+            localStorage.removeItem(SIMULATION_KEY);
+            // We can just refresh the data to reset everything
+            fetchData();
+        }
+    }
+
+
 
     function renderUnusedRosterSpotsTable(unusedSpotsData) {
         if (!unusedSpotsData) {
@@ -410,14 +563,25 @@
             currentUnusedSpots = cachedState.unusedRosterSpotsData;
             unusedRosterSpotsContainer.innerHTML = cachedState.unusedRosterSpotsHTML;
 
+            const cachedSim = localStorage.getItem(SIMULATION_KEY);
+            simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
+
             renderCategoryCheckboxes();
             filterAndSortPlayers();
             setupEventListeners();
         } else {
             console.log("No valid cache. Fetching fresh data for Free Agents page.");
+
+            const cachedSim = localStorage.getItem(SIMULATION_KEY);
+            simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
+
             setupEventListeners();
             fetchData();
         }
+
+        simulateButton.addEventListener('click', handleSimulateClick);
+        resetButton.addEventListener('click', handleResetClick);
+
     }
 
     init();

@@ -1209,6 +1209,8 @@ def get_free_agent_data():
 
         # --- Calculate Unused Roster Spots for the SELECTED Team ---
         unused_roster_spots = None
+        team_ranked_roster = []
+        days_in_week_data = []
         selected_team_name = request_data.get('team_name')
 
         if selected_team_name:
@@ -1222,6 +1224,11 @@ def get_free_agent_data():
                     start_date_obj = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
                     end_date_obj = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
                     days_in_week = [(start_date_obj + timedelta(days=i)) for i in range((end_date_obj - start_date_obj).days + 1)]
+
+                    today_obj = date.today()
+                    for day in days_in_week:
+                        if day >= today_obj:
+                            days_in_week_data.append(day.isoformat())
 
                     cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
                     lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
@@ -1239,7 +1246,9 @@ def get_free_agent_data():
             'scoring_categories': all_scoring_categories_for_checkboxes,
             'ranked_categories': all_scoring_categories,  # Send all categories for table columns
             'checked_categories': checked_categories,  # Send the list of checked categories
-            'unused_roster_spots': unused_roster_spots
+            'unused_roster_spots': unused_roster_spots,
+            'team_roster': [dict(p) for p in team_ranked_roster], # --- NEW: Send the roster
+            'week_dates': days_in_week_data
         })
 
     except Exception as e:
