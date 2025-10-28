@@ -18,6 +18,7 @@
     let allScoringCategories = [];
     let rankedCategories = [];
     let checkedCategories = [];
+    let currentUnusedSpots = null;
     let sortConfig = {
         waivers: { key: 'total_cat_rank', direction: 'ascending' },
         freeAgents: { key: 'total_cat_rank', direction: 'ascending' }
@@ -34,6 +35,7 @@
                 checkedCategories,
                 sortConfig,
                 unusedRosterSpotsHTML: unusedRosterSpotsContainer.innerHTML,
+                unusedRosterSpotsData: currentUnusedSpots,
                 selectedTeam: document.getElementById('your-team-select')?.value,
                 searchTerm: playerSearchInput.value,
                 timestamp: Date.now()
@@ -54,6 +56,7 @@
                 localStorage.removeItem(CACHE_KEY);
                 return null;
             }
+              currentUnusedSpots = cachedState.unusedRosterSpotsData;
             return cachedState;
         } catch (error) {
             console.warn("Could not load state from local storage.", error);
@@ -117,6 +120,7 @@
             allFreeAgents = data.free_agents;
             rankedCategories = data.ranked_categories;
             checkedCategories = data.checked_categories || data.ranked_categories;
+            currentUnusedSpots = data.unused_roster_spots;
 
             if (allScoringCategories.length === 0 && data.scoring_categories) {
                 allScoringCategories = data.scoring_categories;
@@ -125,7 +129,7 @@
                 renderCategoryCheckboxes();
             }
 
-            renderUnusedRosterSpotsTable(data.unused_roster_spots);
+            renderUnusedRosterSpotsTable(currentUnusedSpots);
             filterAndSortPlayers();
             saveStateToCache();
 
@@ -228,12 +232,43 @@
             tableHtml += `<tr><td colspan="${6 + rankedCategories.length}" class="text-center py-4">No players match the current filter.</td></tr>`;
         } else {
             playersToDisplay.forEach(player => {
+
+                let gamesThisWeekHtml = '';
+                const playerPositions = player.positions ? player.positions.split(',') : [];
+                const gamesThisWeek = player.games_this_week || [];
+
+                if (!currentUnusedSpots || playerPositions.length === 0) {
+                    // No spots data or player has no positions, just join
+                    gamesThisWeekHtml = gamesThisWeek.join(', ');
+                } else {
+                    gamesThisWeekHtml = gamesThisWeek.map(day => {
+                        const dailySpots = currentUnusedSpots[day];
+                        if (!dailySpots) {
+                            return day; // No spot data for this day
+                        }
+
+                        for (const pos of playerPositions) {
+                            const trimmedPos = pos.trim();
+                            if (dailySpots.hasOwnProperty(trimmedPos)) {
+                                const spotValue = String(dailySpots[trimmedPos]);
+                                // Highlight if spotValue is not '0' (e.g., '1', '2', or '0*')
+                                if (spotValue !== '0') {
+                                    return `<strong class="text-yellow-300">${day}</strong>`;
+                                }
+                            }
+                        }
+                        return day; // No open spot found for this player's positions
+                    }).join(', ');
+                }
+                // --- END NEW LOGIC ---
+
+
                 tableHtml += `
                     <tr class="hover:bg-gray-700/50">
                         <td class="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.player_team}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.positions}</td>
-                        <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${(player.games_this_week || []).join(', ')}</td>
+                        <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${gamesThisWeekHtml}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${(player.games_next_week || []).join(', ')}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm font-bold text-yellow-300">${player.total_cat_rank}</td>
                 `;
@@ -372,6 +407,7 @@
                 if (teamSelect) teamSelect.value = cachedState.selectedTeam;
             }
             playerSearchInput.value = cachedState.searchTerm;
+            currentUnusedSpots = cachedState.unusedRosterSpotsData;
             unusedRosterSpotsContainer.innerHTML = cachedState.unusedRosterSpotsHTML;
 
             renderCategoryCheckboxes();

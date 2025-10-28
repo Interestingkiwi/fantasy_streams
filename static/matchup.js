@@ -330,7 +330,7 @@
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
                 <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Total Player Starts</h2>
-                <table class="divide-y divide-gray-700 w-full">
+                <table class="divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
                         <tr>
                             <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
