@@ -343,29 +343,31 @@
     // --- NEW SIMULATION FUNCTIONS ---
 
     function populateDropPlayerDropdown() {
-        // Create a set of player IDs that have been dropped in the simulation
-        const droppedPlayerIds = new Set(simulatedMoves.map(m => m.dropped_player.player_id));
+            // Create a set of player IDs that have been dropped in the simulation
+            const droppedPlayerIds = new Set(simulatedMoves.map(m => m.dropped_player.player_id));
 
-        let optionsHtml = '<option selected value="">Select player to drop...</option>';
+            let optionsHtml = '<option selected value="">Select player to drop...</option>';
 
-        // Add players from the original roster
-        currentTeamRoster.forEach(player => {
-            // Only add if they haven't been dropped
-            if (!droppedPlayerIds.has(player.player_id)) {
-                optionsHtml += `<option value="${player.player_id}" data-type="roster">${player.player_name} (${player.player_team}) - ${player.eligible_positions}</option>`;
-            }
-        });
+            // Add players from the original roster
+            currentTeamRoster.forEach(player => {
+                // Only add if they haven't been dropped
+                if (!droppedPlayerIds.has(player.player_id)) {
+                    // MODIFIED: Removed player_team
+                    optionsHtml += `<option value="${player.player_id}" data-type="roster">${player.player_name} - ${player.eligible_positions}</option>`;
+                }
+            });
 
-        // Add players from the simulation
-        simulatedMoves.forEach(move => {
-            const player = move.added_player;
-            optionsHtml += `<option value="${player.player_id}" data-type="simulated" data-add-date="${move.date}">
-                ${player.player_name} (${player.player_team}) - ${player.positions} (Added ${move.date})
-            </option>`;
-        });
+            // Add players from the simulation
+            simulatedMoves.forEach(move => {
+                const player = move.added_player;
+                // MODIFIED: Removed player_team
+                optionsHtml += `<option value="${player.player_id}" data-type="simulated" data-add-date="${move.date}">
+                    ${player.player_name} - ${player.positions} (Added ${move.date})
+                </option>`;
+            });
 
-        playerDropDropdown.innerHTML = optionsHtml;
-    }
+            playerDropDropdown.innerHTML = optionsHtml;
+        }
 
     function populateTransactionDatePicker(dates) {
         let optionsHtml = '<option selected value="">Select date...</option>';
@@ -421,64 +423,84 @@
     }
 
     function handleSimulateClick() {
-        const checkedBox = document.querySelector('input[name="player-to-add"]:checked');
-        const droppedPlayerOption = playerDropDropdown.options[playerDropDropdown.selectedIndex];
-        const transactionDate = transactionDatePicker.value;
+            const checkedBox = document.querySelector('input[name="player-to-add"]:checked');
+            const droppedPlayerOption = playerDropDropdown.options[playerDropDropdown.selectedIndex];
+            const transactionDate = transactionDatePicker.value;
 
-        if (!checkedBox) {
-            alert("Please check a player to add.");
-            return;
-        }
-        if (!droppedPlayerOption.value) {
-            alert("Please select a player to drop.");
-            return;
-        }
-        if (!transactionDate) {
-            alert("Please select a transaction date.");
-            return;
-        }
-
-        // --- NEW: Validation for simulated player drop ---
-        if (droppedPlayerOption.dataset.type === 'simulated') {
-            const addDate = droppedPlayerOption.dataset.addDate;
-            if (transactionDate < addDate) {
-                alert(`Error: Cannot drop ${droppedPlayerOption.text.split('(')[0].trim()} on ${transactionDate} because they are not scheduled to be added until ${addDate}.`);
+            if (!checkedBox) {
+                alert("Please check a player to add.");
                 return;
             }
+            if (!droppedPlayerOption.value) {
+                alert("Please select a player to drop.");
+                return;
+            }
+            if (!transactionDate) {
+                alert("Please select a transaction date.");
+                return;
+            }
+
+            // --- NEW: Validation for simulated player drop ---
+            if (droppedPlayerOption.dataset.type === 'simulated') {
+                const addDate = droppedPlayerOption.dataset.addDate;
+                if (transactionDate < addDate) {
+                    alert(`Error: Cannot drop ${droppedPlayerOption.text.split('(')[0].trim()} on ${transactionDate} because they are not scheduled to be added until ${addDate}.`);
+                    return;
+                }
+            }
+
+            // --- MODIFIED SECTION: Find player objects with validation ---
+
+            // Find Added Player
+            const addedPlayerId = parseInt(checkedBox.value, 10);
+            const tableType = checkedBox.dataset.table;
+            const addedPlayer = (tableType === 'waivers' ? allWaiverPlayers : allFreeAgents).find(p => p.player_id === addedPlayerId);
+
+            if (!addedPlayer) {
+                console.error("Could not find added player object for ID:", addedPlayerId);
+                alert("An error occurred trying to find the player to add. Please refresh and try again.");
+                return;
+            }
+
+            // Find Dropped Player
+            const droppedPlayerId = parseInt(droppedPlayerOption.value, 10);
+            let droppedPlayer;
+            if (droppedPlayerOption.dataset.type === 'roster') {
+                droppedPlayer = currentTeamRoster.find(p => p.player_id === droppedPlayerId);
+            } else {
+                const sourceMove = simulatedMoves.find(m => m.added_player.player_id === droppedPlayerId);
+                if (sourceMove) {
+                    droppedPlayer = sourceMove.added_player;
+                }
+            }
+
+            if (!droppedPlayer) {
+                console.error("Could not find dropped player object for ID:", droppedPlayerId);
+                alert("An error occurred trying to find the player to drop. Please refresh and try again.");
+                return;
+            }
+            // --- END MODIFIED SECTION ---
+
+
+            // Add to simulation
+            simulatedMoves.push({
+                date: transactionDate,
+                added_player: addedPlayer,
+                dropped_player: droppedPlayer
+            });
+
+            // Save to localStorage
+            localStorage.setItem(SIMULATION_KEY, JSON.stringify(simulatedMoves));
+
+            // Update UI
+            populateDropPlayerDropdown();
+            renderSimulatedMovesLog(); // This will now render the table we made
+            checkedBox.checked = false;
+            checkedBox.disabled = true; // Disable to prevent re-adding
+
+            // Alert user
+            alert('Simulation added! Navigate to Lineups or Matchups to see the effect.');
         }
-
-        // Find the player objects
-        const addedPlayerId = parseInt(checkedBox.value, 10);
-        const tableType = checkedBox.dataset.table;
-        const addedPlayer = (tableType === 'waivers' ? allWaiverPlayers : allFreeAgents).find(p => p.player_id === addedPlayerId);
-
-        const droppedPlayerId = parseInt(droppedPlayerOption.value, 10);
-        let droppedPlayer;
-        if (droppedPlayerOption.dataset.type === 'roster') {
-            droppedPlayer = currentTeamRoster.find(p => p.player_id === droppedPlayerId);
-        } else {
-            droppedPlayer = simulatedMoves.find(m => m.added_player.player_id === droppedPlayerId).added_player;
-        }
-
-        // Add to simulation
-        simulatedMoves.push({
-            date: transactionDate,
-            added_player: addedPlayer,
-            dropped_player: droppedPlayer
-        });
-
-        // Save to localStorage
-        localStorage.setItem(SIMULATION_KEY, JSON.stringify(simulatedMoves));
-
-        // Update UI
-        populateDropPlayerDropdown();
-        renderSimulatedMovesLog();
-        checkedBox.checked = false;
-        checkedBox.disabled = true; // Disable to prevent re-adding
-
-        // Alert user
-        alert('Simulation added! Navigate to Lineups or Matchups to see the effect.');
-    }
 
     function handleResetClick() {
         if (confirm("Are you sure you want to reset all simulated moves?")) {
