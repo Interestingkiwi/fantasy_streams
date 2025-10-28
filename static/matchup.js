@@ -270,92 +270,91 @@
     }
 
     function renderUnusedRosterSpotsTable(unusedSpotsData) {
-        if (!unusedSpotsData) {
-            unusedRosterSpotsContainer.innerHTML = '';
-            return;
+            if (!unusedSpotsData) {
+                unusedRosterSpotsContainer.innerHTML = '';
+                return;
+            }
+
+            const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
+            const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+            const sortedDays = Object.keys(unusedSpotsData).sort((a, b) => {
+                return dayOrder.indexOf(a) - dayOrder.indexOf(b);
+            });
+
+            let tableHtml = `
+                <div class="bg-gray-900 rounded-lg shadow">
+                    <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
+                    <table class="w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-700/50">
+                            <tr>
+                                <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
+                                ${positionOrder.map(pos => `<th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${pos}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody class="bg-gray-800"> `;
+
+            sortedDays.forEach(day => {
+                 // MODIFIED: Fixed /5G typo
+                tableHtml += `<tr class="hover:bg-gray-700/50">
+                    <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
+                positionOrder.forEach(pos => {
+                    const value = unusedSpotsData[day][pos];
+                    const stringValue = String(value);
+
+                    const highlightClass = (stringValue !== '0')
+                        ? 'bg-green-800/50 text-white font-bold'
+                        : 'text-gray-300';
+
+                    tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
+                });
+                tableHtml += `</tr>`;
+            });
+
+            tableHtml += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            unusedRosterSpotsContainer.innerHTML = tableHtml;
         }
 
-        const positionOrder = ['C', 'LW', 'RW', 'D', 'G'];
-        const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-        const sortedDays = Object.keys(unusedSpotsData).sort((a, b) => {
-            return dayOrder.indexOf(a) - dayOrder.indexOf(b);
-        });
+        function renderGameCounts(gameCounts, yourTeamName, opponentName) {
+                if (!gameCounts) {
+                    gameCountsContainer.innerHTML = '';
+                    return;
+                }
 
-        let tableHtml = `
-            <div class="bg-gray-900 rounded-lg shadow">
-                <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Unused Roster Spots</h2>
-                <table class="divide-y divide-gray-700">
-                    <thead class="bg-gray-700/50">
-                        <tr>
-                            <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Day</th>
-                            ${positionOrder.map(pos => `<th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">${pos}</th>`).join('')}
-                        </tr>
-                    </thead>
-                    <tbody class="bg-gray-800 divide-y divide-gray-700">
-        `;
+                let tableHtml = `
+                    <div class="bg-gray-900 rounded-lg shadow">
+                        <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Total Player Starts</h2>
+                        <table class="w-full divide-y divide-gray-700">
+                            <thead class="bg-gray-700/50">
+                                <tr>
+                                    <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
+                                    <th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">Total</th>
+                                    <th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">Remaining</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-gray-800"> <tr class="hover:bg-gray-700/50">
+                                    <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${yourTeamName}</td>
+                                    <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team1_total}</td>
+                                    <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team1_remaining}</td>
+                                </tr>
+                               <tr class="hover:bg-gray-700/50">
+                                    <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${opponentName}</td>
+                                    <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team2_total}</td>
+                                    <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team2_remaining}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
 
-        sortedDays.forEach(day => {
-            tableHtml += `<tr class="hover:bg-gray-700/5G">
-                <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
-            positionOrder.forEach(pos => {
-                const value = unusedSpotsData[day][pos];
-                const stringValue = String(value);
-
-                const highlightClass = (stringValue !== '0')
-                    ? 'bg-green-800/50 text-white font-bold'
-                    : 'text-gray-300';
-
-                tableHtml += `<td class="px-2 py-1 whitespace-nowrap text-sm text-center ${highlightClass}">${value}</td>`;
-            });
-            tableHtml += `</tr>`;
-        });
-
-        tableHtml += `
-                    </tbody>
-                </table>
-            </div>
-        `;
-
-        unusedRosterSpotsContainer.innerHTML = tableHtml;
-    }
-
-
-    function renderGameCounts(gameCounts, yourTeamName, opponentName) {
-        if (!gameCounts) {
-            gameCountsContainer.innerHTML = '';
-            return;
-        }
-
-        let tableHtml = `
-            <div class="bg-gray-900 rounded-lg shadow">
-                <h2 class="text-xl font-bold text-white p-3 bg-gray-800 rounded-t-lg">Total Player Starts</h2>
-                <table class="divide-y divide-gray-700">
-                    <thead class="bg-gray-700/50">
-                        <tr>
-                            <th class="px-2 py-1 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Team</th>
-                            <th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">Total</th>
-                            <th class="px-2 py-1 text-center text-xs font-bold text-gray-300 uppercase tracking-wider">Remaining</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-gray-800 divide-y divide-gray-700">
-                        <tr class="hover:bg-gray-700/50">
-                            <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${yourTeamName}</td>
-                            <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team1_total}</td>
-                            <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team1_remaining}</td>
-                        </tr>
-                       <tr class="hover:bg-gray-700/50">
-                            <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${opponentName}</td>
-                            <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team2_total}</td>
-                            <td class="px-2 py-1 whitespace-nowrap text-sm text-center text-gray-300">${gameCounts.team2_remaining}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        `;
-
-        gameCountsContainer.innerHTML = tableHtml;
-    }
+                gameCountsContainer.innerHTML = tableHtml;
+            }
 
 
     function setupEventListeners() {

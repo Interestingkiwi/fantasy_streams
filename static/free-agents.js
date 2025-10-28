@@ -502,7 +502,7 @@
             checkedBox.disabled = true; // Disable to prevent re-adding
 
             // Alert user
-            alert('Simulation added! Navigate to Lineups or Matchups to see the effect.');
+          /*  alert('Simulation added! Navigate to Lineups or Matchups to see the effect.'); */
         }
 
     function handleResetClick() {
