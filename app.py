@@ -1207,10 +1207,10 @@ def get_free_agent_data():
                             total_rank += rank_value
                 player['total_cat_rank'] = round(total_rank, 2)
 
-        # --- Calculate Unused Roster Spots for the SELECTED Team ---
+# --- Calculate Unused Roster Spots for the SELECTED Team ---
         unused_roster_spots = None
-        team_ranked_roster = []
-        days_in_week_data = []
+        team_ranked_roster = [] # --- NEW: Initialize roster list
+        days_in_week_data = [] # --- NEW: Initialize dates list
         selected_team_name = request_data.get('team_name')
 
         if selected_team_name:
@@ -1225,10 +1225,11 @@ def get_free_agent_data():
                     end_date_obj = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
                     days_in_week = [(start_date_obj + timedelta(days=i)) for i in range((end_date_obj - start_date_obj).days + 1)]
 
+                    # --- NEW: Populate dates for date picker (from today onwards) ---
                     today_obj = date.today()
-                    for day in days_in_week:
-                        if day >= today_obj:
-                            days_in_week_data.append(day.isoformat())
+                    for day in days_in_week:
+                        if day >= today_obj:
+                            days_in_week_data.append(day.isoformat())
 
                     cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
                     lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
