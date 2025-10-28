@@ -1012,6 +1012,32 @@ def get_roster_data():
                         if start_date_next <= game_date <= end_date_next:
                             player['games_next_week'].append(game_date.strftime('%a'))
 
+        logging.info("Updating ranks for active_players list...")
+        for player in active_players:
+            p_stats = player_stats.get(player['player_name_normalized'])
+            new_total_rank = 0
+            if p_stats:
+                for cat in all_scoring_categories:
+                    rank_key = f"{cat}_cat_rank"
+                    rank_value = p_stats.get(rank_key)
+
+                    # We don't need to store individual cat ranks here
+                    # as they are already on the player object from _get_ranked_roster_for_week
+                    if rank_value is not None:
+                        if cat in unchecked_categories:
+                            new_total_rank += rank_value / 10.0 # Using your / 10.0 logic
+                        else:
+                            new_total_rank += rank_value
+
+            player['total_rank'] = round(new_total_rank, 2) if p_stats else None
+
+            # Also ensure a default rank for players with no stats,
+            # matching get_optimal_lineup logic
+            if player.get('total_rank') is None:
+                player['total_rank'] = 60
+        logging.info("Finished updating ranks for active_players.")
+
+
         # Get lineup settings
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
