@@ -377,24 +377,46 @@
 
     function renderSimulatedMovesLog() {
         if (simulatedMoves.length === 0) {
-            simLogContainer.innerHTML = '';
+            simLogContainer.innerHTML = ''; // Clear the container if no moves
             return;
         }
 
-        let logHtml = `<h4 class="text-lg font-semibold text-white mt-4 mb-2">Simulated Moves</h4>
-            <div class="bg-gray-800 rounded-lg p-3 space-y-2">`;
+        // Sort moves by date to display them in chronological order
+        const sortedMoves = [...simulatedMoves].sort((a, b) => {
+            if (a.date < b.date) return -1;
+            if (a.date > b.date) return 1;
+            return 0;
+        });
 
-        simulatedMoves.forEach((move, index) => {
+        let logHtml = `
+            <h4 class="text-lg font-semibold text-white mt-6 mb-2">Simulated Moves Log</h4>
+            <div class="overflow-x-auto bg-gray-800 rounded-lg shadow">
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-700/50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Date of Move</th>
+                            <th class="px-3 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Added</th>
+                            <th class="px-3 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Dropped</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+        `;
+
+        sortedMoves.forEach(move => {
             logHtml += `
-                <div class="text-sm text-gray-300">
-                    <strong>Move ${index + 1} (On ${move.date}):</strong><br>
-                    <span class="text-green-400">ADD:</span> ${move.added_player.player_name}<br>
-                    <span class="text-red-400">DROP:</span> ${move.dropped_player.player_name}
-                </div>
+                <tr class="hover:bg-gray-700/50">
+                    <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${move.date}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm text-green-400">${move.added_player.player_name}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm text-red-400">${move.dropped_player.player_name}</td>
+                </tr>
             `;
         });
 
-        logHtml += '</div>';
+        logHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
         simLogContainer.innerHTML = logHtml;
     }
 
