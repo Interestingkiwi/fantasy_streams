@@ -7,16 +7,16 @@
     const recalculateButton = document.getElementById('recalculate-button');
     const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
     const timestampText = document.getElementById('available-players-timestamp-text');
+    // --- NEW UI Elements ---
     const playerDropDropdown = document.getElementById('player-drop-dropdown');
-    const transactionDatePicker = document.getElementById('transaction-date-picker');
-    const simulateButton = document.getElementById('simulate-add-drop-button');
-    const resetButton = document.getElementById('reset-add-drops-button');
-    const simLogContainer = document.getElementById('simulated-moves-log');
+    const transactionDatePicker = document.getElementById('transaction-date-picker');
+    const simulateButton = document.getElementById('simulate-add-drop-button');
+    const resetButton = document.getElementById('reset-add-drops-button');
+    const simLogContainer = document.getElementById('simulated-moves-log');
 
     // --- Caching Configuration ---
     const CACHE_KEY = 'freeAgentsCache';
-/*    const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes */
-    const SIMULATION_KEY = 'simulationCache';
+    const SIMULATION_KEY = 'simulationCache'; // --- NEW: For simulated moves
 
     // --- Global State ---
     let allWaiverPlayers = [];
@@ -25,8 +25,8 @@
     let rankedCategories = [];
     let checkedCategories = [];
     let currentUnusedSpots = null;
-    let currentTeamRoster = [];
-    let simulatedMoves = [];
+    let currentTeamRoster = []; // --- NEW: Store your roster
+    let simulatedMoves = []; // --- NEW: Store simulation state
     let sortConfig = {
         waivers: { key: 'total_cat_rank', direction: 'ascending' },
         freeAgents: { key: 'total_cat_rank', direction: 'ascending' }
@@ -56,19 +56,21 @@
 
     function loadStateFromCache() {
         try {
-             const cachedSim = localStorage.getItem(SIMULATION_KEY);
-             simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
+            // --- NEW: Load simulation from its own key ---
+            const cachedSim = localStorage.getItem(SIMULATION_KEY);
+            simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
 
             const cachedJSON = localStorage.getItem(CACHE_KEY);
             if (!cachedJSON) return null;
 
             const cachedState = JSON.parse(cachedJSON);
+            // Set a shorter cache time now that we have complex state
             const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
-            if (Date.now() - cachedState.timestamp > CACHE_TTL_MS) {
+            if (Date.now() - cachedState.timestamp > CACHE_TTL_MS) {
                 localStorage.removeItem(CACHE_KEY);
                 return null;
             }
-              currentUnusedSpots = cachedState.unusedRosterSpotsData;
+            currentUnusedSpots = cachedState.unusedRosterSpotsData; // --- NEW: Load from cache
             return cachedState;
         } catch (error) {
             console.warn("Could not load state from local storage.", error);
@@ -133,7 +135,8 @@
             rankedCategories = data.ranked_categories;
             checkedCategories = data.checked_categories || data.ranked_categories;
             currentUnusedSpots = data.unused_roster_spots;
-            currentTeamRoster = data.team_roster;
+            currentTeamRoster = data.team_roster; // --- NEW: Store roster
+
 
             if (allScoringCategories.length === 0 && data.scoring_categories) {
                 allScoringCategories = data.scoring_categories;
@@ -141,9 +144,11 @@
             } else if (allScoringCategories.length > 0) {
                 renderCategoryCheckboxes();
             }
+
+            // --- NEW: Populate new UI elements ---
             populateDropPlayerDropdown();
-            populateTransactionDatePicker(data.week_dates);
-            renderSimulatedMovesLog();
+            populateTransactionDatePicker(data.week_dates);
+            renderSimulatedMovesLog();
             renderUnusedRosterSpotsTable(currentUnusedSpots);
             filterAndSortPlayers();
             saveStateToCache();
@@ -249,47 +254,46 @@
         } else {
             playersToDisplay.forEach(player => {
 
+                // --- NEW: Check if player is already in sim moves ---
                 const isAlreadyAdded = simulatedMoves.some(m => m.added_player.player_id === player.player_id);
-                const checkboxDisabled = isAlreadyAdded ? 'disabled' : '';
+                const checkboxDisabled = isAlreadyAdded ? 'disabled' : '';
 
+                // --- NEW LOGIC for This Week Highlighting ---
                 let gamesThisWeekHtml = '';
-                const playerPositions = player.positions ? player.positions.split(',') : [];
-                const gamesThisWeek = player.games_this_week || [];
+                const playerPositions = player.positions ? player.positions.split(',') : [];
+                const gamesThisWeek = player.games_this_week || [];
 
-                if (!currentUnusedSpots || playerPositions.length === 0) {
-                    // No spots data or player has no positions, just join
-                    gamesThisWeekHtml = gamesThisWeek.join(', ');
-                } else {
-                    gamesThisWeekHtml = gamesThisWeek.map(day => {
-                        const dailySpots = currentUnusedSpots[day];
-                        if (!dailySpots) {
-                            return day; // No spot data for this day
-                        }
+                if (!currentUnusedSpots || playerPositions.length === 0) {
+                    // No spots data or player has no positions, just join
+                    gamesThisWeekHtml = gamesThisWeek.join(', ');
+                } else {
+                    gamesThisWeekHtml = gamesThisWeek.map(day => {
+                        const dailySpots = currentUnusedSpots[day];
+                        if (!dailySpots) {
+                            return day; // No spot data for this day
+                        }
 
-                        for (const pos of playerPositions) {
-                            const trimmedPos = pos.trim();
-                            if (dailySpots.hasOwnProperty(trimmedPos)) {
-                                const spotValue = String(dailySpots[trimmedPos]);
-                                // Highlight if spotValue is not '0' (e.g., '1', '2', or '0*')
-                                if (spotValue !== '0') {
-                                    return `<strong class="text-yellow-300">${day}</strong>`;
-                                }
-                            }
-                        }
-                        return day; // No open spot found for this player's positions
-                    }).join(', ');
-                }
-                // --- END NEW LOGIC ---
-
+                        for (const pos of playerPositions) {
+                            const trimmedPos = pos.trim();
+                            if (dailySpots.hasOwnProperty(trimmedPos)) {
+                                const spotValue = String(dailySpots[trimmedPos]);
+                                // Highlight if spotValue is not '0' (e.g., '1', '2', or '0*')
+                                if (spotValue !== '0') {
+                                    return `<strong class="text-yellow-300">${day}</strong>`;
+                                }
+                            }
+                        }
+                        return day; // No open spot found for this player's positions
+                    }).join(', ');
+                }
+                // --- END NEW LOGIC ---
 
                 tableHtml += `
                     <tr class="hover:bg-gray-700/50">
-
-                    <td class="px-2 py-2 whitespace-nowrap text-sm text-center">
-                            <input type="checkbox" name="player-to-add" class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-600 focus:ring-indigo-500 rounded"
-                                   value="${player.player_id}" data-table="${tableType}" ${checkboxDisabled}>
-                        </td>
-
+                        <td class="px-2 py-2 whitespace-nowrap text-sm text-center">
+                            <input type="checkbox" name="player-to-add" class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-600 focus:ring-indigo-500 rounded"
+                                   value="${player.player_id}" data-table="${tableType}" ${checkboxDisabled}>
+                        </td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.player_team}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.positions}</td>
@@ -336,133 +340,132 @@
         fetchData(selectedCategories);
     }
 
+    // --- NEW SIMULATION FUNCTIONS ---
 
     function populateDropPlayerDropdown() {
-        // Create a set of player IDs that have been dropped in the simulation
-        const droppedPlayerIds = new Set(simulatedMoves.map(m => m.dropped_player.player_id));
+        // Create a set of player IDs that have been dropped in the simulation
+        const droppedPlayerIds = new Set(simulatedMoves.map(m => m.dropped_player.player_id));
 
-        let optionsHtml = '<option selected value="">Select player to drop...</option>';
-       
-        // Add players from the original roster
-        currentTeamRoster.forEach(player => {
-            // Only add if they haven't been dropped
-            if (!droppedPlayerIds.has(player.player_id)) {
-                optionsHtml += `<option value="${player.player_id}" data-type="roster">${player.player_name} (${player.player_team}) - ${player.eligible_positions}</option>`;
-            }
-        });
+        let optionsHtml = '<option selected value="">Select player to drop...</option>';
 
-        // Add players from the simulation
-        simulatedMoves.forEach(move => {
-            const player = move.added_player;
-            optionsHtml += `<option value="${player.player_id}" data-type="simulated" data-add-date="${move.date}">
-                ${player.player_name} (${player.player_team}) - ${player.positions} (Added ${move.date})
-            </option>`;
-        });
+        // Add players from the original roster
+        currentTeamRoster.forEach(player => {
+            // Only add if they haven't been dropped
+            if (!droppedPlayerIds.has(player.player_id)) {
+                optionsHtml += `<option value="${player.player_id}" data-type="roster">${player.player_name} (${player.player_team}) - ${player.eligible_positions}</option>`;
+            }
+        });
 
-        playerDropDropdown.innerHTML = optionsHtml;
-    }
+        // Add players from the simulation
+        simulatedMoves.forEach(move => {
+            const player = move.added_player;
+            optionsHtml += `<option value="${player.player_id}" data-type="simulated" data-add-date="${move.date}">
+                ${player.player_name} (${player.player_team}) - ${player.positions} (Added ${move.date})
+            </option>`;
+        });
 
-    function populateTransactionDatePicker(dates) {
-        let optionsHtml = '<option selected value="">Select date...</option>';
-        dates.forEach(date => {
-            optionsHtml += `<option value="${date}">${date}</option>`;
-        });
-        transactionDatePicker.innerHTML = optionsHtml;
-    }
+        playerDropDropdown.innerHTML = optionsHtml;
+    }
 
-    function renderSimulatedMovesLog() {
-        if (simulatedMoves.length === 0) {
-            simLogContainer.innerHTML = '';
-            return;
-        }
+    function populateTransactionDatePicker(dates) {
+        let optionsHtml = '<option selected value="">Select date...</option>';
+        dates.forEach(date => {
+            optionsHtml += `<option value="${date}">${date}</option>`;
+        });
+        transactionDatePicker.innerHTML = optionsHtml;
+    }
 
-        let logHtml = `<h4 class="text-lg font-semibold text-white mt-4 mb-2">Simulated Moves</h4>
-            <div class="bg-gray-800 rounded-lg p-3 space-y-2">`;
+    function renderSimulatedMovesLog() {
+        if (simulatedMoves.length === 0) {
+            simLogContainer.innerHTML = '';
+            return;
+        }
 
-        simulatedMoves.forEach((move, index) => {
-            logHtml += `
-                <div class="text-sm text-gray-300">
-                    <strong>Move ${index + 1} (On ${move.date}):</strong><br>
-                    <span class="text-green-400">ADD:</span> ${move.added_player.player_name}<br>
-                    <span class="text-red-400">DROP:</span> ${move.dropped_player.player_name}
-                </div>
-            `;
-        });
+        let logHtml = `<h4 class="text-lg font-semibold text-white mt-4 mb-2">Simulated Moves</h4>
+            <div class="bg-gray-800 rounded-lg p-3 space-y-2">`;
 
-        logHtml += '</div>';
-        simLogContainer.innerHTML = logHtml;
-    }
+        simulatedMoves.forEach((move, index) => {
+            logHtml += `
+                <div class="text-sm text-gray-300">
+                    <strong>Move ${index + 1} (On ${move.date}):</strong><br>
+                    <span class="text-green-400">ADD:</span> ${move.added_player.player_name}<br>
+                    <span class="text-red-400">DROP:</span> ${move.dropped_player.player_name}
+                </div>
+            `;
+        });
 
-    function handleSimulateClick() {
-        const checkedBox = document.querySelector('input[name="player-to-add"]:checked');
-        const droppedPlayerOption = playerDropDropdown.options[playerDropDropdown.selectedIndex];
-        const transactionDate = transactionDatePicker.value;
+        logHtml += '</div>';
+        simLogContainer.innerHTML = logHtml;
+    }
 
-        if (!checkedBox) {
-            alert("Please check a player to add.");
-            return;
-        }
-        if (!droppedPlayerOption.value) {
-            alert("Please select a player to drop.");
-            return;
-        }
-        if (!transactionDate) {
-            alert("Please select a transaction date.");
-            return;
-        }
+    function handleSimulateClick() {
+        const checkedBox = document.querySelector('input[name="player-to-add"]:checked');
+        const droppedPlayerOption = playerDropDropdown.options[playerDropDropdown.selectedIndex];
+        const transactionDate = transactionDatePicker.value;
 
-        // --- NEW: Validation for simulated player drop ---
-        if (droppedPlayerOption.dataset.type === 'simulated') {
-            const addDate = droppedPlayerOption.dataset.addDate;
-            if (transactionDate < addDate) {
-                alert(`Error: Cannot drop ${droppedPlayerOption.text.split('(')[0].trim()} on ${transactionDate} because they are not scheduled to be added until ${addDate}.`);
-                return;
-            }
-        }
+        if (!checkedBox) {
+            alert("Please check a player to add.");
+            return;
+        }
+        if (!droppedPlayerOption.value) {
+            alert("Please select a player to drop.");
+            return;
+        }
+        if (!transactionDate) {
+            alert("Please select a transaction date.");
+            return;
+        }
 
-        // Find the player objects
-        const addedPlayerId = parseInt(checkedBox.value, 10);
-        const tableType = checkedBox.dataset.table;
-        const addedPlayer = (tableType === 'waivers' ? allWaiverPlayers : allFreeAgents).find(p => p.player_id === addedPlayerId);
+        // --- NEW: Validation for simulated player drop ---
+        if (droppedPlayerOption.dataset.type === 'simulated') {
+            const addDate = droppedPlayerOption.dataset.addDate;
+            if (transactionDate < addDate) {
+                alert(`Error: Cannot drop ${droppedPlayerOption.text.split('(')[0].trim()} on ${transactionDate} because they are not scheduled to be added until ${addDate}.`);
+                return;
+            }
+        }
 
-        const droppedPlayerId = parseInt(droppedPlayerOption.value, 10);
-        let droppedPlayer;
-        if (droppedPlayerOption.dataset.type === 'roster') {
-            droppedPlayer = currentTeamRoster.find(p => p.player_id === droppedPlayerId);
-        } else {
-            droppedPlayer = simulatedMoves.find(m => m.added_player.player_id === droppedPlayerId).added_player;
-        }
+        // Find the player objects
+        const addedPlayerId = parseInt(checkedBox.value, 10);
+        const tableType = checkedBox.dataset.table;
+        const addedPlayer = (tableType === 'waivers' ? allWaiverPlayers : allFreeAgents).find(p => p.player_id === addedPlayerId);
 
-        // Add to simulation
-        simulatedMoves.push({
-            date: transactionDate,
-            added_player: addedPlayer,
-            dropped_player: droppedPlayer
-        });
+        const droppedPlayerId = parseInt(droppedPlayerOption.value, 10);
+        let droppedPlayer;
+        if (droppedPlayerOption.dataset.type === 'roster') {
+            droppedPlayer = currentTeamRoster.find(p => p.player_id === droppedPlayerId);
+        } else {
+            droppedPlayer = simulatedMoves.find(m => m.added_player.player_id === droppedPlayerId).added_player;
+        }
 
-        // Save to localStorage
-        localStorage.setItem(SIMULATION_KEY, JSON.stringify(simulatedMoves));
+        // Add to simulation
+        simulatedMoves.push({
+            date: transactionDate,
+            added_player: addedPlayer,
+            dropped_player: droppedPlayer
+        });
 
-        // Update UI
-        populateDropPlayerDropdown();
-        renderSimulatedMovesLog();
-        checkedBox.checked = false;
-        checkedBox.disabled = true; // Disable to prevent re-adding
-       
-        // Alert user
-        alert('Simulation added! Navigate to Lineups or Matchups to see the effect.');
-    }
+        // Save to localStorage
+        localStorage.setItem(SIMULATION_KEY, JSON.stringify(simulatedMoves));
 
-    function handleResetClick() {
-        if (confirm("Are you sure you want to reset all simulated moves?")) {
-            simulatedMoves = [];
-            localStorage.removeItem(SIMULATION_KEY);
-            // We can just refresh the data to reset everything
-            fetchData();
-        }
-    }
+        // Update UI
+        populateDropPlayerDropdown();
+        renderSimulatedMovesLog();
+        checkedBox.checked = false;
+        checkedBox.disabled = true; // Disable to prevent re-adding
 
+        // Alert user
+        alert('Simulation added! Navigate to Lineups or Matchups to see the effect.');
+    }
 
+    function handleResetClick() {
+        if (confirm("Are you sure you want to reset all simulated moves?")) {
+            simulatedMoves = [];
+            localStorage.removeItem(SIMULATION_KEY);
+            // We can just refresh the data to reset everything
+            fetchData();
+        }
+    }
 
     function renderUnusedRosterSpotsTable(unusedSpotsData) {
         if (!unusedSpotsData) {
@@ -563,6 +566,7 @@
             currentUnusedSpots = cachedState.unusedRosterSpotsData;
             unusedRosterSpotsContainer.innerHTML = cachedState.unusedRosterSpotsHTML;
 
+            // --- NEW: Load sim state from cache ---
             const cachedSim = localStorage.getItem(SIMULATION_KEY);
             simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
 
@@ -571,17 +575,16 @@
             setupEventListeners();
         } else {
             console.log("No valid cache. Fetching fresh data for Free Agents page.");
-
+            // --- NEW: Load sim state even on fresh load ---
             const cachedSim = localStorage.getItem(SIMULATION_KEY);
-            simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
-
+            simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
             setupEventListeners();
             fetchData();
         }
 
+        // --- NEW: Add listeners for sim buttons ---
         simulateButton.addEventListener('click', handleSimulateClick);
-        resetButton.addEventListener('click', handleResetClick);
-
+        resetButton.addEventListener('click', handleResetClick);
     }
 
     init();

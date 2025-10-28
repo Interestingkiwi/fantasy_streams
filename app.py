@@ -1248,8 +1248,8 @@ def get_free_agent_data():
             'ranked_categories': all_scoring_categories,  # Send all categories for table columns
             'checked_categories': checked_categories,  # Send the list of checked categories
             'unused_roster_spots': unused_roster_spots,
-            'team_roster': [dict(p) for p in team_ranked_roster], # --- NEW: Send the roster
-            'week_dates': days_in_week_data
+            'team_roster': [dict(p) for p in team_ranked_roster], # --- NEW: Send the roster
+            'week_dates': days_in_week_data # --- NEW: Send the valid transaction dates
         })
 
     except Exception as e:
