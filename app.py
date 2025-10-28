@@ -682,6 +682,17 @@ def get_matchup_stats():
     if not conn:
         return jsonify({'error': error_msg}), 404
 
+    cursor = conn.cursor()
+    cursor.execute("SELECT category FROM scoring")
+    all_scoring_categories = [row['category'] for row in cursor.fetchall()]
+
+    checked_categories = data.get('categories')
+    # Handle default case: if no categories are sent, all are checked
+    if checked_categories is None:
+        checked_categories = all_scoring_categories
+    unchecked_categories = [cat for cat in all_scoring_categories if cat not in checked_categories]
+
+
     try:
         cursor = conn.cursor()
 
@@ -770,6 +781,35 @@ def get_matchup_stats():
 
         team1_ranked_roster = _get_ranked_roster_for_week(cursor, team1_id, week_num)
         team2_ranked_roster = _get_ranked_roster_for_week(cursor, team2_id, week_num)
+
+        rosters_to_update = [team1_ranked_roster, team2_ranked_roster]
+
+        # Need to get player_stats for all players in both rosters
+        all_active_normalized_names = [p['player_name_normalized'] for p in team1_ranked_roster + team2_ranked_roster]
+        player_stats = {}
+        if all_active_normalized_names:
+            placeholders = ','.join('?' for _ in all_active_normalized_names)
+            cat_rank_columns = [f"{cat}_cat_rank" for cat in all_scoring_categories]
+            query = f"SELECT player_name_normalized, {', '.join(cat_rank_columns)} FROM joined_player_stats WHERE player_name_normalized IN ({placeholders})"
+            cursor.execute(query, all_active_normalized_names)
+            player_stats = {row['player_name_normalized']: dict(row) for row in cursor.fetchall()}
+
+        for roster in rosters_to_update:
+            for player in roster:
+                p_stats = player_stats.get(player['player_name_normalized'])
+                new_total_rank = 0
+                if p_stats:
+                    for cat in all_scoring_categories:
+                        rank_key = f"{cat}_cat_rank"
+                        rank_value = p_stats.get(rank_key)
+                        if rank_value is not None:
+                            if cat in unchecked_categories:
+                                new_total_rank += rank_value / 10.0 # Using your / 10.0 logic
+                            else:
+                                new_total_rank += rank_value
+                player['total_rank'] = round(new_total_rank, 2) if p_stats else None
+                if player.get('total_rank') is None:
+                    player['total_rank'] = 60
 
         today = date.today()
         projection_start_date = max(today, start_date_obj)

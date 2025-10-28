@@ -11,6 +11,7 @@
     const opponentSelect = document.getElementById('opponent-select');
 
     let pageData = null; // To store weeks, teams, and matchups
+    const CATEGORY_PREF_KEY = 'lineupCategoryPreferences'; // --- NEW --- Key for localStorage
 
     async function init() {
         try {
@@ -114,6 +115,11 @@
         tableContainer.innerHTML = '<p class="text-gray-400">Loading matchup stats...</p>';
         unusedRosterSpotsContainer.innerHTML = '';
 
+        // --- NEW: Read category preferences from localStorage ---
+        const savedCategories = localStorage.getItem(CATEGORY_PREF_KEY);
+        const categoriesToSend = savedCategories ? JSON.parse(savedCategories) : null;
+        // --- END NEW ---
+
 
         try {
             const response = await fetch('/api/matchup_team_stats', {
@@ -122,7 +128,8 @@
                 body: JSON.stringify({
                     week: selectedWeek,
                     team1_name: yourTeamName,
-                    team2_name: opponentName
+                    team2_name: opponentName,
+                    categories: categoriesToSend // --- MODIFIED ---
                 })
             });
 
@@ -286,7 +293,7 @@
         `;
 
         sortedDays.forEach(day => {
-            tableHtml += `<tr class="hover:bg-gray-700/50">
+            tableHtml += `<tr class="hover:bg-gray-700/5G">
                 <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${day}</td>`;
             positionOrder.forEach(pos => {
                 const value = unusedSpotsData[day][pos];

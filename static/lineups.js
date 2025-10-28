@@ -12,6 +12,7 @@
     const yourTeamSelect = document.getElementById('your-team-select');
 
     let pageData = null; // To store weeks and teams
+    const CATEGORY_PREF_KEY = 'lineupCategoryPreferences';
     let allScoringCategories = []; // Store all categories
     let checkedCategories = []; // Store currently checked categories
 
@@ -55,6 +56,10 @@
 
             pageData = data;
             populateDropdowns();
+            const savedCategories = localStorage.getItem(CATEGORY_PREF_KEY);
+            if (savedCategories) {
+                checkedCategories = JSON.parse(savedCategories);
+            }
             setupEventListeners();
 
             // Initial data load
@@ -131,7 +136,6 @@
             if (categoryCheckboxes.length > 0) {
                 categoriesToSend = Array.from(categoryCheckboxes).map(cb => cb.value);
             } else if (checkedCategories.length > 0) {
-                // Use the initial list if checkboxes aren't drawn yet (first load)
                 categoriesToSend = checkedCategories;
             }
 
@@ -151,7 +155,9 @@
 
             if (allScoringCategories.length === 0) {
                 allScoringCategories = data.scoring_categories;
-                checkedCategories = data.checked_categories;
+                if (localStorage.getItem(CATEGORY_PREF_KEY) === null) {
+                  checkedCategories = data.checked_categories;
+                }
                 renderCategoryCheckboxes(); // New function
             }
 
@@ -440,7 +446,15 @@
         });
 
         // The "Update Lineups" button will trigger the fetch
-        document.getElementById('update-lineups-btn').addEventListener('click', fetchAndRenderTable);
+        document.getElementById('update-lineups-btn').addEventListener('click', () => {
+            const currentChecked = Array.from(
+                document.querySelectorAll('#category-checkboxes-container input[name="category"]:checked')
+            ).map(cb => cb.value);
+
+            localStorage.setItem(CATEGORY_PREF_KEY, JSON.stringify(currentChecked));
+
+            fetchAndRenderTable();
+        });
     }
 
 
