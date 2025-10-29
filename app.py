@@ -1102,6 +1102,7 @@ def get_roster_data():
             player_stats = {row['player_name_normalized']: dict(row) for row in cursor.fetchall()}
 
         # Augment the full player list with all necessary data
+        player_custom_rank_map = {}
         active_player_map = {p['player_name']: p for p in active_players}
         for player in all_players:
             # Add ranks and this week's schedule from the active player data
@@ -1161,28 +1162,31 @@ def get_roster_data():
 
         logging.info("Updating ranks for active_players list...")
         for player in active_players:
-            p_stats = player_stats.get(player['player_name_normalized'])
-            new_total_rank = 0
-            if p_stats:
-                for cat in all_scoring_categories:
-                    rank_key = f"{cat}_cat_rank"
-                    rank_value = p_stats.get(rank_key)
-
-                    # We don't need to store individual cat ranks here
-                    # as they are already on the player object from _get_ranked_roster_for_week
-                    if rank_value is not None:
-                        if cat in unchecked_categories:
-                            new_total_rank += rank_value / 10.0 # Using your / 10.0 logic
-                        else:
-                            new_total_rank += rank_value
-
-            player['total_rank'] = round(new_total_rank, 2) if p_stats else None
-
-            # Also ensure a default rank for players with no stats,
-            # matching get_optimal_lineup logic
-            if player.get('total_rank') is None:
+            custom_rank = player_custom_rank_map.get(int(player.get('player_id', 0)))
+            if custom_rank is not None:
+                player['total_rank'] = custom_rank
+            elif player.get('total_rank') is None: # Fallback for players w/o stats
                 player['total_rank'] = 60
+
+        # 2. Update simulated_moves list
+        logging.info("Updating ranks for simulated_moves list...")
+        for move in simulated_moves:
+            added_player = move['added_player']
+            # Use int for robust matching
+            custom_rank = player_custom_rank_map.get(int(added_player.get('player_id', 0)))
+            if custom_rank is not None:
+                added_player['total_rank'] = custom_rank
+            elif added_player.get('total_rank') is None: # Fallback
+                added_player['total_rank'] = 60
         logging.info("Finished updating ranks for active_players.")
+
+# We don't need to store individual cat ranks here
+# as they are already on the player object from _get_ranked_roster_for_week
+#if rank_value is not None:
+#    if cat in unchecked_categories:
+#        new_total_rank += rank_value / 10.0 # Using your / 10.0 logic
+#    else:
+#        new_total_rank += rank_value
 
 
         # Get lineup settings
