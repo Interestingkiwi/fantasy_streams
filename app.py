@@ -253,12 +253,17 @@ def get_optimal_lineup(players, lineup_settings):
 
     lineup = {pos: [] for pos in lineup_settings}
     player_pool = list(ranked_players)
-    assigned_player_names = set()
+
+    # --- START MODIFICATION ---
+    # Use player_id for tracking. It's guaranteed to exist and be unique.
+    assigned_player_ids = set()
 
     def assign_player(player, pos, current_lineup, assigned_set):
         current_lineup[pos].append(player)
-        assigned_set.add(player['player_name_normalized'])
+        # Use player_id, which is present on both base and simulated players
+        assigned_set.add(player.get('player_id'))
         return True
+    # --- END MODIFICATION ---
 
     # --- Helper to safely get position string ---
     def get_pos_str(p):
@@ -266,20 +271,22 @@ def get_optimal_lineup(players, lineup_settings):
 
     # --- Pass 1: Place players with only one eligible position ---
     single_pos_players = sorted(
-        [p for p in player_pool if len(get_pos_str(p).split(',')) == 1], # <-- MODIFIED
+        [p for p in player_pool if len(get_pos_str(p).split(',')) == 1],
         key=lambda p: p['total_rank']
     )
     for player in single_pos_players:
-        pos = get_pos_str(player).strip() # <-- MODIFIED
+        pos = get_pos_str(player).strip()
         if pos in lineup and len(lineup[pos]) < lineup_settings.get(pos, 0):
-            assign_player(player, pos, lineup, assigned_player_names)
+            # Use the new ID-based set
+            assign_player(player, pos, lineup, assigned_player_ids)
 
-    player_pool = [p for p in player_pool if p['player_name_normalized'] not in assigned_player_names]
+    # Filter pool based on player_id
+    player_pool = [p for p in player_pool if p.get('player_id') not in assigned_player_ids]
 
     # --- Pass 2: Place multi-position players using a scarcity-aware algorithm ---
     player_pool.sort(key=lambda p: p['total_rank'])
     for player in player_pool:
-        eligible_positions = [pos.strip() for pos in get_pos_str(player).split(',')] # <-- MODIFIED
+        eligible_positions = [pos.strip() for pos in get_pos_str(player).split(',')]
         available_slots_for_player = [
             pos for pos in eligible_positions if pos in lineup and len(lineup[pos]) < lineup_settings.get(pos, 0)
         ]
@@ -288,43 +295,37 @@ def get_optimal_lineup(players, lineup_settings):
 
         slot_scarcity = {}
         for slot in available_slots_for_player:
-            scarcity_count = sum(1 for other in player_pool if other != player and slot in [p.strip() for p in get_pos_str(other).split(',')]) # <-- MODIFIED
+            scarcity_count = sum(1 for other in player_pool if other != player and slot in [p.strip() for p in get_pos_str(other).split(',')])
             slot_scarcity[slot] = scarcity_count
 
         best_pos = min(slot_scarcity, key=slot_scarcity.get)
-        assign_player(player, best_pos, lineup, assigned_player_names)
+        # Use the new ID-based set
+        assign_player(player, best_pos, lineup, assigned_player_ids)
 
-    player_pool = [p for p in player_pool if p['player_name_normalized'] not in assigned_player_names]
+    # Filter pool based on player_id
+    player_pool = [p for p in player_pool if p.get('player_id') not in assigned_player_ids]
 
     # --- Pass 3: Upgrade Pass ---
-    # Try to swap in benched players if they are better than a starter.
-    for benched_player in player_pool: # player_pool now contains only benched players
-        for pos in [p.strip() for p in get_pos_str(benched_player).split(',')]: # <-- MODIFIED
+    # (This pass is unaffected as it doesn't use the assigned_set)
+    for benched_player in player_pool:
+        for pos in [p.strip() for p in get_pos_str(benched_player).split(',')]:
             if pos not in lineup: continue
 
-            # Find the worst-ranked starter in this position
-            if not lineup[pos]: continue # Should not happen if lineup is full, but a safeguard
+            if not lineup[pos]: continue
 
             worst_starter_in_pos = max(lineup[pos], key=lambda p: p['total_rank'])
 
-            # If the benched player is better, try to make a swap
             if benched_player['total_rank'] < worst_starter_in_pos['total_rank']:
-                # The simple swap: benched player takes the starter's spot
                 lineup[pos].remove(worst_starter_in_pos)
                 lineup[pos].append(benched_player)
 
-                # Now, try to re-slot the benched starter (worst_starter_in_pos)
-                # This makes the algorithm more robust.
                 is_re_slotted = False
-                for other_pos in [p.strip() for p in get_pos_str(worst_starter_in_pos).split(',')]: # <-- MODIFIED
+                for other_pos in [p.strip() for p in get_pos_str(worst_starter_in_pos).split(',')]:
                     if other_pos in lineup and len(lineup[other_pos]) < lineup_settings.get(other_pos, 0):
                         lineup[other_pos].append(worst_starter_in_pos)
                         is_re_slotted = True
-                        break # Re-slotted successfully
-
-                # If the bumped starter couldn't be re-slotted, they go to the bench.
-                # The lineup is still better overall because of the initial upgrade.
-                break # Move to the next benched player
+                        break
+                break
 
     return lineup
 
@@ -1138,7 +1139,8 @@ def get_roster_data():
                         else:
                             new_total_rank += rank_value
             player['total_rank'] = round(new_total_rank, 2) if p_stats else None
-
+            if player.get('player_id'):
+                player_custom_rank_map[int(player['player_id'])] = player['total_rank']
             # Add category ranks for all players (active and inactive)
 #            p_stats = player_stats.get(player['player_name_normalized'])
 #            if p_stats:
