@@ -824,33 +824,6 @@ def get_matchup_stats():
 
         rosters_to_update = [team1_ranked_roster, team2_ranked_roster]
 
-        # Need to get player_stats for all players in both rosters
-        all_active_normalized_names = [p['player_name_normalized'] for p in team1_ranked_roster + team2_ranked_roster]
-        player_stats = {}
-        if all_active_normalized_names:
-            placeholders = ','.join('?' for _ in all_active_normalized_names)
-            cat_rank_columns = [f"{cat}_cat_rank" for cat in all_scoring_categories]
-            query = f"SELECT player_name_normalized, {', '.join(cat_rank_columns)} FROM joined_player_stats WHERE player_name_normalized IN ({placeholders})"
-            cursor.execute(query, all_active_normalized_names)
-            player_stats = {row['player_name_normalized']: dict(row) for row in cursor.fetchall()}
-
-        for roster in rosters_to_update:
-            for player in roster:
-                p_stats = player_stats.get(player['player_name_normalized'])
-                new_total_rank = 0
-                if p_stats:
-                    for cat in all_scoring_categories:
-                        rank_key = f"{cat}_cat_rank"
-                        rank_value = p_stats.get(rank_key)
-                        if rank_value is not None:
-                            if cat in unchecked_categories:
-                                new_total_rank += rank_value / 10.0 # Using your / 10.0 logic
-                            else:
-                                new_total_rank += rank_value
-                player['total_rank'] = round(new_total_rank, 2) if p_stats else None
-                if player.get('total_rank') is None:
-                    player['total_rank'] = 60
-
         today = date.today()
         projection_start_date = max(today, start_date_obj)
 
@@ -858,7 +831,9 @@ def get_matchup_stats():
         while current_date <= end_date_obj:
             current_date_str = current_date.strftime('%Y-%m-%d')
 
+            # --- NEW: Build Team 1's daily roster ---
             t1_daily_roster = []
+            # Use int for robust matching
             dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= current_date_str}
 
             for p in team1_ranked_roster: # 1. Base roster
@@ -874,8 +849,6 @@ def get_matchup_stats():
                 game_dates = p.get('game_dates_this_week') or p.get('game_dates_this_week_full', [])
                 if current_date_str in game_dates:
                     t1_players_today.append(p)
-
-            team1_players_today = [p for p in team1_ranked_roster if current_date_str in p.get('game_dates_this_week', [])]
             team2_players_today = [p for p in team2_ranked_roster if current_date_str in p.get('game_dates_this_week', [])]
 
             team1_lineup = get_optimal_lineup(team1_players_today, lineup_settings)
@@ -932,6 +905,8 @@ def get_matchup_stats():
                     row_stats[cat] = round(value, 1)
         for day_date in days_in_week:
             day_str = day_date.strftime('%Y-%m-%d')
+
+            # --- NEW: Build Team 1's daily roster (repeat logic) ---
             t1_daily_roster = []
             dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= day_str}
             for p in team1_ranked_roster:
@@ -946,10 +921,11 @@ def get_matchup_stats():
                 game_dates = p.get('game_dates_this_week') or p.get('game_dates_this_week_full', [])
                 if day_str in game_dates:
                     t1_players_today.append(p)
-            team1_players_today = [p for p in team1_ranked_roster if day_str in p.get('game_dates_this_week', [])]
+            # --- END NEW ---
+
             team2_players_today = [p for p in team2_ranked_roster if day_str in p.get('game_dates_this_week', [])]
 
-            team1_lineup = get_optimal_lineup(team1_players_today, lineup_settings)
+            team1_lineup = get_optimal_lineup(t1_players_today, lineup_settings)
             team2_lineup = get_optimal_lineup(team2_players_today, lineup_settings)
 
             team1_starters = [player for pos_players in team1_lineup.values() for player in pos_players]
@@ -958,7 +934,7 @@ def get_matchup_stats():
             stats['game_counts']['team1_total'] += len(team1_starters)
             stats['game_counts']['team2_total'] += len(team2_starters)
         # --- Calculate Unused Roster Spots for Team 1 ---
-        stats['team1_unused_spots'] = _calculate_unused_spots(days_in_week, team1_ranked_roster, lineup_settings)
+        stats['team1_unused_spots'] = _calculate_unused_spots(days_in_week, team1_ranked_roster, lineup_settings, simulated_moves)
 
 
         return jsonify(stats)
@@ -1239,7 +1215,7 @@ def get_roster_data():
         # Add starts count to the final player list
         for player in all_players:
             player['starts_this_week'] = player_starts_counter.get(player.get('player_id'), 0)
-            
+
         # --- Calculate Unused Roster Spots ---
         unused_roster_spots = _calculate_unused_spots(days_in_week, active_players, lineup_settings, simulated_moves)
 
