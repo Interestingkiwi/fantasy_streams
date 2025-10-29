@@ -1195,14 +1195,16 @@ def get_roster_data():
         cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
 
-        # --- Calculate optimal lineup and starts for each day ---
+# --- Calculate optimal lineup and starts for each day ---
         daily_optimal_lineups = {}
         player_starts_counter = Counter()
 
         for day_date in days_in_week:
             day_str = day_date.strftime('%Y-%m-%d')
 
+            # --- NEW: Build the roster for this specific day based on simulation ---
             daily_active_roster = []
+            # Use int for robust matching
             dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= day_str}
 
             for p in active_players: # 1. Use base active roster
@@ -1212,10 +1214,14 @@ def get_roster_data():
             for move in simulated_moves: # 2. Add simulated players
                 if move['date'] <= day_str:
                     daily_active_roster.append(move['added_player'])
+            # --- END NEW ---
 
-            players_playing_today = [
-                p for p in active_players if day_str in p.get('game_dates_this_week', [])
-            ]
+            players_playing_today = []
+            for p in daily_active_roster:
+                # Check both keys for safety (base roster vs. sim player)
+                game_dates = p.get('game_dates_this_week') or p.get('game_dates_this_week_full', [])
+                if day_str in game_dates:
+                    players_playing_today.append(p)
 
             if players_playing_today:
                 optimal_lineup_for_day = get_optimal_lineup(
@@ -1227,12 +1233,13 @@ def get_roster_data():
 
                 for pos_players in optimal_lineup_for_day.values():
                     for player in pos_players:
-                        player_starts_counter[player['player_name']] += 1
+                        # Use player_id for counter, it's more reliable
+                        player_starts_counter[player['player_id']] += 1
 
         # Add starts count to the final player list
         for player in all_players:
-            player['starts_this_week'] = player_starts_counter.get(player['player_name'], 0)
-
+            player['starts_this_week'] = player_starts_counter.get(player.get('player_id'), 0)
+            
         # --- Calculate Unused Roster Spots ---
         unused_roster_spots = _calculate_unused_spots(days_in_week, active_players, lineup_settings, simulated_moves)
 
