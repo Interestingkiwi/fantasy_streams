@@ -254,8 +254,8 @@
             tableHtml += `
                 <tr class="hover:bg-gray-700/50">
                     <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
-                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.team}</td>
-                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.team || player.player_team}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions || player.positions}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${gamesThisWeekHtml}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.length}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.starts_this_week}</td>
