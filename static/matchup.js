@@ -133,7 +133,7 @@
                     week: selectedWeek,
                     team1_name: yourTeamName,
                     team2_name: opponentName,
-              .categories: categoriesToSend,
+                    categories: categoriesToSend,
                     simulated_moves: simulatedMoves // <-- ADD THIS LINE
                 })
             });
