@@ -126,16 +126,17 @@
         const simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
 
         try {
-            const response = await fetch('/api/matchup_team_stats', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    week: selectedWeek,
-                    team1_name: yourTeamName,
-                    team2_name: opponentName,
-                    categories: categoriesToSend // --- MODIFIED ---
-                })
-            });
+          const response = await fetch('/api/matchup_team_stats', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    week: selectedWeek,
+                    team1_name: yourTeamName,
+                    team2_name: opponentName,
+              .categories: categoriesToSend,
+                    simulated_moves: simulatedMoves // <-- ADD THIS LINE
+                })
+            });
 
             const stats = await response.json();
             if (!response.ok) throw new Error(stats.error || 'Failed to fetch stats.');
