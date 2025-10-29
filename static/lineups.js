@@ -10,12 +10,14 @@
     const weekSelect = document.getElementById('week-select');
     const checkboxesContainer = document.getElementById('category-checkboxes-container');
     const yourTeamSelect = document.getElementById('your-team-select');
+    const simLogContainer = document.getElementById('simulated-moves-log'); // NEW
     const SIMULATION_KEY = 'simulationCache';
 
     let pageData = null; // To store weeks and teams
     const CATEGORY_PREF_KEY = 'lineupCategoryPreferences';
     let allScoringCategories = []; // Store all categories
     let checkedCategories = []; // Store currently checked categories
+    let simulatedMoves = []; // NEW
 
     /**
      * Calculates a color for a heat map based on a player's rank.
@@ -140,7 +142,7 @@
                 categoriesToSend = checkedCategories;
             }
         const cachedSim = localStorage.getItem(SIMULATION_KEY);
-        const simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
+        simulatedMoves = cachedSim ? JSON.parse(cachedSim) : []; // MODIFIED: Assign to global
         try {
             const response = await fetch('/api/roster_data', {
                 method: 'POST',
@@ -168,6 +170,7 @@
             renderTable(data.players, data.scoring_categories, data.daily_optimal_lineups);
             renderOptimalLineups(data.daily_optimal_lineups, data.lineup_settings);
             renderUnusedRosterSpotsTable(data.unused_roster_spots);
+            renderSimulatedMovesLog(); // NEW CALL
 
 
         } catch(error) {
@@ -410,6 +413,56 @@
 
         unusedRosterSpotsContainer.innerHTML = tableHtml;
     }
+
+    // --- NEW FUNCTION ---
+    function renderSimulatedMovesLog() {
+        if (!simLogContainer) return; // Don't error if element doesn't exist
+
+        if (simulatedMoves.length === 0) {
+            simLogContainer.innerHTML = ''; // Clear the container if no moves
+            return;
+        }
+
+        // Sort moves by date to display them in chronological order
+        const sortedMoves = [...simulatedMoves].sort((a, b) => {
+            if (a.date < b.date) return -1;
+            if (a.date > b.date) return 1;
+            return 0;
+        });
+
+        let logHtml = `
+            <p class="text-sm text-gray-400 italic mb-2">Lineups assume the below planned transactions are made.</p>
+            <h4 class="text-lg font-semibold text-white mt-6 mb-2">Simulated Moves Log</h4>
+            <div class="overflow-x-auto bg-gray-800 rounded-lg shadow">
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-700/50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Date of Move</th>
+                            <th class="px-3 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Added</th>
+                            <th class="px-3 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">Player Dropped</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+        `;
+
+        sortedMoves.forEach(move => {
+            logHtml += `
+                <tr class="hover:bg-gray-700/50">
+                    <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${move.date}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm text-green-400">${move.added_player.player_name}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm text-red-400">${move.dropped_player.player_name}</td>
+                </tr>
+            `;
+        });
+
+        logHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        simLogContainer.innerHTML = logHtml;
+    }
+    // --- END NEW FUNCTION ---
 
 
     function renderCategoryCheckboxes() {
