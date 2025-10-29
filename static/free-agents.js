@@ -16,7 +16,7 @@
 
     // --- Caching Configuration ---
     const CACHE_KEY = 'freeAgentsCache';
-    const SIMULATION_KEY = 'simulationCache'; // --- NEW: For simulated moves
+    const SIMULATION_KEY = 'simulationCache';
 
     // --- Global State ---
     let allWaiverPlayers = [];
@@ -25,8 +25,9 @@
     let rankedCategories = [];
     let checkedCategories = [];
     let currentUnusedSpots = null;
-    let currentTeamRoster = []; // --- NEW: Store your roster
-    let simulatedMoves = []; // --- NEW: Store simulation state
+    let currentTeamRoster = [];
+    let currentWeekDates = [];
+    let simulatedMoves = [];
     let sortConfig = {
         waivers: { key: 'total_cat_rank', direction: 'ascending' },
         freeAgents: { key: 'total_cat_rank', direction: 'ascending' }
@@ -45,6 +46,7 @@
                 unusedRosterSpotsHTML: unusedRosterSpotsContainer.innerHTML,
                 unusedRosterSpotsData: currentUnusedSpots,
                 currentTeamRoster: currentTeamRoster,
+                currentWeekDates: currentWeekDates,
                 selectedTeam: document.getElementById('your-team-select')?.value,
                 searchTerm: playerSearchInput.value,
                 timestamp: Date.now()
@@ -71,8 +73,9 @@
                 localStorage.removeItem(CACHE_KEY);
                 return null;
             }
-            currentUnusedSpots = cachedState.unusedRosterSpotsData; // --- NEW: Load from cache
+            currentUnusedSpots = cachedState.unusedRosterSpotsData;
             currentTeamRoster = cachedState.currentTeamRoster || [];
+            currentWeekDates = cachedState.currentWeekDates || [];
             return cachedState;
         } catch (error) {
             console.warn("Could not load state from local storage.", error);
@@ -137,7 +140,8 @@
             rankedCategories = data.ranked_categories;
             checkedCategories = data.checked_categories || data.ranked_categories;
             currentUnusedSpots = data.unused_roster_spots;
-            currentTeamRoster = data.team_roster; // --- NEW: Store roster
+            currentTeamRoster = data.team_roster;
+            currentWeekDates = data.week_dates;
 
 
             if (allScoringCategories.length === 0 && data.scoring_categories) {
@@ -149,7 +153,7 @@
 
             // --- NEW: Populate new UI elements ---
             populateDropPlayerDropdown();
-            populateTransactionDatePicker(data.week_dates);
+            populateTransactionDatePicker(currentWeekDates);
             renderSimulatedMovesLog();
             renderUnusedRosterSpotsTable(currentUnusedSpots);
             filterAndSortPlayers();
@@ -623,6 +627,7 @@
             filterAndSortPlayers();
             populateDropPlayerDropdown();
             renderSimulatedMovesLog();
+            populateTransactionDatePicker(currentWeekDates);
             setupEventListeners();
         } else {
             console.log("No valid cache. Fetching fresh data for Free Agents page.");
