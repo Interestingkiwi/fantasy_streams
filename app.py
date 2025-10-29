@@ -851,7 +851,7 @@ def get_matchup_stats():
                     t1_players_today.append(p)
             team2_players_today = [p for p in team2_ranked_roster if current_date_str in p.get('game_dates_this_week', [])]
 
-            team1_lineup = get_optimal_lineup(team1_players_today, lineup_settings)
+            team1_lineup = get_optimal_lineup(t1_players_today, lineup_settings)
             team2_lineup = get_optimal_lineup(team2_players_today, lineup_settings)
 
             team1_starters = [player for pos_players in team1_lineup.values() for player in pos_players]
