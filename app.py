@@ -260,13 +260,17 @@ def get_optimal_lineup(players, lineup_settings):
         assigned_set.add(player['player_name_normalized'])
         return True
 
+    # --- Helper to safely get position string ---
+    def get_pos_str(p):
+        return p.get('eligible_positions') or p.get('positions', '')
+
     # --- Pass 1: Place players with only one eligible position ---
     single_pos_players = sorted(
-        [p for p in player_pool if len(p['eligible_positions'].split(',')) == 1],
+        [p for p in player_pool if len(get_pos_str(p).split(',')) == 1], # <-- MODIFIED
         key=lambda p: p['total_rank']
     )
     for player in single_pos_players:
-        pos = player['eligible_positions'].strip()
+        pos = get_pos_str(player).strip() # <-- MODIFIED
         if pos in lineup and len(lineup[pos]) < lineup_settings.get(pos, 0):
             assign_player(player, pos, lineup, assigned_player_names)
 
@@ -275,7 +279,7 @@ def get_optimal_lineup(players, lineup_settings):
     # --- Pass 2: Place multi-position players using a scarcity-aware algorithm ---
     player_pool.sort(key=lambda p: p['total_rank'])
     for player in player_pool:
-        eligible_positions = [pos.strip() for pos in player['eligible_positions'].split(',')]
+        eligible_positions = [pos.strip() for pos in get_pos_str(player).split(',')] # <-- MODIFIED
         available_slots_for_player = [
             pos for pos in eligible_positions if pos in lineup and len(lineup[pos]) < lineup_settings.get(pos, 0)
         ]
@@ -284,7 +288,7 @@ def get_optimal_lineup(players, lineup_settings):
 
         slot_scarcity = {}
         for slot in available_slots_for_player:
-            scarcity_count = sum(1 for other in player_pool if other != player and slot in [p.strip() for p in other['eligible_positions'].split(',')])
+            scarcity_count = sum(1 for other in player_pool if other != player and slot in [p.strip() for p in get_pos_str(other).split(',')]) # <-- MODIFIED
             slot_scarcity[slot] = scarcity_count
 
         best_pos = min(slot_scarcity, key=slot_scarcity.get)
@@ -295,7 +299,7 @@ def get_optimal_lineup(players, lineup_settings):
     # --- Pass 3: Upgrade Pass ---
     # Try to swap in benched players if they are better than a starter.
     for benched_player in player_pool: # player_pool now contains only benched players
-        for pos in [p.strip() for p in benched_player['eligible_positions'].split(',')]:
+        for pos in [p.strip() for p in get_pos_str(benched_player).split(',')]: # <-- MODIFIED
             if pos not in lineup: continue
 
             # Find the worst-ranked starter in this position
@@ -312,7 +316,7 @@ def get_optimal_lineup(players, lineup_settings):
                 # Now, try to re-slot the benched starter (worst_starter_in_pos)
                 # This makes the algorithm more robust.
                 is_re_slotted = False
-                for other_pos in [p.strip() for p in worst_starter_in_pos['eligible_positions'].split(',')]:
+                for other_pos in [p.strip() for p in get_pos_str(worst_starter_in_pos).split(',')]: # <-- MODIFIED
                     if other_pos in lineup and len(lineup[other_pos]) < lineup_settings.get(other_pos, 0):
                         lineup[other_pos].append(worst_starter_in_pos)
                         is_re_slotted = True
@@ -324,6 +328,7 @@ def get_optimal_lineup(players, lineup_settings):
 
     return lineup
 
+    
 def _get_ranked_roster_for_week(cursor, team_id, week_num):
     """
     Internal helper to fetch a team's full roster for a week and enrich it
