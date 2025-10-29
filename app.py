@@ -1082,15 +1082,18 @@ def get_roster_data():
         cat_rank_columns = [f"{cat}_cat_rank" for cat in scoring_categories]
 
         # Get player stats for all players to populate rank columns
-        all_normalized_names = [p['player_name_normalized'] for p in all_players]
+        all_normalized_names = [p.get('player_name_normalized') for p in all_players]
+        # Filter out the 'None' entries so the SQL query doesn't fail
+        valid_normalized_names = [name for name in all_normalized_names if name]
+
         player_stats = {}
-        if all_normalized_names:
-            placeholders = ','.join('?' for _ in all_normalized_names)
+        if valid_normalized_names: # Only query if we have valid names
+            placeholders = ','.join('?' for _ in valid_normalized_names)
             query = f"""
                 SELECT player_name_normalized, {', '.join(cat_rank_columns)}
                 FROM joined_player_stats WHERE player_name_normalized IN ({placeholders})
             """
-            cursor.execute(query, all_normalized_names)
+            cursor.execute(query, valid_normalized_names) # Use the filtered list
             player_stats = {row['player_name_normalized']: dict(row) for row in cursor.fetchall()}
 
         # Augment the full player list with all necessary data
@@ -1106,7 +1109,7 @@ def get_roster_data():
                 player['games_this_week'] = []
                 player['game_dates_this_week'] = []
 
-            p_stats = player_stats.get(player['player_name_normalized'])
+            p_stats = player_stats.get(player.get('player_name_normalized'))
             new_total_rank = 0
             if p_stats:
                 for cat in all_scoring_categories:
@@ -1133,14 +1136,17 @@ def get_roster_data():
 
             player['games_next_week'] = []
             if start_date_next and end_date_next:
-                cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player['player_team'],))
-                schedule_row = cursor.fetchone()
-                if schedule_row and schedule_row['schedule_json']:
-                    schedule = json.loads(schedule_row['schedule_json'])
-                    for game_date_str in schedule:
-                        game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
-                        if start_date_next <= game_date <= end_date_next:
-                            player['games_next_week'].append(game_date.strftime('%a'))
+                player_team_tricode = player.get('team') or player.get('player_team')
+
+                if player_team_tricode: # Only proceed if we found a team tricode
+                    cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player_team_tricode,))
+                    schedule_row = cursor.fetchone()
+                    if schedule_row and schedule_row['schedule_json']:
+                        schedule = json.loads(schedule_row['schedule_json'])
+                        for game_date_str in schedule:
+                            game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
+                            if start_date_next <= game_date <= end_date_next:
+                                player['games_next_week'].append(game_date.strftime('%a'))
 
         logging.info("Updating ranks for active_players list...")
         for player in active_players:
