@@ -13,6 +13,7 @@
 
     let pageData = null; // To store weeks, teams, and matchups
     const CATEGORY_PREF_KEY = 'lineupCategoryPreferences'; // --- NEW --- Key for localStorage
+    const SIMULATION_KEY = 'simulationCache';
 
     async function init() {
         try {
@@ -121,7 +122,8 @@
         const savedCategories = localStorage.getItem(CATEGORY_PREF_KEY);
         const categoriesToSend = savedCategories ? JSON.parse(savedCategories) : null;
         // --- END NEW ---
-
+        const cachedSim = localStorage.getItem(SIMULATION_KEY);
+        const simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
 
         try {
             const response = await fetch('/api/matchup_team_stats', {

@@ -397,11 +397,14 @@ def _get_ranked_roster_for_week(cursor, team_id, week_num):
                     player[col] = stats.get(col) if stats.get(col) is not None else None
     return active_players
 
-def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
+def _calculate_unused_spots(days_in_week, active_players, lineup_settings, simulated_moves=None):
     """
     Calculates the unused roster spots for each day of the week and identifies
-    potential player movements.
+    potential player movements, applying simulated add/drops if provided.
     """
+    if simulated_moves is None:
+        simulated_moves = []
+
     unused_spots_data = {}
     position_order = ['C', 'LW', 'RW', 'D', 'G']
 
@@ -410,7 +413,28 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
         day_str = day_date.strftime('%Y-%m-%d')
         day_name = day_date.strftime('%a')
 
-        players_playing_today = [p for p in active_players if day_str in p.get('game_dates_this_week', [])]
+        # --- NEW: Build the roster for this specific day based on simulation ---
+        daily_active_roster = []
+        # Use int for player_id comparisons for robustness
+        dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= day_str}
+
+        # 1. Add players from the base roster who haven't been dropped by today
+        for p in active_players:
+            if int(p.get('player_id', 0)) not in dropped_player_ids_today:
+                daily_active_roster.append(p)
+
+        # 2. Add players from simulated moves who have been added by today
+        for move in simulated_moves:
+            if move['date'] <= day_str:
+                daily_active_roster.append(move['added_player'])
+        # --- END NEW ---
+
+        players_playing_today = []
+        for p in daily_active_roster:
+            # Check both 'game_dates_this_week' (for base roster) and 'game_dates_this_week_full' (for added players)
+            game_dates = p.get('game_dates_this_week') or p.get('game_dates_this_week_full', [])
+            if day_str in game_dates:
+                players_playing_today.append(p)
 
         daily_lineup = get_optimal_lineup(players_playing_today, lineup_settings)
 
@@ -426,7 +450,8 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings):
             # If this position is full, check if any of its players could move
             if open_slots[pos] == 0:
                 for player in players:
-                    eligible = [p.strip() for p in player['eligible_positions'].split(',')]
+                    eligible_positions_str = player.get('eligible_positions') or player.get('positions', '')
+                    eligible = [p.strip() for p in eligible_positions_str.split(',')]
                     for other_pos in eligible:
                         current_val = open_slots.get(other_pos)
                         if current_val is not None:
@@ -486,6 +511,7 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
         # Get schedules
         player['games_this_week'] = []
         player['games_next_week'] = []
+        player['game_dates_this_week_full'] = []
         cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player.get('player_team'),))
         schedule_row = cursor.fetchone()
         if schedule_row and schedule_row['schedule_json']:
@@ -494,6 +520,7 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
                 game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
                 if start_date and end_date and start_date <= game_date <= end_date:
                     player['games_this_week'].append(game_date.strftime('%a'))
+                    player['game_dates_this_week_full'].append(game_date_str)
                 if start_date_next and end_date_next and start_date_next <= game_date <= end_date_next:
                     player['games_next_week'].append(game_date.strftime('%a'))
 
@@ -677,6 +704,7 @@ def get_matchup_stats():
     week_num = data.get('week')
     team1_name = data.get('team1_name')
     team2_name = data.get('team2_name')
+    simulated_moves = data.get('simulated_moves', [])
 
     conn, error_msg = get_db_connection_for_league(league_id)
     if not conn:
@@ -824,6 +852,23 @@ def get_matchup_stats():
         while current_date <= end_date_obj:
             current_date_str = current_date.strftime('%Y-%m-%d')
 
+            t1_daily_roster = []
+            dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= current_date_str}
+
+            for p in team1_ranked_roster: # 1. Base roster
+                if int(p.get('player_id', 0)) not in dropped_player_ids_today:
+                    t1_daily_roster.append(p)
+
+            for move in simulated_moves: # 2. Sim players
+                if move['date'] <= current_date_str:
+                    t1_daily_roster.append(move['added_player'])
+
+            t1_players_today = []
+            for p in t1_daily_roster:
+                game_dates = p.get('game_dates_this_week') or p.get('game_dates_this_week_full', [])
+                if current_date_str in game_dates:
+                    t1_players_today.append(p)
+
             team1_players_today = [p for p in team1_ranked_roster if current_date_str in p.get('game_dates_this_week', [])]
             team2_players_today = [p for p in team2_ranked_roster if current_date_str in p.get('game_dates_this_week', [])]
 
@@ -881,7 +926,20 @@ def get_matchup_stats():
                     row_stats[cat] = round(value, 1)
         for day_date in days_in_week:
             day_str = day_date.strftime('%Y-%m-%d')
+            t1_daily_roster = []
+            dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= day_str}
+            for p in team1_ranked_roster:
+                if int(p.get('player_id', 0)) not in dropped_player_ids_today:
+                    t1_daily_roster.append(p)
+            for move in simulated_moves:
+                if move['date'] <= day_str:
+                    t1_daily_roster.append(move['added_player'])
 
+            t1_players_today = []
+            for p in t1_daily_roster:
+                game_dates = p.get('game_dates_this_week') or p.get('game_dates_this_week_full', [])
+                if day_str in game_dates:
+                    t1_players_today.append(p)
             team1_players_today = [p for p in team1_ranked_roster if day_str in p.get('game_dates_this_week', [])]
             team2_players_today = [p for p in team2_ranked_roster if day_str in p.get('game_dates_this_week', [])]
 
@@ -952,6 +1010,7 @@ def get_roster_data():
     data = request.get_json()
     week_num = data.get('week')
     team_name = data.get('team_name')
+    simulated_moves = data.get('simulated_moves', [])
 
     conn, error_msg = get_db_connection_for_league(league_id)
     if not conn:
@@ -1007,6 +1066,15 @@ def get_roster_data():
         """, (team_id,))
         all_players_raw = cursor.fetchall()
         all_players = decode_dict_values([dict(row) for row in all_players_raw])
+
+        if simulated_moves:
+            dropped_player_ids = {int(m['dropped_player']['player_id']) for m in simulated_moves}
+            # Filter out dropped players
+            all_players = [p for p in all_players if int(p.get('player_id', 0)) not in dropped_player_ids]
+            # Add added players
+            for move in simulated_moves:
+                all_players.append(move['added_player'])
+
 
         # Get scoring categories to fetch rank columns
         cursor.execute("SELECT category FROM scoring")
@@ -1110,6 +1178,18 @@ def get_roster_data():
 
         for day_date in days_in_week:
             day_str = day_date.strftime('%Y-%m-%d')
+
+            daily_active_roster = []
+            dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= day_str}
+
+            for p in active_players: # 1. Use base active roster
+                if int(p.get('player_id', 0)) not in dropped_player_ids_today:
+                    daily_active_roster.append(p)
+
+            for move in simulated_moves: # 2. Add simulated players
+                if move['date'] <= day_str:
+                    daily_active_roster.append(move['added_player'])
+
             players_playing_today = [
                 p for p in active_players if day_str in p.get('game_dates_this_week', [])
             ]
@@ -1131,7 +1211,7 @@ def get_roster_data():
             player['starts_this_week'] = player_starts_counter.get(player['player_name'], 0)
 
         # --- Calculate Unused Roster Spots ---
-        unused_roster_spots = _calculate_unused_spots(days_in_week, active_players, lineup_settings)
+        unused_roster_spots = _calculate_unused_spots(days_in_week, active_players, lineup_settings, simulated_moves)
 
         return jsonify({
             'players': all_players,

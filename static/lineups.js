@@ -10,6 +10,7 @@
     const weekSelect = document.getElementById('week-select');
     const checkboxesContainer = document.getElementById('category-checkboxes-container');
     const yourTeamSelect = document.getElementById('your-team-select');
+    const SIMULATION_KEY = 'simulationCache';
 
     let pageData = null; // To store weeks and teams
     const CATEGORY_PREF_KEY = 'lineupCategoryPreferences';
@@ -138,7 +139,8 @@
             } else if (checkedCategories.length > 0) {
                 categoriesToSend = checkedCategories;
             }
-
+        const cachedSim = localStorage.getItem(SIMULATION_KEY);
+        const simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
         try {
             const response = await fetch('/api/roster_data', {
                 method: 'POST',
@@ -146,7 +148,8 @@
                 body: JSON.stringify({
                     week: selectedWeek,
                     team_name: yourTeamName,
-                    categories: categoriesToSend
+                    categories: categoriesToSend,
+                    simulated_moves: simulatedMoves
                 })
             });
 
