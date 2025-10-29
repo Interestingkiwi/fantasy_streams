@@ -44,6 +44,7 @@
                 sortConfig,
                 unusedRosterSpotsHTML: unusedRosterSpotsContainer.innerHTML,
                 unusedRosterSpotsData: currentUnusedSpots,
+                currentTeamRoster: currentTeamRoster,
                 selectedTeam: document.getElementById('your-team-select')?.value,
                 searchTerm: playerSearchInput.value,
                 timestamp: Date.now()
@@ -71,6 +72,7 @@
                 return null;
             }
             currentUnusedSpots = cachedState.unusedRosterSpotsData; // --- NEW: Load from cache
+            currentTeamRoster = cachedState.currentTeamRoster || [];
             return cachedState;
         } catch (error) {
             console.warn("Could not load state from local storage.", error);
@@ -619,6 +621,8 @@
 
             renderCategoryCheckboxes();
             filterAndSortPlayers();
+            populateDropPlayerDropdown();
+            renderSimulatedMovesLog();
             setupEventListeners();
         } else {
             console.log("No valid cache. Fetching fresh data for Free Agents page.");
