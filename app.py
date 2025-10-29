@@ -863,30 +863,40 @@ def get_matchup_stats():
             all_starter_ids_today = [p['player_id'] for p in team1_starters + team2_starters]
 
             if all_starter_ids_today:
-                placeholders = ','.join('?' for _ in all_starter_ids_today)
-                query = f"SELECT player_id, {', '.join(projection_cats)} FROM joined_player_stats WHERE player_id IN ({placeholders})"
-                cursor.execute(query, tuple(all_starter_ids_today))
-                player_avg_stats = {row['player_id']: dict(row) for row in cursor.fetchall()}
+                placeholders = ','.join('?' for _ in all_starter_ids_today)
+                query = f"SELECT player_id, {', '.join(projection_cats)} FROM joined_player_stats WHERE player_id IN ({placeholders})"
+                cursor.execute(query, tuple(all_starter_ids_today))
+                player_avg_stats = {row['player_id']: dict(row) for row in cursor.fetchall()}
 
-                for starter in team1_starters:
-                    if starter['player_id'] in player_avg_stats:
-                        player_proj = player_avg_stats[starter['player_id']]
-                        for category in projection_cats:
-                            stat_val = player_proj.get(category) or 0
-                            stats['team1']['row'][category] += stat_val
-                        if 'G' in starter['eligible_positions'].split(','):
-                            stats['team1']['row']['TOI/G'] += 60
+                for starter in team1_starters:
+                    if starter['player_id'] in player_avg_stats:
+                        player_proj = player_avg_stats[starter['player_id']]
+                       for category in projection_cats:
+                            stat_val = player_proj.get(category) or 0
+                            stats['team1']['row'][category] += stat_val
 
-                for starter in team2_starters:
-                    if starter['player_id'] in player_avg_stats:
-                        player_proj = player_avg_stats[starter['player_id']]
-                        for category in projection_cats:
-                            stat_val = player_proj.get(category) or 0
-                            stats['team2']['row'][category] += stat_val
-                        if 'G' in starter['eligible_positions'].split(','):
-                            stats['team2']['row']['TOI/G'] += 60
+                            # --- START FIX ---
+                            # Safely get position string from either key
+                            pos_str = starter.get('eligible_positions') or starter.get('positions', '')
+                        if 'G' in pos_str.split(','):
+                            stats['team1']['row']['TOI/G'] += 60
+                            # --- END FIX ---
 
-            current_date += timedelta(days=1)
+                for starter in team2_starters:
+                    if starter['player_id'] in player_avg_stats:
+                        player_proj = player_avg_stats[starter['player_id']]
+                        for category in projection_cats:
+                            stat_val = player_proj.get(category) or 0
+                            stats['team2']['row'][category] += stat_val
+
+                            # --- START FIX ---
+                            # Safely get position string from either key
+                            pos_str = starter.get('eligible_positions') or starter.get('positions', '')
+                        if 'G' in pos_str.split(','):
+                            stats['team2']['row']['TOI/G'] += 60
+                            # --- END FIX ---
+
+            current_date += timedelta(days=1)
 
         # --- Final ROW Calculations and Rounding ---
         for team_key in ['team1', 'team2']:
