@@ -1133,7 +1133,7 @@ def get_roster_data():
 
             player['games_next_week'] = []
             if start_date_next and end_date_next:
-                cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player['team'],))
+                cursor.execute("SELECT schedule_json FROM team_schedules WHERE team_tricode = ?", (player['player_team'],))
                 schedule_row = cursor.fetchone()
                 if schedule_row and schedule_row['schedule_json']:
                     schedule = json.loads(schedule_row['schedule_json'])
