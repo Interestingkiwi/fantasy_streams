@@ -328,7 +328,7 @@ def get_optimal_lineup(players, lineup_settings):
 
     return lineup
 
-    
+
 def _get_ranked_roster_for_week(cursor, team_id, week_num):
     """
     Internal helper to fetch a team's full roster for a week and enrich it
@@ -1106,13 +1106,19 @@ def get_roster_data():
         for player in all_players:
             # Add ranks and this week's schedule from the active player data
             if player['player_name'] in active_player_map:
+                # This is a base roster player, get their schedule
                 source = active_player_map[player['player_name']]
                 player['total_rank'] = source.get('total_rank')
                 player['game_dates_this_week'] = source.get('game_dates_this_week', [])
                 player['games_this_week'] = [datetime.strptime(d, '%Y-%m-%d').strftime('%a') for d in player['game_dates_this_week']]
-            else: # Handle IR players
-                player['games_this_week'] = []
-                player['game_dates_this_week'] = []
+            else:
+                # This is either an IR player or a Simulated Player
+                # If 'games_this_week' is NOT on the object, it's an IR player. Set to [].
+                # If 'games_this_week' IS on the object, it's a Simulated Player. Do nothing, leave its data intact.
+                if 'games_this_week' not in player:
+                    player['games_this_week'] = []
+                if 'game_dates_this_week' not in player:
+                    player['game_dates_this_week'] = []
 
             p_stats = player_stats.get(player.get('player_name_normalized'))
             new_total_rank = 0

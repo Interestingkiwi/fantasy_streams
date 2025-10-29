@@ -244,7 +244,7 @@
 
         roster.forEach(player => {
             // Create the highlighted games list based on optimal starts
-            const gamesThisWeekHtml = player.games_this_week.map(day => {
+            const gamesThisWeekHtml = (player.games_this_week || []).map(day => { // Added || []
                 if (playerStartsByDay[player.player_name] && playerStartsByDay[player.player_name].has(day)) {
                     return `<strong class="text-yellow-300">${day}</strong>`;
                 }
@@ -257,7 +257,7 @@
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.team || player.player_team}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.eligible_positions || player.positions}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${gamesThisWeekHtml}</td>
-                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.games_this_week.length}</td>
+                    <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${(player.games_this_week || []).length}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${player.starts_this_week}</td>
                     <td class="px-2 py-1 whitespace-nowrap text-sm text-gray-300">${(player.games_next_week || []).join(', ')}</td>
             `;
