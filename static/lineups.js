@@ -205,8 +205,11 @@
         }
 
         roster.sort((a, b) => {
-            const posA = a.eligible_positions.split(',').map(p => p.trim());
-            const posB = b.eligible_positions.split(',').map(p => p.trim());
+            const posStrA = (a.eligible_positions || a.positions || '').toString();
+            const posStrB = (b.eligible_positions || b.positions || '').toString();
+
+            const posA = posStrA.split(',').map(p => p.trim());
+            const posB = posStrB.split(',').map(p => p.trim());
 
             const maxIndexA = Math.max(...posA.map(p => positionOrder.indexOf(p)));
             const maxIndexB = Math.max(...posB.map(p => positionOrder.indexOf(p)));
