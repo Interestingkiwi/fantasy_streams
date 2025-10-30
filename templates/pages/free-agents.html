@@ -16,19 +16,26 @@
                   <label for="player-search" class="block text-sm font-medium text-gray-300">Search Player Name:</label>
                   <input type="text" id="player-search" class="mt-1 block w-full bg-gray-700 border-gray-600 text-white rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
               </div>
-              <div class="mb-4">
-                  <label class="block text-sm font-medium text-gray-300">Filter by Position:</label>
-                  <div id="position-filters-container" class="mt-2 flex flex-wrap gap-x-6 gap-y-2">
-                      </div>
+              <div class="flex flex-col md:flex-row md:gap-x-6 mb-4">
+
+                  <div class="flex-1 mb-4 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-300">Filter by Position:</label>
+                      <div id="position-filters-container" class="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+                          </div>
+                  </div>
+
+                  <div class="hidden md:block w-px bg-gray-600"></div>
+
+                  <div class="flex-1">
+                      <label class="block text-sm font-medium text-gray-300">Filter by 'This Week' Games (Must play on ALL selected days):</label>
+                      <div id="day-filters-container" class="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+                          </div>
+                  </div>
+
               </div>
-              <div class="mb-4">
-                  <label class="block text-sm font-medium text-gray-300">Filter by 'This Week' Games (Must play on ALL selected days):</label>
-                  <div id="day-filters-container" class="mt-2 flex flex-wrap gap-x-6 gap-y-2">
-                      </div>
-              </div>              
                 <div id="category-checkboxes-container" class="md:col-span-2"></div>
             </div>
-            <div class="flex justify-end">
+            <div class="mt-6 text-left">
                  <button id="recalculate-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md">
                     Recalculate Ranks
                 </button>
