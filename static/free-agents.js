@@ -207,35 +207,35 @@
     }
 
     function renderPositionFilters() {
-            const POSITIONS = ['C', 'LW', 'RW', 'D', 'G'];
-            let filterHtml = '';
-            POSITIONS.forEach(pos => {
-                const isChecked = selectedPositions.includes(pos);
-                filterHtml += `
-                    <div class="flex items-center">
-                        <input id="pos-${pos}" name="position-filter" type="checkbox" value="${pos}" ${isChecked ? 'checked' : ''} class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-600 focus:ring-indigo-500 rounded">
-                        <label for="pos-${pos}" class="ml-2 block text-sm text-gray-300">${pos}</label>
-                    </div>
-                `;
-            });
-            positionFiltersContainer.innerHTML = filterHtml;
-        }
+            const POSITIONS = ['C', 'LW', 'RW', 'D', 'G'];
+            let filterHtml = '';
+            POSITIONS.forEach(pos => {
+                const isChecked = selectedPositions.includes(pos);
+                filterHtml += `
+                    <div class="flex items-center">
+                        <input id="pos-${pos}" name="position-filter" type="checkbox" value="${pos}" ${isChecked ? 'checked' : ''} class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-600 focus:ring-indigo-500 rounded">
+                        <label for="pos-${pos}" class="ml-2 text-sm text-gray-300">${pos}</label>
+                    </div>
+                `;
+            });
+            positionFiltersContainer.innerHTML = filterHtml;
+        }
 
     function renderDayFilters() {
-            const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-            let filterHtml = '';
-            DAYS.forEach(day => {
-                const isChecked = selectedDays.includes(day);
-                filterHtml += `
-                    <div class="flex items-center">
-                        <input id="day-${day}" name="day-filter" type="checkbox" value="${day}" ${isChecked ? 'checked' : ''} class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-500 focus:ring-indigo-500 rounded">
-                        <label for="day-${day}" class="ml-2 block text-sm text-gray-300">${day}</label>
-                    </div>
-                `;
-            });
-            dayFiltersContainer.innerHTML = filterHtml;
-        }
-
+            const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            let filterHtml = '';
+            DAYS.forEach(day => {
+                const isChecked = selectedDays.includes(day);
+                filterHtml += `
+                    <div class="flex items-center">
+                        <input id="day-${day}" name="day-filter" type="checkbox" value="${day}" ${isChecked ? 'checked' : ''} class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-500 focus:ring-indigo-500 rounded">
+                        <label for="day-${day}" class="ml-2 text-sm text-gray-300">${day}</label>
+                    </div>
+                `;
+            });
+            dayFiltersContainer.innerHTML = filterHtml;
+        }
+        
     function filterAndSortPlayers() {
             const searchTerm = playerSearchInput.value.toLowerCase();
            
