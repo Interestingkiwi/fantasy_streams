@@ -6,10 +6,10 @@
 <div id="db-error-message" class="hidden bg-red-800 text-white p-4 rounded-lg mb-4">
 </div>
 
-<div id="controls-container" class="bg-gray-900 p-4 rounded-lg mb-4">
+<div id="controls-container" class="bg-gray-900 p-2 rounded-lg mb-2">
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
 
-        <div class="lg:col-span-2 space-y-4">
+        <div class="lg:col-span-1 space-y-1">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-1 items-end">
                 <div>
                     <label for="player-search" class="block text-sm font-medium text-gray-300">Search Player Name:</label>
@@ -41,17 +41,18 @@
     <button id="reset-add-drops-button" class="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-1 px-4 rounded transition-colors duration-150">Reset Simulations</button>
     <div id="simulated-moves-log"></div>
 </div>
+<div id="unused-roster-spots-container">
+    <p class="text-gray-400">Select your team to see unused spots...</p>
+</div>
     </div>
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-start">
 
-    <div id="waiver-players-container" class="lg:col-span-2">
+    <div id="waiver-players-container" class="lg:col-span-3">
         </div>
 
-    <div id="unused-roster-spots-container">
-        <p class="text-gray-400">Select your team to see unused spots...</p>
-    </div>
+
 
     <div id="free-agent-players-container" class="lg:col-span-3">
         </div>
