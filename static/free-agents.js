@@ -4,6 +4,8 @@
     const freeAgentContainer = document.getElementById('free-agent-players-container');
     const playerSearchInput = document.getElementById('player-search');
     const checkboxesContainer = document.getElementById('category-checkboxes-container');
+    const positionFiltersContainer = document.getElementById('position-filters-container');
+    const dayFiltersContainer = document.getElementById('day-filters-container');
     const recalculateButton = document.getElementById('recalculate-button');
     const unusedRosterSpotsContainer = document.getElementById('unused-roster-spots-container');
     const timestampText = document.getElementById('available-players-timestamp-text');
@@ -24,6 +26,8 @@
     let allScoringCategories = [];
     let rankedCategories = [];
     let checkedCategories = [];
+    let selectedPositions = [];
+    let selectedDays = [];
     let currentUnusedSpots = null;
     let currentTeamRoster = [];
     let currentWeekDates = [];
@@ -42,6 +46,8 @@
                 allScoringCategories,
                 rankedCategories,
                 checkedCategories,
+                selectedPositions,
+                selectedDays,
                 sortConfig,
                 unusedRosterSpotsHTML: unusedRosterSpotsContainer.innerHTML,
                 unusedRosterSpotsData: currentUnusedSpots,
@@ -76,6 +82,8 @@
             currentUnusedSpots = cachedState.unusedRosterSpotsData;
             currentTeamRoster = cachedState.currentTeamRoster || [];
             currentWeekDates = cachedState.currentWeekDates || [];
+            selectedPositions = cachedState.selectedPositions || [];
+            selectedDays = cachedState.selectedDays || [];
             return cachedState;
         } catch (error) {
             console.warn("Could not load state from local storage.", error);
@@ -150,7 +158,8 @@
             } else if (allScoringCategories.length > 0) {
                 renderCategoryCheckboxes();
             }
-
+            renderPositionFilters();
+            renderDayFilters();
             // --- NEW: Populate new UI elements ---
             populateDropPlayerDropdown();
             populateTransactionDatePicker(currentWeekDates);
@@ -197,26 +206,104 @@
         checkboxesContainer.innerHTML = checkboxHtml;
     }
 
+    function renderPositionFilters() {
+            const POSITIONS = ['C', 'LW', 'RW', 'D', 'G'];
+            let filterHtml = '';
+            POSITIONS.forEach(pos => {
+                const isChecked = selectedPositions.includes(pos);
+                filterHtml += `
+                    <div class="flex items-center">
+                        <input id="pos-${pos}" name="position-filter" type="checkbox" value="${pos}" ${isChecked ? 'checked' : ''} class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-600 focus:ring-indigo-500 rounded">
+                        <label for="pos-${pos}" class="ml-2 block text-sm text-gray-300">${pos}</label>
+                    </div>
+                `;
+            });
+            positionFiltersContainer.innerHTML = filterHtml;
+        }
+
+    function renderDayFilters() {
+            const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            let filterHtml = '';
+            DAYS.forEach(day => {
+                const isChecked = selectedDays.includes(day);
+                filterHtml += `
+                    <div class="flex items-center">
+                        <input id="day-${day}" name="day-filter" type="checkbox" value="${day}" ${isChecked ? 'checked' : ''} class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-500 focus:ring-indigo-500 rounded">
+                        <label for="day-${day}" class="ml-2 block text-sm text-gray-300">${day}</label>
+                    </div>
+                `;
+            });
+            dayFiltersContainer.innerHTML = filterHtml;
+        }
+
     function filterAndSortPlayers() {
-        const searchTerm = playerSearchInput.value.toLowerCase();
+            const searchTerm = playerSearchInput.value.toLowerCase();
+           
+            // Read selected positions from the checkboxes
+            selectedPositions = Array.from(document.querySelectorAll('#position-filters-container input:checked')).map(cb => cb.value);
+           
+            // Read selected days from the checkboxes
+            selectedDays = Array.from(document.querySelectorAll('#day-filters-container input:checked')).map(cb => cb.value);
 
-        let filteredWaivers = searchTerm ? allWaiverPlayers.filter(p => p.player_name.toLowerCase().includes(searchTerm)) : [...allWaiverPlayers];
-        sortPlayers(filteredWaivers, sortConfig.waivers);
-        renderPlayerTable('Waiver Players', filteredWaivers, waiverContainer, 'waivers');
+            const positionFilter = (player) => {
+                // If no positions are selected, show all players
+                if (selectedPositions.length === 0) {
+                    return true;
+                }
+                // If positions are selected, check if the player's position string contains ANY of them (OR logic)
+                const playerPositions = player.positions || '';
+                return selectedPositions.some(pos => playerPositions.includes(pos));
+            };
 
-        let filteredFreeAgents = searchTerm ? allFreeAgents.filter(p => p.player_name.toLowerCase().includes(searchTerm)) : [...allFreeAgents];
-        sortPlayers(filteredFreeAgents, sortConfig.freeAgents);
-        renderPlayerTable('Free Agents', filteredFreeAgents, freeAgentContainer, 'freeAgents', true);
-    }
+            // Day filter with AND logic
+            const dayFilter = (player) => {
+                // If no days are selected, show all players
+                if (selectedDays.length === 0) {
+                    return true;
+                }
+                // Check if the player has games on ALL selected days (AND logic)
+                const playerGames = player.games_this_week || [];
+                return selectedDays.every(day => playerGames.includes(day));
+            };
+
+            const searchFilter = (player) => {
+                return player.player_name.toLowerCase().includes(searchTerm);
+            };
+
+            // Apply all three filters
+            let filteredWaivers = allWaiverPlayers.filter(p => searchFilter(p) && positionFilter(p) && dayFilter(p));
+            sortPlayers(filteredWaivers, sortConfig.waivers);
+            renderPlayerTable('Waiver Players', filteredWaivers, waiverContainer, 'waivers');
+
+            let filteredFreeAgents = allFreeAgents.filter(p => searchFilter(p) && positionFilter(p) && dayFilter(p));
+            sortPlayers(filteredFreeAgents, sortConfig.freeAgents);
+            renderPlayerTable('Free Agents', filteredFreeAgents, freeAgentContainer, 'freeAgents', true);
+        }
 
     function sortPlayers(players, config) {
+        // Helper to get the value, treating null/undefined/0/- as the highest (Infinity)
+        // This ensures they go to the bottom when sorting ascending (low-to-high)
+        const getSortableValue = (value) => {
+            if (value === null || value === undefined || value === 0 || value === '-') {
+                return Infinity;
+            }
+            return value;
+        };
+
         players.sort((a, b) => {
-            let valA = a[config.key] === 0 ? Infinity : a[config.key];
-            let valB = b[config.key] === 0 ? Infinity : b[config.key];
+            let valA, valB;
+
             if (config.key === 'player_name') {
+                // Special case for player name (string sort)
                 valA = String(a.player_name).toLowerCase();
                 valB = String(b.player_name).toLowerCase();
+            } else {
+                // Numeric/Rank sort
+                valA = getSortableValue(a[config.key]);
+                valB = getSortableValue(b[config.key]);
             }
+
+            // handleSortClick now *always* sets direction to 'ascending'
             if (valA < valB) return config.direction === 'ascending' ? -1 : 1;
             if (valA > valB) return config.direction === 'ascending' ? 1 : -1;
             return 0;
@@ -331,12 +418,12 @@
     function handleSortClick(e) {
         const key = e.target.dataset.sortKey;
         const tableType = e.target.dataset.tableType;
-        if (sortConfig[tableType].key === key) {
-            sortConfig[tableType].direction = sortConfig[tableType].direction === 'ascending' ? 'descending' : 'ascending';
-        } else {
-            sortConfig[tableType].key = key;
-            sortConfig[tableType].direction = 'ascending';
-        }
+
+        // Always set the sort to ascending (low-to-high).
+        // This removes the toggle to descending.
+        sortConfig[tableType].key = key;
+        sortConfig[tableType].direction = 'ascending';
+
         filterAndSortPlayers();
         saveStateToCache();
     }
@@ -571,7 +658,20 @@
         });
         recalculateButton.addEventListener('click', handleRecalculateClick);
 
-        // Event delegation for dynamically added category buttons
+        positionFiltersContainer.addEventListener('change', (e) => {
+                    if (e.target.name === 'position-filter') {
+                        filterAndSortPlayers(); // This now reads the checkboxes
+                        saveStateToCache(); // Save the new state
+                    }
+                });
+
+        dayFiltersContainer.addEventListener('change', (e) => {
+                    if (e.target.name === 'day-filter') {
+                        filterAndSortPlayers(); // This now reads the day checkboxes
+                        saveStateToCache(); // Save the new state
+                    }
+                });
+
         checkboxesContainer.addEventListener('click', (e) => {
             const setAllCheckboxes = (checkedState) => {
                 const checkboxes = checkboxesContainer.querySelectorAll('input[name="category"]');
@@ -624,6 +724,8 @@
             simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
 
             renderCategoryCheckboxes();
+            renderPositionFilters();
+            renderDayFilters();
             filterAndSortPlayers();
             populateDropPlayerDropdown();
             renderSimulatedMovesLog();
@@ -636,6 +738,7 @@
             simulatedMoves = cachedSim ? JSON.parse(cachedSim) : [];
             setupEventListeners();
             fetchData();
+            renderPositionFilters();
         }
 
         // --- NEW: Add listeners for sim buttons ---
