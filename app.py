@@ -6,7 +6,7 @@ Main run app for Fantasystreams.app
 
 Author: Jason Druckenmiller
 Date: 10/16/2025
-Updated: 10/23/2025
+Updated: 10/30/2025
 """
 
 import os
@@ -295,7 +295,10 @@ def get_optimal_lineup(players, lineup_settings):
 
         slot_scarcity = {}
         for slot in available_slots_for_player:
-            scarcity_count = sum(1 for other in player_pool if other != player and slot in [p.strip() for p in get_pos_str(other).split(',')])
+            scarcity_count = sum(1 for other in player_pool
+                                     if other != player and
+                                     other.get('player_id') not in assigned_player_ids and # <-- ADDED THIS CHECK
+                                     slot in [p.strip() for p in get_pos_str(other).split(',')])
             slot_scarcity[slot] = scarcity_count
 
         best_pos = min(slot_scarcity, key=slot_scarcity.get)
