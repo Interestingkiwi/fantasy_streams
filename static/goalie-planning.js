@@ -2,19 +2,39 @@
     // A short delay to ensure the page elements are in the DOM
     await new Promise(resolve => setTimeout(resolve, 0));
 
+    // --- Page Elements ---
     const errorDiv = document.getElementById('db-error-message');
     const aggregateStatsContainer = document.getElementById('stats-container');
     const individualStartsContainer = document.getElementById('individual-starts-container');
-
-    // Get references to the dropdowns *in home.html*
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
+
+    // --- Global State ---
+    let baseStarts = [];        // The original starts fetched from the server
+    let simulatedStarts = [];   // The scenarios the user has checked
+    let teamName = "";          // The user's team name
+
+    // --- Constants ---
+    // Define scenario deltas (W is assumed 1 for SHO, 0 otherwise)
+    const SCENARIOS = [
+        { name: "Shutout",       w: 1, ga: 0, sv: 30, sa: 30, toi: 60, sho: 1 },
+        { name: "1GA",           w: 0, ga: 1, sv: 29, sa: 30, toi: 60, sho: 0 },
+        { name: "2GA",           w: 0, ga: 2, sv: 28, sa: 30, toi: 60, sho: 0 },
+        { name: "3GA",           w: 0, ga: 3, sv: 27, sa: 30, toi: 60, sho: 0 },
+        { name: "4GA",           w: 0, ga: 4, sv: 26, sa: 30, toi: 60, sho: 0 },
+        { name: "5GA",           w: 0, ga: 5, sv: 25, sa: 30, toi: 60, sho: 0 },
+        { name: "6GA",           w: 0, ga: 6, sv: 24, sa: 30, toi: 60, sho: 0 },
+        { name: "4/GA/Pulled",   w: 0, ga: 4, sv: 11, sa: 15, toi: 20, sho: 0 }
+    ];
 
     async function init() {
         try {
             if (!weekSelect || !yourTeamSelect) {
                  throw new Error("Could not find main dropdowns (week-select or your-team-select).");
             }
+            // Add event listener for checkbox clicks
+            addEventListeners();
+
             // Initial data load
             await fetchAndRenderStats();
         } catch (error) {
@@ -27,11 +47,10 @@
     }
 
     async function fetchAndRenderStats() {
-        // Read values directly from the home.html dropdowns
+        teamName = yourTeamSelect.value;
         const selectedWeek = weekSelect.value;
-        const yourTeamName = yourTeamSelect.value;
 
-        if (!selectedWeek || !yourTeamName) {
+        if (!selectedWeek || !teamName) {
             aggregateStatsContainer.innerHTML = '<p class="text-gray-400">Please select a week and team.</p>';
             individualStartsContainer.innerHTML = '';
             return;
@@ -46,16 +65,21 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     week: selectedWeek,
-                    team_name: yourTeamName,
+                    team_name: teamName,
                 })
             });
 
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Failed to fetch stats.');
 
-            // Call render functions for each table
-            renderAggregateStatsTable(data, yourTeamName);
-            renderIndividualStartsTable(data.individual_starts); // Pass the individual starts array
+            // Store the fetched "real" starts
+            baseStarts = data.individual_starts || [];
+
+            // Clear any old simulations
+            simulatedStarts = [];
+
+            // Call the master render function
+            renderAllTables();
 
         } catch (error) {
             console.error('Error fetching stats:', error);
@@ -64,24 +88,63 @@
         }
     }
 
-    function renderAggregateStatsTable(data, teamName) {
-        const { live_stats, goalie_starts } = data;
+    /**
+     * Master render function. Calculates all totals and re-renders both tables.
+     */
+    function renderAllTables() {
+        // Combine base starts and simulated starts for calculations
+        const allStarts = [...baseStarts, ...simulatedStarts];
 
-        const sv = live_stats['SV'] || 0;
-        const sa = live_stats['SA'] || 0;
-        const ga = live_stats['GA'] || 0;
-        const toi = live_stats['TOI/G'] || 0;
+        // Calculate aggregate stats from ALL starts (base + sim)
+        const totals = calculateTotals(allStarts);
 
-        const sv_pct = sa > 0 ? (sv / sa) : 0;
-        const gaa = toi > 0 ? ((ga * 60) / toi) : 0;
+        // Render the top "Current Live Goalie Stats" table
+        renderAggregateStatsTable(totals);
 
-        const w = live_stats['W'] || 0;
-        const sho = live_stats['SHO'] || 0;
+        // Render the bottom "Individual Goalie Starts" table
+        renderIndividualStartsTable(allStarts, totals);
+    }
 
+    /**
+     * Calculates aggregate stats from a list of start objects.
+     */
+    function calculateTotals(starts) {
+        let totalW = 0, totalGA = 0, totalSV = 0, totalSA = 0, totalSHO = 0, totalTOI = 0;
+
+        starts.forEach(start => {
+            totalW += (start.W || start.w || 0); // 'W' from real, 'w' from sim
+            totalGA += (start.GA || start.ga || 0);
+            totalSV += (start.SV || start.sv || 0);
+            totalSA += (start.SA || start.sa || 0);
+            totalSHO += (start.SHO || start.sho || 0);
+            // Real starts have 'TOI/G' (with SHO fix), sims have 'toi'
+            totalTOI += (start['TOI/G'] || start.toi || 0);
+        });
+
+        const totalGAA = totalTOI > 0 ? (totalGA * 60) / totalTOI : 0;
+        const totalSVpct = totalSA > 0 ? totalSV / totalSA : 0;
+
+        return {
+            starts: starts.length,
+            W: totalW,
+            GA: totalGA,
+            SV: totalSV,
+            SA: totalSA,
+            SHO: totalSHO,
+            TOI: totalTOI,
+            GAA: totalGAA,
+            SVpct: totalSVpct
+        };
+    }
+
+    /**
+     * Renders the top aggregate stats table.
+     */
+    function renderAggregateStatsTable(totals) {
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
                 <h3 class="text-lg font-bold text-white p-3 bg-gray-800 rounded-t-lg">
-                    Current Live Goalie Stats (${teamName})
+                    Current Goalie Stats (${teamName})
                 </h3>
                 <table class="w-full divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
@@ -93,39 +156,39 @@
                     <tbody class="bg-gray-800 divide-y divide-gray-700">
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Goalie Starts</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right font-bold">${goalie_starts}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right font-bold">${totals.starts}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Wins (W)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${w.toFixed(0)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${totals.W.toFixed(0)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Goals Against Avg (GAA)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${gaa.toFixed(3)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${totals.GAA.toFixed(3)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Goals Against (GA)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${ga.toFixed(0)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${totals.GA.toFixed(0)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Time on Ice (TOI)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${toi.toFixed(1)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${totals.TOI.toFixed(1)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Save Pct (SV%)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${sv_pct.toFixed(3)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${totals.SVpct.toFixed(3)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Saves (SV)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${sv.toFixed(0)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${totals.SV.toFixed(0)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Shots Against (SA)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${sa.toFixed(0)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${totals.SA.toFixed(0)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Shutouts (SHO)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${sho.toFixed(0)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${totals.SHO.toFixed(0)}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -134,12 +197,10 @@
         aggregateStatsContainer.innerHTML = tableHtml;
     }
 
-    function renderIndividualStartsTable(starts) {
-        if (!starts) {
-            individualStartsContainer.innerHTML = '';
-            return;
-        }
-
+    /**
+     * Renders the individual starts table, including sims, totals, and scenarios.
+     */
+    function renderIndividualStartsTable(allStarts, totals) {
         const headers = ['Start #', 'Date', 'Player', 'W', 'GA', 'SV', 'SA', 'SV%', 'GAA', 'SHO'];
 
         let tableHtml = `
@@ -157,18 +218,8 @@
                         <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
-        // --- Calculate Totals ---
-        let totalW = 0, totalGA = 0, totalSV = 0, totalSA = 0, totalSHO = 0, totalTOI = 0;
-
-        starts.forEach((start, index) => {
-            // Accumulate totals
-            totalW += (start.W || 0);
-            totalGA += (start.GA || 0);
-            totalSV += (start.SV || 0);
-            totalSA += (start.SA || 0);
-            totalSHO += (start.SHO || 0);
-            totalTOI += (start['TOI/G'] || 0); // Already includes SHO fix from backend
-
+        // --- 1. Render Base (Real) Starts ---
+        baseStarts.forEach((start, index) => {
             tableHtml += `<tr class="hover:bg-gray-700/50">
                 <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${index + 1}</td>
                 <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${start.date}</td>
@@ -183,56 +234,58 @@
             </tr>`;
         });
 
-        // --- Calculate Final Averages ---
-        const totalGAA = totalTOI > 0 ? (totalGA * 60) / totalTOI : 0;
-        const totalSVpct = totalSA > 0 ? totalSV / totalSA : 0;
+        // --- 2. Render Simulated Starts ---
+        simulatedStarts.forEach((sim, index) => {
+            const simGAA = sim.toi > 0 ? (sim.ga * 60) / sim.toi : 0;
+            const simSVpct = sim.sa > 0 ? sim.sv / sim.sa : 0;
 
-        // --- Add the Total Row ---
-        if (starts.length > 0) {
-            tableHtml += `
-                <tr class="bg-gray-700/50 border-t-2 border-gray-500">
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${starts.length}</td>
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white"></td>
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">TOTALS</td>
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalW.toFixed(0)}</td>
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalGA.toFixed(0)}</td>
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalSV.toFixed(0)}</td>
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalSA.toFixed(0)}</td>
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalSVpct.toFixed(3)}</td>
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalGAA.toFixed(3)}</td>
-                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalSHO.toFixed(0)}</td>
-                </tr>
-            `;
-        }
+            tableHtml += `<tr class="hover:bg-gray-700/50 bg-blue-900/30">
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${baseStarts.length + index + 1}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">
+                    <label class="flex items-center">
+                        <input type="checkbox" class="sim-checkbox form-checkbox bg-gray-800 border-gray-600 rounded" data-sim-index="${index}" checked />
+                        <span class="ml-2">Remove</span>
+                    </label>
+                </td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${sim.name}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(sim.w || 0).toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(sim.ga || 0).toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(sim.sv || 0).toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(sim.sa || 0).toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${simSVpct.toFixed(3)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${simGAA.toFixed(3)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(sim.sho || 0).toFixed(0)}</td>
+            </tr>`;
+        });
 
-        // --- [START] NEW SCENARIO LOGIC ---
+        // --- 3. Render the Total Row ---
+        tableHtml += `
+            <tr class="bg-gray-700/50 border-t-2 border-gray-500">
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.starts}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white"></td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">TOTALS</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.W.toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.GA.toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.SV.toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.SA.toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.SVpct.toFixed(3)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.GAA.toFixed(3)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.SHO.toFixed(0)}</td>
+            </tr>
+        `;
 
-        const nextStartNum = starts.length + 1;
+        // --- 4. Render New Scenarios ---
+        const nextStartNum = allStarts.length + 1;
 
-        // Define scenario deltas (W is assumed 0 unless it's a shutout, can be changed)
-        const scenarios = [
-            // Assuming a W for a Shutout, L for 4/GA/Pulled, otherwise 0
-            { name: "Shutout",       w: 1, l: 0, ga: 0, sv: 30, sa: 30, toi: 60, sho: 1 },
-            { name: "1GA",           w: 0, l: 0, ga: 1, sv: 29, sa: 30, toi: 60, sho: 0 },
-            { name: "2GA",           w: 0, l: 0, ga: 2, sv: 28, sa: 30, toi: 60, sho: 0 },
-            { name: "3GA",           w: 0, l: 0, ga: 3, sv: 27, sa: 30, toi: 60, sho: 0 },
-            { name: "4GA",           w: 0, l: 0, ga: 4, sv: 26, sa: 30, toi: 60, sho: 0 },
-            { name: "5GA",           w: 0, l: 0, ga: 5, sv: 25, sa: 30, toi: 60, sho: 0 },
-            { name: "6GA",           w: 0, l: 0, ga: 6, sv: 24, sa: 30, toi: 60, sho: 0 },
-            { name: "4/GA/Pulled",   w: 0, l: 1, ga: 4, sv: 11, sa: 15, toi: 20, sho: 0 }
-        ];
-
-        // Loop and render each scenario
-        scenarios.forEach(scenario => {
+        SCENARIOS.forEach(scenario => {
             // Calculate new cumulative stats by adding scenario delta to totals
-            const newW = totalW + scenario.w;
-            const newGA = totalGA + scenario.ga;
-            const newSV = totalSV + scenario.sv;
-            const newSA = totalSA + scenario.sa;
-            const newSHO = totalSHO + scenario.sho;
-            const newTOI = totalTOI + scenario.toi;
+            const newW = totals.W + scenario.w;
+            const newGA = totals.GA + scenario.ga;
+            const newSV = totals.SV + scenario.sv;
+            const newSA = totals.SA + scenario.sa;
+            const newSHO = totals.SHO + scenario.sho;
+            const newTOI = totals.TOI + scenario.toi;
 
-            // Calculate new cumulative averages
             const newGAA = newTOI > 0 ? (newGA * 60) / newTOI : 0;
             const newSVpct = newSA > 0 ? newSV / newSA : 0;
 
@@ -240,8 +293,10 @@
                 <tr class="hover:bg-gray-700/50 text-gray-400 italic">
                     <td class="px-3 py-2 whitespace-nowrap text-sm">${nextStartNum}</td>
                     <td class="px-3 py-2 whitespace-nowrap text-sm">
-                        <input type="checkbox" class="form-checkbox bg-gray-800 border-gray-600 rounded" disabled />
-                        Use
+                        <label class="flex items-center">
+                            <input type="checkbox" class="scenario-checkbox form-checkbox bg-gray-800 border-gray-600 rounded" data-scenario-name="${scenario.name}" />
+                            <span class="ml-2">Use</span>
+                        </label>
                     </td>
                     <td class="px-3 py-2 whitespace-nowrap text-sm font-medium">${scenario.name}</td>
                     <td class="px-3 py-2 whitespace-nowrap text-sm">${newW.toFixed(0)}</td>
@@ -254,7 +309,6 @@
                 </tr>
             `;
         });
-        // --- [END] NEW SCENARIO LOGIC ---
 
         tableHtml += `
                         </tbody>
@@ -263,6 +317,35 @@
             </div>
         `;
         individualStartsContainer.innerHTML = tableHtml;
+    }
+
+    /**
+     * Adds event listeners to handle checkbox clicks.
+     */
+    function addEventListeners() {
+        // Use event delegation on the container
+        individualStartsContainer.addEventListener('click', function(e) {
+            const target = e.target;
+
+            // --- Handle ADDING a scenario ---
+            if (target.classList.contains('scenario-checkbox') && target.checked) {
+                const scenarioName = target.dataset.scenarioName;
+                const scenarioToAdd = SCENARIOS.find(s => s.name === scenarioName);
+                if (scenarioToAdd) {
+                    simulatedStarts.push(scenarioToAdd);
+                    renderAllTables();
+                }
+            }
+
+            // --- Handle REMOVING a scenario ---
+            if (target.classList.contains('sim-checkbox') && !target.checked) {
+                const simIndex = parseInt(target.dataset.simIndex, 10);
+                if (!isNaN(simIndex) && simIndex >= 0 && simIndex < simulatedStarts.length) {
+                    simulatedStarts.splice(simIndex, 1);
+                    renderAllTables();
+                }
+            }
+        });
     }
 
     init();
