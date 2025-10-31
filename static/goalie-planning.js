@@ -55,7 +55,7 @@
 
             // Call render functions for each table
             renderAggregateStatsTable(data, yourTeamName);
-            renderIndividualStartsTable(data.individual_starts); // NEW
+            renderIndividualStartsTable(data.individual_starts); // MODIFIED: Pass all data
 
         } catch (error) {
             console.error('Error fetching stats:', error);
@@ -120,7 +120,7 @@
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Saves (SV)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${sv.toFixed(0)}</td>
                         </tr>
-                        <tr class="hover:bg-gray-700/50">
+                        <tr class="hover:bg-gray-700/5A0">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Shots Against (SA)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${sa.toFixed(0)}</td>
                         </tr>
@@ -135,9 +135,9 @@
         aggregateStatsContainer.innerHTML = tableHtml;
     }
 
-    // --- NEW FUNCTION ---
+    // --- MODIFIED FUNCTION ---
     function renderIndividualStartsTable(starts) {
-        if (!starts || starts.length === 0) {
+        if (!starts) { // Handle case where starts might be undefined
             individualStartsContainer.innerHTML = '';
             return;
         }
@@ -160,8 +160,19 @@
                         <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
+        // --- NEW: Calculate Totals ---
+        let totalW = 0, totalGA = 0, totalSV = 0, totalSA = 0, totalSHO = 0, totalTOI = 0;
+
         // Create a row for each start
         starts.forEach((start, index) => {
+            // Accumulate totals
+            totalW += (start.W || 0);
+            totalGA += (start.GA || 0);
+            totalSV += (start.SV || 0);
+            totalSA += (start.SA || 0);
+            totalSHO += (start.SHO || 0);
+            totalTOI += (start['TOI/G'] || 0); // Already includes SHO fix from backend
+
             tableHtml += `<tr class="hover:bg-gray-700/50">
                 <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${index + 1}</td>
                 <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${start.date}</td>
@@ -175,6 +186,29 @@
                 <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(start.SHO || 0).toFixed(0)}</td>
             </tr>`;
         });
+
+        // --- NEW: Calculate Final Averages ---
+        const totalGAA = totalTOI > 0 ? (totalGA * 60) / totalTOI : 0;
+        const totalSVpct = totalSA > 0 ? totalSV / totalSA : 0;
+
+        // --- NEW: Add the Total Row ---
+        // Only show total row if there are starts
+        if (starts.length > 0) {
+            tableHtml += `
+                <tr class="bg-gray-700/50 border-t-2 border-gray-500">
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${starts.length}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white"></td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">TOTALS</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalW.toFixed(0)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalGA.toFixed(0)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalSV.toFixed(0)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalSA.toFixed(0)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalSVpct.toFixed(3)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalGAA.toFixed(3)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totalSHO.toFixed(0)}</td>
+                </tr>
+            `;
+        }
 
         tableHtml += `
                         </tbody>
