@@ -4,7 +4,7 @@
 
     const errorDiv = document.getElementById('db-error-message');
     const aggregateStatsContainer = document.getElementById('stats-container');
-    const individualStartsContainer = document.getElementById('individual-starts-container'); // NEW
+    const individualStartsContainer = document.getElementById('individual-starts-container');
 
     // Get references to the dropdowns *in home.html*
     const weekSelect = document.getElementById('week-select');
@@ -22,7 +22,7 @@
             errorDiv.textContent = error.message;
             errorDiv.classList.remove('hidden');
             aggregateStatsContainer.classList.add('hidden');
-            individualStartsContainer.classList.add('hidden'); // NEW
+            individualStartsContainer.classList.add('hidden');
         }
     }
 
@@ -33,12 +33,12 @@
 
         if (!selectedWeek || !yourTeamName) {
             aggregateStatsContainer.innerHTML = '<p class="text-gray-400">Please select a week and team.</p>';
-            individualStartsContainer.innerHTML = ''; // NEW
+            individualStartsContainer.innerHTML = '';
             return;
         }
 
         aggregateStatsContainer.innerHTML = '<p class="text-gray-400">Loading current goalie stats...</p>';
-        individualStartsContainer.innerHTML = ''; // NEW
+        individualStartsContainer.innerHTML = '';
 
         try {
             const response = await fetch('/api/goalie_planning_stats', {
@@ -55,16 +55,15 @@
 
             // Call render functions for each table
             renderAggregateStatsTable(data, yourTeamName);
-            renderIndividualStartsTable(data.individual_starts); // MODIFIED: Pass all data
+            renderIndividualStartsTable(data.individual_starts); // Pass the individual starts array
 
         } catch (error) {
             console.error('Error fetching stats:', error);
             aggregateStatsContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
-            individualStartsContainer.innerHTML = ''; // NEW
+            individualStartsContainer.innerHTML = '';
         }
     }
 
-    // Renamed from renderStatsTable
     function renderAggregateStatsTable(data, teamName) {
         const { live_stats, goalie_starts } = data;
 
@@ -120,7 +119,7 @@
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Saves (SV)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${sv.toFixed(0)}</td>
                         </tr>
-                        <tr class="hover:bg-gray-700/5A0">
+                        <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Shots Against (SA)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${sa.toFixed(0)}</td>
                         </tr>
@@ -135,14 +134,12 @@
         aggregateStatsContainer.innerHTML = tableHtml;
     }
 
-    // --- MODIFIED FUNCTION ---
     function renderIndividualStartsTable(starts) {
-        if (!starts) { // Handle case where starts might be undefined
+        if (!starts) {
             individualStartsContainer.innerHTML = '';
             return;
         }
 
-        // Define headers
         const headers = ['Start #', 'Date', 'Player', 'W', 'GA', 'SV', 'SA', 'SV%', 'GAA', 'SHO'];
 
         let tableHtml = `
@@ -160,10 +157,9 @@
                         <tbody class="bg-gray-800 divide-y divide-gray-700">
         `;
 
-        // --- NEW: Calculate Totals ---
+        // --- Calculate Totals ---
         let totalW = 0, totalGA = 0, totalSV = 0, totalSA = 0, totalSHO = 0, totalTOI = 0;
 
-        // Create a row for each start
         starts.forEach((start, index) => {
             // Accumulate totals
             totalW += (start.W || 0);
@@ -187,12 +183,11 @@
             </tr>`;
         });
 
-        // --- NEW: Calculate Final Averages ---
+        // --- Calculate Final Averages ---
         const totalGAA = totalTOI > 0 ? (totalGA * 60) / totalTOI : 0;
         const totalSVpct = totalSA > 0 ? totalSV / totalSA : 0;
 
-        // --- NEW: Add the Total Row ---
-        // Only show total row if there are starts
+        // --- Add the Total Row ---
         if (starts.length > 0) {
             tableHtml += `
                 <tr class="bg-gray-700/50 border-t-2 border-gray-500">
@@ -209,6 +204,57 @@
                 </tr>
             `;
         }
+
+        // --- [START] NEW SCENARIO LOGIC ---
+
+        const nextStartNum = starts.length + 1;
+
+        // Define scenario deltas (W is assumed 0 unless it's a shutout, can be changed)
+        const scenarios = [
+            // Assuming a W for a Shutout, L for 4/GA/Pulled, otherwise 0
+            { name: "Shutout",       w: 1, l: 0, ga: 0, sv: 30, sa: 30, toi: 60, sho: 1 },
+            { name: "1GA",           w: 0, l: 0, ga: 1, sv: 29, sa: 30, toi: 60, sho: 0 },
+            { name: "2GA",           w: 0, l: 0, ga: 2, sv: 28, sa: 30, toi: 60, sho: 0 },
+            { name: "3GA",           w: 0, l: 0, ga: 3, sv: 27, sa: 30, toi: 60, sho: 0 },
+            { name: "4GA",           w: 0, l: 0, ga: 4, sv: 26, sa: 30, toi: 60, sho: 0 },
+            { name: "5GA",           w: 0, l: 0, ga: 5, sv: 25, sa: 30, toi: 60, sho: 0 },
+            { name: "6GA",           w: 0, l: 0, ga: 6, sv: 24, sa: 30, toi: 60, sho: 0 },
+            { name: "4/GA/Pulled",   w: 0, l: 1, ga: 4, sv: 11, sa: 15, toi: 20, sho: 0 }
+        ];
+
+        // Loop and render each scenario
+        scenarios.forEach(scenario => {
+            // Calculate new cumulative stats by adding scenario delta to totals
+            const newW = totalW + scenario.w;
+            const newGA = totalGA + scenario.ga;
+            const newSV = totalSV + scenario.sv;
+            const newSA = totalSA + scenario.sa;
+            const newSHO = totalSHO + scenario.sho;
+            const newTOI = totalTOI + scenario.toi;
+
+            // Calculate new cumulative averages
+            const newGAA = newTOI > 0 ? (newGA * 60) / newTOI : 0;
+            const newSVpct = newSA > 0 ? newSV / newSA : 0;
+
+            tableHtml += `
+                <tr class="hover:bg-gray-700/50 text-gray-400 italic">
+                    <td class="px-3 py-2 whitespace-nowrap text-sm">${nextStartNum}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm">
+                        <input type="checkbox" class="form-checkbox bg-gray-800 border-gray-600 rounded" disabled />
+                        Use
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-medium">${scenario.name}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm">${newW.toFixed(0)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm">${newGA.toFixed(0)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm">${newSV.toFixed(0)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm">${newSA.toFixed(0)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm">${newSVpct.toFixed(3)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm">${newGAA.toFixed(3)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm">${newSHO.toFixed(0)}</td>
+                </tr>
+            `;
+        });
+        // --- [END] NEW SCENARIO LOGIC ---
 
         tableHtml += `
                         </tbody>
