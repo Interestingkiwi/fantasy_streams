@@ -4,23 +4,34 @@
 
     // --- Page Elements ---
     const errorDiv = document.getElementById('db-error-message');
-    const aggregateStatsContainer = document.getElementById('stats-container');
-    const individualStartsContainer = document.getElementById('individual-starts-container');
+    const controlsDiv = document.getElementById('goalie-controls');
+
+    // Dropdowns
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
+    const opponentSelect = document.getElementById('opponent-select');
+
+    // Containers
+    const currentStatsContainer = document.getElementById('current-stats-container');
+    const simulatedStatsContainer = document.getElementById('simulated-stats-container');
+    const opponentStatsContainer = document.getElementById('opponent-stats-container');
+    const individualStartsContainer = document.getElementById('individual-starts-container');
 
     // --- Global State ---
+    let pageData = null;        // All teams, weeks, matchups
     let baseStarts = [];        // The original starts fetched from the server
     let simulatedStarts = [];   // The scenarios the user has checked
-    let teamName = "";          // The user's team name
+    let baseTotals = {};        // "Frozen" totals for Your Team
+    let opponentTotals = {};    // "Frozen" totals for Opponent
+    let yourTeamName = "";      // Your team's name
+    let opponentTeamName = "";  // Opponent's name
 
     // --- Constants ---
-    // Define scenario deltas (W is assumed 1 for SHO, 0 otherwise)
     const SCENARIOS = [
         { name: "Shutout",       w: 1, ga: 0, sv: 30, sa: 30, toi: 60, sho: 1 },
-        { name: "1GA",           w: 0, ga: 1, sv: 29, sa: 30, toi: 60, sho: 0 },
-        { name: "2GA",           w: 0, ga: 2, sv: 28, sa: 30, toi: 60, sho: 0 },
-        { name: "3GA",           w: 0, ga: 3, sv: 27, sa: 30, toi: 60, sho: 0 },
+        { name: "1GA",           w: 1, ga: 1, sv: 29, sa: 30, toi: 60, sho: 0 },
+        { name: "2GA",           w: .5, ga: 2, sv: 28, sa: 30, toi: 60, sho: 0 },
+        { name: "3GA",           w: .5, ga: 3, sv: 27, sa: 30, toi: 60, sho: 0 },
         { name: "4GA",           w: 0, ga: 4, sv: 26, sa: 30, toi: 60, sho: 0 },
         { name: "5GA",           w: 0, ga: 5, sv: 25, sa: 30, toi: 60, sho: 0 },
         { name: "6GA",           w: 0, ga: 6, sv: 24, sa: 30, toi: 60, sho: 0 },
@@ -29,34 +40,140 @@
 
     async function init() {
         try {
-            if (!weekSelect || !yourTeamSelect) {
-                 throw new Error("Could not find main dropdowns (week-select or your-team-select).");
-            }
             // Add event listener for checkbox clicks
-            addEventListeners();
+            individualStartsContainer.addEventListener('click', handleCheckboxClick);
 
-            // Initial data load
+            // Fetch page data (weeks, teams, matchups)
+            await fetchPageData();
+
+            // Populate dropdowns
+            populateDropdowns();
+
+            // Set up event listeners for dropdowns
+            setupEventListeners();
+
+            // Set initial opponent
+            updateOpponentDropdown();
+
+            // Initial data load for stats
             await fetchAndRenderStats();
+
+            controlsDiv.classList.remove('hidden');
+
         } catch (error) {
             console.error('Initialization error:', error);
             errorDiv.textContent = error.message;
             errorDiv.classList.remove('hidden');
-            aggregateStatsContainer.classList.add('hidden');
-            individualStartsContainer.classList.add('hidden');
+            controlsDiv.classList.add('hidden');
         }
     }
 
+    /**
+     * Fetches static page data like weeks, teams, and matchups.
+     */
+    async function fetchPageData() {
+        const response = await fetch('/api/matchup_page_data');
+        const data = await response.json();
+        if (!response.ok || !data.db_exists) {
+            throw new Error(data.error || 'Database has not been initialized.');
+        }
+        pageData = data;
+    }
+
+    /**
+     * Populates the Week, Your Team, and Opponent dropdowns.
+     */
+    function populateDropdowns() {
+        // Populate Weeks
+        weekSelect.innerHTML = pageData.weeks.map(week =>
+            `<option value="${week.week_num}">
+                Week ${week.week_num} (${week.start_date} to ${week.end_date})
+            </option>`
+        ).join('');
+
+        // Populate Teams
+        const teamOptions = pageData.teams.map(team =>
+            `<option value="${team.name}">${team.name}</option>`
+        ).join('');
+        yourTeamSelect.innerHTML = teamOptions;
+        opponentSelect.innerHTML = teamOptions;
+
+        // Restore team selection
+        const savedTeam = localStorage.getItem('selectedTeam');
+        if (savedTeam) {
+            yourTeamSelect.value = savedTeam;
+        }
+
+        // Restore week selection
+        if (!sessionStorage.getItem('fantasySessionStarted')) {
+            const currentWeek = pageData.current_week;
+            weekSelect.value = currentWeek;
+            localStorage.setItem('selectedWeek', currentWeek);
+            sessionStorage.setItem('fantasySessionStarted', 'true');
+        } else {
+            const savedWeek = localStorage.getItem('selectedWeek');
+            weekSelect.value = savedWeek ? savedWeek : pageData.current_week;
+        }
+    }
+
+    /**
+     * Sets up change listeners for the dropdowns.
+     */
+    function setupEventListeners() {
+        weekSelect.addEventListener('change', async () => {
+            localStorage.setItem('selectedWeek', weekSelect.value);
+            updateOpponentDropdown();
+            await fetchAndRenderStats();
+        });
+        yourTeamSelect.addEventListener('change', async () => {
+            localStorage.setItem('selectedTeam', yourTeamSelect.value);
+            updateOpponentDropdown();
+            await fetchAndRenderStats();
+        });
+        opponentSelect.addEventListener('change', async () => {
+            await fetchAndRenderStats();
+        });
+    }
+
+    /**
+     * Automatically selects the opponent based on the matchup data.
+     */
+    function updateOpponentDropdown() {
+        const selectedWeek = weekSelect.value;
+        const yourTeamName = yourTeamSelect.value;
+
+        const matchup = pageData.matchups.find(m =>
+            m.week == selectedWeek && (m.team1 === yourTeamName || m.team2 === yourTeamName)
+        );
+
+        if (matchup) {
+            const opponentName = matchup.team1 === yourTeamName ? matchup.team2 : matchup.team1;
+            opponentSelect.value = opponentName;
+        } else {
+            const firstOtherTeam = pageData.teams.find(t => t.name !== yourTeamName);
+            if (firstOtherTeam) {
+                opponentSelect.value = firstOtherTeam.name;
+            }
+        }
+    }
+
+    /**
+     * Fetches all goalie stats for both selected teams and initiates rendering.
+     */
     async function fetchAndRenderStats() {
-        teamName = yourTeamSelect.value;
+        yourTeamName = yourTeamSelect.value;
+        opponentTeamName = opponentSelect.value;
         const selectedWeek = weekSelect.value;
 
-        if (!selectedWeek || !teamName) {
-            aggregateStatsContainer.innerHTML = '<p class="text-gray-400">Please select a week and team.</p>';
-            individualStartsContainer.innerHTML = '';
+        if (!selectedWeek || !yourTeamName || !opponentTeamName) {
+            currentStatsContainer.innerHTML = '<p class="text-gray-400">Please make all selections.</p>';
             return;
         }
 
-        aggregateStatsContainer.innerHTML = '<p class="text-gray-400">Loading current goalie stats...</p>';
+        // Set loading state
+        currentStatsContainer.innerHTML = '<p class="text-gray-400">Loading...</p>';
+        simulatedStatsContainer.innerHTML = '<p class="text-gray-400">Loading...</p>';
+        opponentStatsContainer.innerHTML = '<p class="text-gray-400">Loading...</p>';
         individualStartsContainer.innerHTML = '';
 
         try {
@@ -65,7 +182,8 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     week: selectedWeek,
-                    team_name: teamName,
+                    your_team_name: yourTeamName,
+                    opponent_team_name: opponentTeamName
                 })
             });
 
@@ -73,7 +191,11 @@
             if (!response.ok) throw new Error(data.error || 'Failed to fetch stats.');
 
             // Store the fetched "real" starts
-            baseStarts = data.individual_starts || [];
+            baseStarts = data.your_team_stats.individual_starts || [];
+
+            // Calculate and store "frozen" totals
+            baseTotals = calculateTotals(baseStarts);
+            opponentTotals = calculateTotals(data.opponent_team_stats.individual_starts || []);
 
             // Clear any old simulations
             simulatedStarts = [];
@@ -83,26 +205,29 @@
 
         } catch (error) {
             console.error('Error fetching stats:', error);
-            aggregateStatsContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
-            individualStartsContainer.innerHTML = '';
+            currentStatsContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
+            simulatedStatsContainer.innerHTML = '';
+            opponentStatsContainer.innerHTML = '';
         }
     }
 
     /**
-     * Master render function. Calculates all totals and re-renders both tables.
+     * Master render function. Calculates all totals and re-renders all tables.
      */
     function renderAllTables() {
         // Combine base starts and simulated starts for calculations
         const allStarts = [...baseStarts, ...simulatedStarts];
 
         // Calculate aggregate stats from ALL starts (base + sim)
-        const totals = calculateTotals(allStarts);
+        const simulatedTotals = calculateTotals(allStarts);
 
-        // Render the top "Current Live Goalie Stats" table
-        renderAggregateStatsTable(totals);
+        // Render the three top tables
+        renderAggregateStatsTable(currentStatsContainer, `Current Stats (${yourTeamName})`, baseTotals);
+        renderAggregateStatsTable(simulatedStatsContainer, `Simulated Stats (${yourTeamName})`, simulatedTotals, true);
+        renderAggregateStatsTable(opponentStatsContainer, `Opponent Stats (${opponentTeamName})`, opponentTotals);
 
         // Render the bottom "Individual Goalie Starts" table
-        renderIndividualStartsTable(allStarts, totals);
+        renderIndividualStartsTable(allStarts, simulatedTotals);
     }
 
     /**
@@ -138,13 +263,17 @@
     }
 
     /**
-     * Renders the top aggregate stats table.
+     * Generic renderer for the top aggregate stats tables.
      */
-    function renderAggregateStatsTable(totals) {
+    function renderAggregateStatsTable(container, title, totals, isSimulated = false) {
+        // Highlight simulated table
+        const titleClass = isSimulated ? "text-blue-300" : "text-white";
+        const shadowClass = isSimulated ? "shadow-blue-500/30 shadow-lg" : "shadow";
+
         let tableHtml = `
-            <div class="bg-gray-900 rounded-lg shadow">
-                <h3 class="text-lg font-bold text-white p-3 bg-gray-800 rounded-t-lg">
-                    Current Goalie Stats (${teamName})
+            <div class="bg-gray-900 rounded-lg ${shadowClass}">
+                <h3 class="text-lg font-bold ${titleClass} p-3 bg-gray-800 rounded-t-lg">
+                    ${title}
                 </h3>
                 <table class="w-full divide-y divide-gray-700">
                     <thead class="bg-gray-700/50">
@@ -194,7 +323,7 @@
                 </table>
             </div>
         `;
-        aggregateStatsContainer.innerHTML = tableHtml;
+        container.innerHTML = tableHtml;
     }
 
     /**
@@ -320,32 +449,29 @@
     }
 
     /**
-     * Adds event listeners to handle checkbox clicks.
+     * Handles checkbox clicks on the individual starts table.
      */
-    function addEventListeners() {
-        // Use event delegation on the container
-        individualStartsContainer.addEventListener('click', function(e) {
-            const target = e.target;
+    function handleCheckboxClick(e) {
+        const target = e.target;
 
-            // --- Handle ADDING a scenario ---
-            if (target.classList.contains('scenario-checkbox') && target.checked) {
-                const scenarioName = target.dataset.scenarioName;
-                const scenarioToAdd = SCENARIOS.find(s => s.name === scenarioName);
-                if (scenarioToAdd) {
-                    simulatedStarts.push(scenarioToAdd);
-                    renderAllTables();
-                }
+        // --- Handle ADDING a scenario ---
+        if (target.classList.contains('scenario-checkbox') && target.checked) {
+            const scenarioName = target.dataset.scenarioName;
+            const scenarioToAdd = SCENARIOS.find(s => s.name === scenarioName);
+            if (scenarioToAdd) {
+                simulatedStarts.push(scenarioToAdd);
+                renderAllTables();
             }
+        }
 
-            // --- Handle REMOVING a scenario ---
-            if (target.classList.contains('sim-checkbox') && !target.checked) {
-                const simIndex = parseInt(target.dataset.simIndex, 10);
-                if (!isNaN(simIndex) && simIndex >= 0 && simIndex < simulatedStarts.length) {
-                    simulatedStarts.splice(simIndex, 1);
-                    renderAllTables();
-                }
+        // --- Handle REMOVING a scenario ---
+        if (target.classList.contains('sim-checkbox') && !target.checked) {
+            const simIndex = parseInt(target.dataset.simIndex, 10);
+            if (!isNaN(simIndex) && simIndex >= 0 && simIndex < simulatedStarts.length) {
+                simulatedStarts.splice(simIndex, 1);
+                renderAllTables();
             }
-        });
+        }
     }
 
     init();

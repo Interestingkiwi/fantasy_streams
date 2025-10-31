@@ -1359,12 +1359,87 @@ def get_free_agent_data():
             conn.close()
 
 
+def _get_team_goalie_stats(cursor, team_id, start_date_str, end_date_str):
+    # 1. Get Aggregated Live Stats
+    goalie_categories = ['W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G']
+
+    cursor.execute(f"""
+        SELECT category, SUM(stat_value) as total
+        FROM daily_player_stats
+        WHERE date_ >= ? AND date_ <= ? AND team_id = ?
+        AND category IN ({','.join('?' for _ in goalie_categories)})
+        GROUP BY category
+    """, (start_date_str, end_date_str, team_id, *goalie_categories))
+
+    live_stats_raw = cursor.fetchall()
+    live_stats_decoded = decode_dict_values([dict(row) for row in live_stats_raw])
+
+    live_stats = {cat: 0 for cat in goalie_categories}
+    for row in live_stats_decoded:
+        if row['category'] in live_stats:
+            live_stats[row['category']] = row.get('total', 0)
+
+    if 'SHO' in live_stats and live_stats['SHO'] > 0:
+        live_stats['TOI/G'] += (live_stats['SHO'] * 60)
+
+    # 2. Get Individual Goalie Starts
+    cursor.execute("""
+        SELECT
+            d.player_id,
+            p.player_name,
+            d.date_,
+            d.category,
+            d.stat_value
+        FROM daily_player_stats d
+        JOIN players p ON d.player_id = p.player_id
+        WHERE d.team_id = ? AND d.date_ >= ? AND d.date_ <= ?
+        AND d.category IN ('W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G')
+        ORDER BY d.date_, p.player_name
+    """, (team_id, start_date_str, end_date_str))
+
+    raw_starts = cursor.fetchall()
+
+    starts_data = defaultdict(lambda: defaultdict(float))
+    for row in raw_starts:
+        key = (row['player_id'], row['player_name'], row['date_'])
+        starts_data[key][row['category']] = row['stat_value']
+
+    individual_starts = []
+    for (player_id, player_name, date_), stats in starts_data.items():
+        if stats.get('SA', 0) > 0:
+            start_record = {
+                "player_id": player_id,
+                "player_name": player_name,
+                "date": date_,
+                **stats
+            }
+
+            toi = stats.get('TOI/G', 0)
+            if stats.get('SHO', 0) > 0:
+                toi += 60
+                start_record['TOI/G'] = toi
+
+            start_record['GAA'] = (stats.get('GA', 0) * 60) / toi if toi > 0 else 0
+            start_record['SV%'] = stats.get('SV', 0) / stats.get('SA', 0) if stats.get('SA', 0) > 0 else 0
+
+            individual_starts.append(start_record)
+
+    goalie_starts = len(individual_starts)
+
+    return {
+        'live_stats': live_stats,
+        'goalie_starts': goalie_starts,
+        'individual_starts': individual_starts
+    }
+
+
 @app.route('/api/goalie_planning_stats', methods=['POST'])
 def get_goalie_planning_stats():
     league_id = session.get('league_id')
     data = request.get_json()
     week_num = data.get('week')
-    team_name = data.get('team_name')
+    your_team_name = data.get('your_team_name')
+    opponent_team_name = data.get('opponent_team_name')
 
     conn, error_msg = get_db_connection_for_league(league_id)
     if not conn:
@@ -1373,14 +1448,22 @@ def get_goalie_planning_stats():
     try:
         cursor = conn.cursor()
 
-        # Get team ID from name
-        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
-        team_id_row = cursor.fetchone()
-        if not team_id_row:
-            return jsonify({'error': f'Team not found: {team_name}'}), 404
-        team_id = team_id_row['team_id']
+        # Get Team IDs
+        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (your_team_name,))
+        your_team_id_row = cursor.fetchone()
 
-        # Get week start/end dates
+        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (opponent_team_name,))
+        opponent_team_id_row = cursor.fetchone()
+
+        if not your_team_id_row:
+            return jsonify({'error': f'Team not found: {your_team_name}'}), 404
+        if not opponent_team_id_row:
+            return jsonify({'error': f'Team not found: {opponent_team_name}'}), 404
+
+        your_team_id = your_team_id_row['team_id']
+        opponent_team_id = opponent_team_id_row['team_id']
+
+        # Get week dates
         cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num,))
         week_dates = cursor.fetchone()
         if not week_dates:
@@ -1388,85 +1471,13 @@ def get_goalie_planning_stats():
         start_date_str = week_dates['start_date']
         end_date_str = week_dates['end_date']
 
-        # --- 1. Get Aggregated Live Stats (Same as before) ---
-        goalie_categories = ['W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G']
-
-        cursor.execute(f"""
-            SELECT category, SUM(stat_value) as total
-            FROM daily_player_stats
-            WHERE date_ >= ? AND date_ <= ? AND team_id = ?
-            AND category IN ({','.join('?' for _ in goalie_categories)})
-            GROUP BY category
-        """, (start_date_str, end_date_str, team_id, *goalie_categories))
-
-        live_stats_raw = cursor.fetchall()
-        live_stats_decoded = decode_dict_values([dict(row) for row in live_stats_raw])
-
-        live_stats = {cat: 0 for cat in goalie_categories}
-        for row in live_stats_decoded:
-            if row['category'] in live_stats:
-                live_stats[row['category']] = row.get('total', 0)
-
-        if 'SHO' in live_stats and live_stats['SHO'] > 0:
-            live_stats['TOI/G'] += (live_stats['SHO'] * 60)
-
-        # --- 2. Get Individual Goalie Starts (New Logic) ---
-
-        # Get all daily stats for goalies, joined with player name
-        cursor.execute("""
-            SELECT
-                d.player_id,
-                p.player_name,
-                d.date_,
-                d.category,
-                d.stat_value
-            FROM daily_player_stats d
-            JOIN players p ON d.player_id = p.player_id
-            WHERE d.team_id = ? AND d.date_ >= ? AND d.date_ <= ?
-            AND d.category IN ('W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G')
-            ORDER BY d.date_, p.player_name
-        """, (team_id, start_date_str, end_date_str))
-
-        raw_starts = cursor.fetchall()
-
-        # Pivot the tall data into a dictionary of starts
-        # Key: (player_id, player_name, date_), Value: {category: value, ...}
-        starts_data = defaultdict(lambda: defaultdict(float))
-        for row in raw_starts:
-            key = (row['player_id'], row['player_name'], row['date_'])
-            starts_data[key][row['category']] = row['stat_value']
-
-        # Convert the dictionary into a list of "start" objects
-        individual_starts = []
-        for (player_id, player_name, date_), stats in starts_data.items():
-            # Only count it as a "start" if they faced shots
-            if stats.get('SA', 0) > 0:
-                start_record = {
-                    "player_id": player_id,
-                    "player_name": player_name,
-                    "date": date_,
-                    **stats # Add all stats like W, L, GA, SV, SA, SHO, TOI/G
-                }
-
-                # Calculate GAA/SV% for this individual start
-                toi = stats.get('TOI/G', 0)
-                # Apply SHO fix for this single start
-                if stats.get('SHO', 0) > 0:
-                    toi += 60
-                    start_record['TOI/G'] = toi # Update the record
-
-                start_record['GAA'] = (stats.get('GA', 0) * 60) / toi if toi > 0 else 0
-                start_record['SV%'] = stats.get('SV', 0) / stats.get('SA', 0) if stats.get('SA', 0) > 0 else 0
-
-                individual_starts.append(start_record)
-
-        # The total number of starts is the length of this list
-        goalie_starts = len(individual_starts)
+        # Get stats for both teams using the helper
+        your_team_stats = _get_team_goalie_stats(cursor, your_team_id, start_date_str, end_date_str)
+        opponent_team_stats = _get_team_goalie_stats(cursor, opponent_team_id, start_date_str, end_date_str)
 
         return jsonify({
-            'live_stats': live_stats,
-            'goalie_starts': goalie_starts,
-            'individual_starts': individual_starts # <-- NEW
+            'your_team_stats': your_team_stats,
+            'opponent_team_stats': opponent_team_stats
         })
 
     except Exception as e:
