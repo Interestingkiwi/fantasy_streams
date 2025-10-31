@@ -30,13 +30,20 @@
     const SCENARIOS = [
         { name: "Shutout",       w: 1, ga: 0, sv: 30, sa: 30, toi: 60, sho: 1 },
         { name: "1GA",           w: 1, ga: 1, sv: 29, sa: 30, toi: 60, sho: 0 },
-        { name: "2GA",           w: .5, ga: 2, sv: 28, sa: 30, toi: 60, sho: 0 },
-        { name: "3GA",           w: .5, ga: 3, sv: 27, sa: 30, toi: 60, sho: 0 },
+        { name: "2GA",           w: 1, ga: 2, sv: 28, sa: 30, toi: 60, sho: 0 },
+        { name: "3GA",           w: 0, ga: 3, sv: 27, sa: 30, toi: 60, sho: 0 },
         { name: "4GA",           w: 0, ga: 4, sv: 26, sa: 30, toi: 60, sho: 0 },
         { name: "5GA",           w: 0, ga: 5, sv: 25, sa: 30, toi: 60, sho: 0 },
         { name: "6GA",           w: 0, ga: 6, sv: 24, sa: 30, toi: 60, sho: 0 },
         { name: "4/GA/Pulled",   w: 0, ga: 4, sv: 11, sa: 15, toi: 20, sho: 0 }
     ];
+
+    // [NEW] Colors for highlighting
+    const COLORS = {
+        win: 'bg-green-800/50',
+        loss: 'bg-red-800/50',
+        tie: '' // No background for a tie
+    };
 
     async function init() {
         try {
@@ -222,9 +229,10 @@
         const simulatedTotals = calculateTotals(allStarts);
 
         // Render the three top tables
-        renderAggregateStatsTable(currentStatsContainer, `Current Stats (${yourTeamName})`, baseTotals);
-        renderAggregateStatsTable(simulatedStatsContainer, `Simulated Stats (${yourTeamName})`, simulatedTotals, true);
-        renderAggregateStatsTable(opponentStatsContainer, `Opponent Stats (${opponentTeamName})`, opponentTotals);
+        // Pass opponentTotals to the first two for comparison
+        renderAggregateStatsTable(currentStatsContainer, `Current Stats (${yourTeamName})`, baseTotals, opponentTotals);
+        renderAggregateStatsTable(simulatedStatsContainer, `Simulated Stats (${yourTeamName})`, simulatedTotals, opponentTotals, true);
+        renderAggregateStatsTable(opponentStatsContainer, `Opponent Stats (${opponentTeamName})`, opponentTotals, null, false); // No comparison for opponent
 
         // Render the bottom "Individual Goalie Starts" table
         renderIndividualStartsTable(allStarts, simulatedTotals);
@@ -262,13 +270,54 @@
         };
     }
 
+    // --- [NEW] Helper function to get win/loss/tie class ---
+    /**
+     * Compares a stat value to an opponent's value and returns a color class.
+     * @param {number} value - The team's stat value.
+     * @param {number} opponentValue - The opponent's stat value.
+     * @param {boolean} lowerIsBetter - True for stats like GAA.
+     * @returns {string} - The CSS class from COLORS.
+     */
+    function getComparisonClass(value, opponentValue, lowerIsBetter = false) {
+        if (lowerIsBetter) {
+            // Handle GAA (and potential future stats)
+            // Use a small epsilon for float comparison
+            if (value < opponentValue - 1e-9) return COLORS.win;
+            if (value > opponentValue + 1e-9) return COLORS.loss;
+        } else {
+            // Handle W, SV%, SHO
+            if (value > opponentValue + 1e-9) return COLORS.win;
+            if (value < opponentValue - 1e-9) return COLORS.loss;
+        }
+        return COLORS.tie; // Tie
+    }
+
     /**
      * Generic renderer for the top aggregate stats tables.
+     * [MODIFIED] Now accepts opponentTotals for comparison.
      */
-    function renderAggregateStatsTable(container, title, totals, isSimulated = false) {
+    function renderAggregateStatsTable(container, title, totals, opponentTotals = null, isSimulated = false) {
         // Highlight simulated table
         const titleClass = isSimulated ? "text-blue-300" : "text-white";
         const shadowClass = isSimulated ? "shadow-blue-500/30 shadow-lg" : "shadow";
+
+        // [NEW] Get color classes if opponentTotals is provided
+        let wClass = COLORS.tie, gaaClass = COLORS.tie, svPctClass = COLORS.tie, shoClass = COLORS.tie;
+        if (opponentTotals) {
+            wClass = getComparisonClass(totals.W, opponentTotals.W, false);
+            // For GAA, use Infinity if TOI is 0 to ensure it "loses" if opponent has 0.00 GAA
+            const myGaa = totals.TOI > 0 ? totals.GAA : Infinity;
+            const oppGaa = opponentTotals.TOI > 0 ? opponentTotals.GAA : Infinity;
+            // Handle 0/0 tie
+            if (myGaa === Infinity && oppGaa === Infinity) {
+                gaaClass = COLORS.tie;
+            } else {
+                gaaClass = getComparisonClass(myGaa, oppGaa, true);
+            }
+
+            svPctClass = getComparisonClass(totals.SVpct, opponentTotals.SVpct, false);
+            shoClass = getComparisonClass(totals.SHO, opponentTotals.SHO, false);
+        }
 
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg ${shadowClass}">
@@ -287,13 +336,13 @@
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Goalie Starts</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right font-bold">${totals.starts}</td>
                         </tr>
-                        <tr class="hover:bg-gray-700/50">
+                        <tr class="hover:bg-gray-700/50 ${wClass}">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Wins (W)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${totals.W.toFixed(0)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right">${totals.W.toFixed(0)}</td>
                         </tr>
-                        <tr class="hover:bg-gray-700/50">
+                        <tr class="hover:bg-gray-700/50 ${gaaClass}">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Goals Against Avg (GAA)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${totals.GAA.toFixed(3)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right">${(totals.TOI > 0 ? totals.GAA : 0).toFixed(3)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Goals Against (GA)</td>
@@ -303,9 +352,9 @@
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Time on Ice (TOI)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${totals.TOI.toFixed(1)}</td>
                         </tr>
-                        <tr class="hover:bg-gray-700/50">
+                        <tr class="hover:bg-gray-700/50 ${svPctClass}">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Save Pct (SV%)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${totals.SVpct.toFixed(3)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right">${totals.SVpct.toFixed(3)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Saves (SV)</td>
@@ -315,9 +364,9 @@
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Shots Against (SA)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${totals.SA.toFixed(0)}</td>
                         </tr>
-                        <tr class="hover:bg-gray-700/50">
+                        <tr class="hover:bg-gray-700/50 ${shoClass}">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Shutouts (SHO)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${totals.SHO.toFixed(0)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right">${totals.SHO.toFixed(0)}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -397,8 +446,8 @@
                 <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.GA.toFixed(0)}</td>
                 <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.SV.toFixed(0)}</td>
                 <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.SA.toFixed(0)}</td>
-                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.SVpct.toFixed(3)}</td>
-                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.GAA.toFixed(3)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${(totals.TOI > 0 ? totals.SVpct : 0).toFixed(3)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${(totals.TOI > 0 ? totals.GAA : 0).toFixed(3)}</td>
                 <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-white">${totals.SHO.toFixed(0)}</td>
             </tr>
         `;
