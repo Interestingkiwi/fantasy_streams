@@ -1411,21 +1411,21 @@ def get_goalie_planning_stats():
 
         # --- Apply SHO Fix (copied from /api/matchup_team_stats) ---
         if 'SHO' in live_stats and live_stats['SHO'] > 0:
-            # live_stats['SHO'] is the SUM of shutouts (e.g., 2.0)
-            # We add 60 minutes to TOI/G for *each* shutout.
             live_stats['TOI/G'] += (live_stats['SHO'] * 60)
 
-        # --- Calculate Goalie Starts (New Requirement) ---
-        # A "start" is any day a goalie recorded time on ice.
+        # --- [START] CORRECTED Goalie Starts Logic ---
+        # This now counts every individual player entry for SA > 0,
+        # which correctly identifies any goalie who played, even with a shutout.
         cursor.execute("""
-            SELECT COUNT(DISTINCT date_) as goalie_starts
+            SELECT COUNT(player_id) as goalie_starts
             FROM daily_player_stats
             WHERE team_id = ? AND date_ >= ? AND date_ <= ?
-            AND category = 'TOI/G' AND stat_value > 0
+            AND category = 'SA' AND stat_value > 0
         """, (team_id, start_date_str, end_date_str))
 
         starts_row = cursor.fetchone()
         goalie_starts = starts_row['goalie_starts'] if starts_row else 0
+        # --- [END] CORRECTED Goalie Starts Logic ---
 
         return jsonify({
             'live_stats': live_stats,

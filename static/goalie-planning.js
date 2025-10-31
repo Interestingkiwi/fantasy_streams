@@ -144,13 +144,18 @@
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${gaa.toFixed(3)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
+                            <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Goals Against (GA)</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${ga.toFixed(0)}</td>
+                        </tr>
+                        <tr class="hover:bg-gray-700/50">
+                            <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Time on Ice (TOI)</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${toi.toFixed(1)}</td>
+                        </tr>
+                        <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Save Pct (SV%)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${sv_pct.toFixed(3)}</td>
                         </tr>
-                        <tr class="hover:bg-gray-700/50">
-                            <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Shutouts (SHO)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${sho.toFixed(0)}</td>
-                        </tr>
+
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Saves (SV)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${sv.toFixed(0)}</td>
@@ -160,13 +165,10 @@
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${sa.toFixed(0)}</td>
                         </tr>
                         <tr class="hover:bg-gray-700/50">
-                            <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Goals Against (GA)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${ga.toFixed(0)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Shutouts (SHO)</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${sho.toFixed(0)}</td>
                         </tr>
-                        <tr class="hover:bg-gray-700/50">
-                            <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Time on Ice (TOI)</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${toi.toFixed(1)}</td>
-                        </tr>
+
                     </tbody>
                 </table>
             </div>
