@@ -297,7 +297,7 @@ def get_optimal_lineup(players, lineup_settings):
         for slot in available_slots_for_player:
             scarcity_count = sum(1 for other in player_pool
                                      if other != player and
-                                     other.get('player_id') not in assigned_player_ids and # <-- ADDED THIS CHECK
+                                     other.get('player_id') not in assigned_player_ids and
                                      slot in [p.strip() for p in get_pos_str(other).split(',')])
             slot_scarcity[slot] = scarcity_count
 
@@ -535,6 +535,10 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
 
     return players
 
+
+@app.route('/healthz')
+def health_check():
+    return "OK", 200
 
 @app.route('/')
 def index():
@@ -1353,6 +1357,88 @@ def get_free_agent_data():
     finally:
         if conn:
             conn.close()
+
+
+@app.route('/api/goalie_planning_stats', methods=['POST'])
+def get_goalie_planning_stats():
+    league_id = session.get('league_id')
+    data = request.get_json()
+    week_num = data.get('week')
+    team_name = data.get('team_name')
+
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg}), 404
+
+    try:
+        cursor = conn.cursor()
+
+        # Get team ID from name
+        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
+        team_id_row = cursor.fetchone()
+        if not team_id_row:
+            return jsonify({'error': f'Team not found: {team_name}'}), 404
+        team_id = team_id_row['team_id']
+
+        # Get week start/end dates
+        cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num,))
+        week_dates = cursor.fetchone()
+        if not week_dates:
+            return jsonify({'error': f'Week not found: {week_num}'}), 404
+        start_date_str = week_dates['start_date']
+        end_date_str = week_dates['end_date']
+
+        # Define all goalie categories we need to fetch
+        goalie_categories = ['W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G']
+
+        # --- Calculate Live Stats ---
+        cursor.execute(f"""
+            SELECT category, SUM(stat_value) as total
+            FROM daily_player_stats
+            WHERE date_ >= ? AND date_ <= ? AND team_id = ?
+            AND category IN ({','.join('?' for _ in goalie_categories)})
+            GROUP BY category
+        """, (start_date_str, end_date_str, team_id, *goalie_categories))
+
+        live_stats_raw = cursor.fetchall()
+        live_stats_decoded = decode_dict_values([dict(row) for row in live_stats_raw])
+
+        # Initialize live stats dictionary
+        live_stats = {cat: 0 for cat in goalie_categories}
+        for row in live_stats_decoded:
+            if row['category'] in live_stats:
+                live_stats[row['category']] = row.get('total', 0)
+
+        # --- Apply SHO Fix (copied from /api/matchup_team_stats) ---
+        if 'SHO' in live_stats and live_stats['SHO'] > 0:
+            # live_stats['SHO'] is the SUM of shutouts (e.g., 2.0)
+            # We add 60 minutes to TOI/G for *each* shutout.
+            live_stats['TOI/G'] += (live_stats['SHO'] * 60)
+
+        # --- Calculate Goalie Starts (New Requirement) ---
+        # A "start" is any day a goalie recorded time on ice.
+        cursor.execute("""
+            SELECT COUNT(DISTINCT date_) as goalie_starts
+            FROM daily_player_stats
+            WHERE team_id = ? AND date_ >= ? AND date_ <= ?
+            AND category = 'TOI/G' AND stat_value > 0
+        """, (team_id, start_date_str, end_date_str))
+
+        starts_row = cursor.fetchone()
+        goalie_starts = starts_row['goalie_starts'] if starts_row else 0
+
+        return jsonify({
+            'live_stats': live_stats,
+            'goalie_starts': goalie_starts
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching goalie planning stats: {e}", exc_info=True)
+        return jsonify({'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
 
 @app.route('/stream')
 def stream():
