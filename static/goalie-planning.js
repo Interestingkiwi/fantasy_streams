@@ -3,82 +3,42 @@
     await new Promise(resolve => setTimeout(resolve, 0));
 
     const errorDiv = document.getElementById('db-error-message');
-    const controlsDiv = document.getElementById('goalie-controls');
-    const statsContainer = document.getElementById('stats-container');
+    const aggregateStatsContainer = document.getElementById('stats-container');
+    const individualStartsContainer = document.getElementById('individual-starts-container'); // NEW
+
+    // Get references to the dropdowns *in home.html*
     const weekSelect = document.getElementById('week-select');
     const yourTeamSelect = document.getElementById('your-team-select');
 
-    let pageData = null; // To store weeks and teams
-
     async function init() {
         try {
-            // Use the existing lineup_page_data endpoint to get weeks and teams
-            const response = await fetch('/api/lineup_page_data');
-            const data = await response.json();
-
-            if (!response.ok || !data.db_exists) {
-                throw new Error(data.error || 'Database has not been initialized.');
+            if (!weekSelect || !yourTeamSelect) {
+                 throw new Error("Could not find main dropdowns (week-select or your-team-select).");
             }
-
-            pageData = data;
-            populateDropdowns();
-            setupEventListeners();
-
             // Initial data load
             await fetchAndRenderStats();
-
-            controlsDiv.classList.remove('hidden');
-
         } catch (error) {
             console.error('Initialization error:', error);
             errorDiv.textContent = error.message;
             errorDiv.classList.remove('hidden');
-            controlsDiv.classList.add('hidden');
-            statsContainer.classList.add('hidden');
-        }
-    }
-
-    function populateDropdowns() {
-        // Populate Weeks
-        weekSelect.innerHTML = pageData.weeks.map(week =>
-            `<option value="${week.week_num}">
-                Week ${week.week_num} (${week.start_date} to ${week.end_date})
-            </option>`
-        ).join('');
-
-        // Populate Teams
-        yourTeamSelect.innerHTML = pageData.teams.map(team =>
-            `<option value="${team.name}">${team.name}</option>`
-        ).join('');
-
-        // Restore team selection from localStorage
-        const savedTeam = localStorage.getItem('selectedTeam');
-        if (savedTeam) {
-            yourTeamSelect.value = savedTeam;
-        }
-
-        // Restore week selection
-        if (!sessionStorage.getItem('fantasySessionStarted')) {
-            const currentWeek = pageData.current_week;
-            weekSelect.value = currentWeek;
-            localStorage.setItem('selectedWeek', currentWeek);
-            sessionStorage.setItem('fantasySessionStarted', 'true');
-        } else {
-            const savedWeek = localStorage.getItem('selectedWeek');
-            weekSelect.value = savedWeek ? savedWeek : pageData.current_week;
+            aggregateStatsContainer.classList.add('hidden');
+            individualStartsContainer.classList.add('hidden'); // NEW
         }
     }
 
     async function fetchAndRenderStats() {
+        // Read values directly from the home.html dropdowns
         const selectedWeek = weekSelect.value;
         const yourTeamName = yourTeamSelect.value;
 
         if (!selectedWeek || !yourTeamName) {
-            statsContainer.innerHTML = '<p class="text-gray-400">Please select a week and team.</p>';
+            aggregateStatsContainer.innerHTML = '<p class="text-gray-400">Please select a week and team.</p>';
+            individualStartsContainer.innerHTML = ''; // NEW
             return;
         }
 
-        statsContainer.innerHTML = '<p class="text-gray-400">Loading current goalie stats...</p>';
+        aggregateStatsContainer.innerHTML = '<p class="text-gray-400">Loading current goalie stats...</p>';
+        individualStartsContainer.innerHTML = ''; // NEW
 
         try {
             const response = await fetch('/api/goalie_planning_stats', {
@@ -93,31 +53,32 @@
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Failed to fetch stats.');
 
-            renderStatsTable(data, yourTeamName);
+            // Call render functions for each table
+            renderAggregateStatsTable(data, yourTeamName);
+            renderIndividualStartsTable(data.individual_starts); // NEW
 
         } catch (error) {
             console.error('Error fetching stats:', error);
-            statsContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
+            aggregateStatsContainer.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
+            individualStartsContainer.innerHTML = ''; // NEW
         }
     }
 
-    function renderStatsTable(data, teamName) {
+    // Renamed from renderStatsTable
+    function renderAggregateStatsTable(data, teamName) {
         const { live_stats, goalie_starts } = data;
 
-        // --- Calculate GAA and SV% on the client side, as requested ---
         const sv = live_stats['SV'] || 0;
         const sa = live_stats['SA'] || 0;
         const ga = live_stats['GA'] || 0;
         const toi = live_stats['TOI/G'] || 0;
 
-        // Use 0 for display if denominator is 0 (vs. Infinity for comparison)
         const sv_pct = sa > 0 ? (sv / sa) : 0;
         const gaa = toi > 0 ? ((ga * 60) / toi) : 0;
 
         const w = live_stats['W'] || 0;
         const sho = live_stats['SHO'] || 0;
 
-        // --- Build Stats Table ---
         let tableHtml = `
             <div class="bg-gray-900 rounded-lg shadow">
                 <h3 class="text-lg font-bold text-white p-3 bg-gray-800 rounded-t-lg">
@@ -155,7 +116,6 @@
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Save Pct (SV%)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${sv_pct.toFixed(3)}</td>
                         </tr>
-
                         <tr class="hover:bg-gray-700/50">
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-normal text-gray-400 pl-6">Saves (SV)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-right">${sv.toFixed(0)}</td>
@@ -168,23 +128,61 @@
                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">Shutouts (SHO)</td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300 text-right">${sho.toFixed(0)}</td>
                         </tr>
-
                     </tbody>
                 </table>
             </div>
         `;
-        statsContainer.innerHTML = tableHtml;
+        aggregateStatsContainer.innerHTML = tableHtml;
     }
 
-    function setupEventListeners() {
-        weekSelect.addEventListener('change', () => {
-            localStorage.setItem('selectedWeek', weekSelect.value);
-            fetchAndRenderStats();
+    // --- NEW FUNCTION ---
+    function renderIndividualStartsTable(starts) {
+        if (!starts || starts.length === 0) {
+            individualStartsContainer.innerHTML = '';
+            return;
+        }
+
+        // Define headers
+        const headers = ['Start #', 'Date', 'Player', 'W', 'GA', 'SV', 'SA', 'SV%', 'GAA', 'SHO'];
+
+        let tableHtml = `
+            <div class="bg-gray-900 rounded-lg shadow">
+                <h3 class="text-lg font-bold text-white p-3 bg-gray-800 rounded-t-lg">
+                    Individual Goalie Starts
+                </h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-700/50">
+                            <tr>
+                                ${headers.map(h => `<th class="px-3 py-2 text-left text-xs font-bold text-gray-300 uppercase tracking-wider">${h}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody class="bg-gray-800 divide-y divide-gray-700">
+        `;
+
+        // Create a row for each start
+        starts.forEach((start, index) => {
+            tableHtml += `<tr class="hover:bg-gray-700/50">
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${index + 1}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${start.date}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${start.player_name}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(start.W || 0).toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(start.GA || 0).toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(start.SV || 0).toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(start.SA || 0).toFixed(0)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(start['SV%'] || 0).toFixed(3)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(start.GAA || 0).toFixed(3)}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-300">${(start.SHO || 0).toFixed(0)}</td>
+            </tr>`;
         });
-        yourTeamSelect.addEventListener('change', () => {
-            localStorage.setItem('selectedTeam', yourTeamSelect.value);
-            fetchAndRenderStats();
-        });
+
+        tableHtml += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        individualStartsContainer.innerHTML = tableHtml;
     }
 
     init();

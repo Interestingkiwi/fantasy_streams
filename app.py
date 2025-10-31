@@ -1388,10 +1388,9 @@ def get_goalie_planning_stats():
         start_date_str = week_dates['start_date']
         end_date_str = week_dates['end_date']
 
-        # Define all goalie categories we need to fetch
+        # --- 1. Get Aggregated Live Stats (Same as before) ---
         goalie_categories = ['W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G']
 
-        # --- Calculate Live Stats ---
         cursor.execute(f"""
             SELECT category, SUM(stat_value) as total
             FROM daily_player_stats
@@ -1403,33 +1402,71 @@ def get_goalie_planning_stats():
         live_stats_raw = cursor.fetchall()
         live_stats_decoded = decode_dict_values([dict(row) for row in live_stats_raw])
 
-        # Initialize live stats dictionary
         live_stats = {cat: 0 for cat in goalie_categories}
         for row in live_stats_decoded:
             if row['category'] in live_stats:
                 live_stats[row['category']] = row.get('total', 0)
 
-        # --- Apply SHO Fix (copied from /api/matchup_team_stats) ---
         if 'SHO' in live_stats and live_stats['SHO'] > 0:
             live_stats['TOI/G'] += (live_stats['SHO'] * 60)
 
-        # --- [START] CORRECTED Goalie Starts Logic ---
-        # This now counts every individual player entry for SA > 0,
-        # which correctly identifies any goalie who played, even with a shutout.
+        # --- 2. Get Individual Goalie Starts (New Logic) ---
+
+        # Get all daily stats for goalies, joined with player name
         cursor.execute("""
-            SELECT COUNT(player_id) as goalie_starts
-            FROM daily_player_stats
-            WHERE team_id = ? AND date_ >= ? AND date_ <= ?
-            AND category = 'SA' AND stat_value > 0
+            SELECT
+                d.player_id,
+                p.player_name,
+                d.date_,
+                d.category,
+                d.stat_value
+            FROM daily_player_stats d
+            JOIN players p ON d.player_id = p.player_id
+            WHERE d.team_id = ? AND d.date_ >= ? AND d.date_ <= ?
+            AND d.category IN ('W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G')
+            ORDER BY d.date_, p.player_name
         """, (team_id, start_date_str, end_date_str))
 
-        starts_row = cursor.fetchone()
-        goalie_starts = starts_row['goalie_starts'] if starts_row else 0
-        # --- [END] CORRECTED Goalie Starts Logic ---
+        raw_starts = cursor.fetchall()
+
+        # Pivot the tall data into a dictionary of starts
+        # Key: (player_id, player_name, date_), Value: {category: value, ...}
+        starts_data = defaultdict(lambda: defaultdict(float))
+        for row in raw_starts:
+            key = (row['player_id'], row['player_name'], row['date_'])
+            starts_data[key][row['category']] = row['stat_value']
+
+        # Convert the dictionary into a list of "start" objects
+        individual_starts = []
+        for (player_id, player_name, date_), stats in starts_data.items():
+            # Only count it as a "start" if they faced shots
+            if stats.get('SA', 0) > 0:
+                start_record = {
+                    "player_id": player_id,
+                    "player_name": player_name,
+                    "date": date_,
+                    **stats # Add all stats like W, L, GA, SV, SA, SHO, TOI/G
+                }
+
+                # Calculate GAA/SV% for this individual start
+                toi = stats.get('TOI/G', 0)
+                # Apply SHO fix for this single start
+                if stats.get('SHO', 0) > 0:
+                    toi += 60
+                    start_record['TOI/G'] = toi # Update the record
+
+                start_record['GAA'] = (stats.get('GA', 0) * 60) / toi if toi > 0 else 0
+                start_record['SV%'] = stats.get('SV', 0) / stats.get('SA', 0) if stats.get('SA', 0) > 0 else 0
+
+                individual_starts.append(start_record)
+
+        # The total number of starts is the length of this list
+        goalie_starts = len(individual_starts)
 
         return jsonify({
             'live_stats': live_stats,
-            'goalie_starts': goalie_starts
+            'goalie_starts': goalie_starts,
+            'individual_starts': individual_starts # <-- NEW
         })
 
     except Exception as e:
