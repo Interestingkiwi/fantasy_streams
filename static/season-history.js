@@ -146,7 +146,23 @@
             const skaterTable = createTable('Skaters', data.skater_headers, data.skater_data);
             const goalieTable = createTable('Goalies', data.goalie_headers, data.goalie_data);
 
-            historyContent.innerHTML = `<div class="space-y-6">${skaterTable}${goalieTable}</div>`;
+            // Use a flex container to create a 2-column layout.
+            // On large screens (lg:), it will be a row. On small, it will stack.
+            // 'flex-grow' lets the table side expand to fill available space.
+            historyContent.innerHTML = `
+                <div class="flex flex-col lg:flex-row gap-6">
+                    <div class="flex-grow space-y-6">
+                        ${skaterTable}
+                        ${goalieTable}
+                    </div>
+                    <div class="w-full lg:w-1/3 xl:w-1/4 flex-shrink-0">
+                        <div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                            <h3 class="text-lg font-semibold text-white mb-3">Additional Info</h3>
+                            <p class="text-gray-400">Your future content will go here.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
 
         } catch (error) {
             console.error('Error fetching bench points:', error);

@@ -1069,17 +1069,23 @@ def get_bench_points_data():
                 end_date = week_dates['end_date']
 
         # 3. Get Scoring Categories
-        cursor.execute("SELECT category, scoring_group FROM scoring ORDER BY scoring_group DESC, stat_id")
-        all_cats = decode_dict_values([dict(row) for row in cursor.fetchall()])
+        # --- START MODIFIED LOGIC ---
+        cursor.execute("SELECT category FROM scoring ORDER BY stat_id")
+        all_cats_raw = cursor.fetchall()
 
-        skater_categories = [c['category'] for c in all_cats if c.get('scoring_group') != 'G']
-        goalie_categories = [c['category'] for c in all_cats if c.get('scoring_group') == 'G']
-        goalie_cat_set = set(goalie_categories)
+        # Define known goalie stats, as seen elsewhere in app.py
+        known_goalie_stats = {'W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G', 'GAA', 'SVpct'}
+
+        all_categories = [row['category'] for row in all_cats_raw]
+        goalie_categories = [cat for cat in all_categories if cat in known_goalie_stats]
+        skater_categories = [cat for cat in all_categories if cat not in known_goalie_stats]
+        # --- END MODIFIED LOGIC ---
 
         # 4. Fetch Bench Stats
         sql_params = [team_id]
+        # We still need p.positions from the last fix
         sql_query = """
-            SELECT d.date_, d.player_id, p.player_name, d.category, d.stat_value
+            SELECT d.date_, d.player_id, p.player_name, p.positions, d.category, d.stat_value
             FROM daily_bench_stats d
             JOIN players p ON d.player_id = p.player_id
             WHERE d.team_id = ?
@@ -1096,9 +1102,12 @@ def get_bench_points_data():
 
         # 5. Pivot the data
         daily_player_stats = defaultdict(lambda: defaultdict(float))
+        player_positions = {}
         for row in raw_stats:
             key = (row['date_'], row['player_id'], row['player_name'])
             daily_player_stats[key][row['category']] = row['stat_value']
+            # Store the player's position
+            player_positions[key] = row['positions']
 
         # 6. Process and separate data
         skater_rows = []
@@ -1111,13 +1120,22 @@ def get_bench_points_data():
                 continue
 
             base_row = {'Date': date, 'Player': player_name}
-            is_goalie = any(cat in goalie_cat_set for cat in stats.keys())
+
+            # Get the position from our dictionary
+            key = (date, player_id, player_name)
+            positions_str = player_positions.get(key, '')
+
+            # --- This is the Player-splitting logic ---
+            # Check if 'G' is one of the player's positions
+            is_goalie = 'G' in positions_str.split(',')
 
             if is_goalie:
+                # Use the new goalie_categories list
                 for cat in goalie_categories:
                     base_row[cat] = stats.get(cat, 0)
                 goalie_rows.append(base_row)
             else:
+                # Use the new skater_categories list
                 for cat in skater_categories:
                     base_row[cat] = stats.get(cat, 0)
                 skater_rows.append(base_row)
