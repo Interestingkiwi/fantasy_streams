@@ -1138,13 +1138,11 @@ def get_bench_points_data():
         if week != 'all':
             logging.info("Week is not 'all', attempting to find matchup...")
 
-            # --- START FIX: Re-introduce int() conversion ---
             try:
                 week_num_int = int(week)
             except (ValueError, TypeError):
                 logging.error(f"Could not convert week='{week}' to an integer.")
                 return jsonify({'error': 'Invalid week format.'}), 400
-            # --- END FIX ---
 
             # Query 1: Get week dates (uses 'week_num_int')
             logging.info(f"Querying 'weeks' table for week_num = {week_num_int} (as INTEGER)")
@@ -1161,11 +1159,11 @@ def get_bench_points_data():
             if start_date and end_date:
                 logging.info("Proceeding to find opponent...")
 
-                # --- START FIX: Use 'week_num_int' (integer) ---
+                # --- START FIX: Add CAST to the query ---
                 logging.info(f"Querying 'matchups' table for week = {week_num_int} (as INTEGER) and team_name = '{team_name}'")
                 cursor.execute(
-                    "SELECT team1, team2 FROM matchups WHERE week = ? AND (team1 = ? OR team2 = ?)",
-                    (week_num_int, team_name, team_name) # Use the INTEGER here
+                    "SELECT team1, team2 FROM matchups WHERE week = ? AND (CAST(team1 AS TEXT) = ? OR CAST(team2 AS TEXT) = ?)",
+                    (week_num_int, team_name, team_name) # Use the INTEGER for week, string for names
                 )
                 # --- END FIX ---
 
@@ -1192,7 +1190,6 @@ def get_bench_points_data():
                         logging.warning(f"Could not find team_id for opponent_name = {opponent_name}")
                 else:
                     logging.warning(f"Query 2 FAILED: Could not find matchup_row for week = {week_num_int} and team_name = '{team_name}'")
-                # --- END FIX ---
 
             else:
                 logging.warning("Skipping matchup data fetch because start_date and end_date were not found (see Query 1).")
