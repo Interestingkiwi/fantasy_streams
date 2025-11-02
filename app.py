@@ -1116,7 +1116,6 @@ def get_bench_points_data():
         data = request.get_json()
         team_name = data.get('team_name') # e.g., "Aurora Borealis"
         week = data.get('week') # e.g., "1"
-        int_week = int(week)
 
         # --- DEBUG ---
         logging.info("--- History Report Debug ---")
@@ -1139,9 +1138,17 @@ def get_bench_points_data():
         if week != 'all':
             logging.info("Week is not 'all', attempting to find matchup...")
 
-            # Query 1: Get week dates (uses 'week' string)
-            logging.info(f"Querying 'weeks' table for week_num = '{week}'")
-            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
+            # --- START FIX: Re-introduce int() conversion ---
+            try:
+                week_num_int = int(week)
+            except (ValueError, TypeError):
+                logging.error(f"Could not convert week='{week}' to an integer.")
+                return jsonify({'error': 'Invalid week format.'}), 400
+            # --- END FIX ---
+
+            # Query 1: Get week dates (uses 'week_num_int')
+            logging.info(f"Querying 'weeks' table for week_num = {week_num_int} (as INTEGER)")
+            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num_int,))
             week_dates = cursor.fetchone()
 
             if week_dates:
@@ -1149,17 +1156,19 @@ def get_bench_points_data():
                 end_date = week_dates['end_date']
                 logging.info(f"Found week dates: {start_date} to {end_date}")
             else:
-                logging.warning(f"Query 1 FAILED: Could not find week_dates for week_num = '{week}'.")
+                logging.warning(f"Query 1 FAILED: Could not find week_dates for week_num = {week_num_int}.")
 
             if start_date and end_date:
                 logging.info("Proceeding to find opponent...")
 
-                # --- START FIX: Use team_name to find opponent_name ---
-                logging.info(f"Querying 'matchups' table for week = '{week}' and team_name = '{team_name}'")
+                # --- START FIX: Use 'week_num_int' (integer) ---
+                logging.info(f"Querying 'matchups' table for week = {week_num_int} (as INTEGER) and team_name = '{team_name}'")
                 cursor.execute(
                     "SELECT team1, team2 FROM matchups WHERE week = ? AND (team1 = ? OR team2 = ?)",
-                    (int_week, team_name, team_name) # Use the NAME here
+                    (week_num_int, team_name, team_name) # Use the INTEGER here
                 )
+                # --- END FIX ---
+
                 matchup_row = cursor.fetchone()
 
                 if matchup_row:
@@ -1182,7 +1191,7 @@ def get_bench_points_data():
                     else:
                         logging.warning(f"Could not find team_id for opponent_name = {opponent_name}")
                 else:
-                    logging.warning(f"Query 2 FAILED: Could not find matchup_row for week = '{week}' and team_name = '{team_name}'")
+                    logging.warning(f"Query 2 FAILED: Could not find matchup_row for week = {week_num_int} and team_name = '{team_name}'")
                 # --- END FIX ---
 
             else:
