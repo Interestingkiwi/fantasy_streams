@@ -1124,9 +1124,9 @@ def get_bench_points_data():
             return jsonify({'error': f'Team not found: {team_name}'}), 404
         team_id = team_id_row['team_id']
 
-        # 2. Get Dates
+        # 2. Get Dates & NEW Matchup Logic
         start_date, end_date = None, None
-        matchup_data = None # --- NEW: Init matchup data as None ---
+        matchup_data = None
 
         if week != 'all':
             cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
@@ -1135,7 +1135,6 @@ def get_bench_points_data():
                 start_date = week_dates['start_date']
                 end_date = week_dates['end_date']
 
-            # --- START NEW MATCHUP LOGIC ---
             if start_date and end_date:
                 # Find opponent ID
                 cursor.execute(
@@ -1156,13 +1155,71 @@ def get_bench_points_data():
                     # Get live stats using the new helper
                     matchup_data = _get_live_matchup_stats(cursor, team_id, opponent_id, start_date, end_date)
                     matchup_data['opponent_name'] = opponent_name
-            # --- END NEW MATCHUP LOGIC ---
+
+        # --- START OF THE BENCH STATS LOGIC (This was missing) ---
 
         # 3. Get Scoring Categories (for Bench Stats)
         cursor.execute("SELECT category FROM scoring ORDER BY stat_id")
-        # ... (rest of the bench stats logic is unchanged) ...
+        all_cats_raw = cursor.fetchall()
+
         known_goalie_stats = {'W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G', 'GAA', 'SVpct'}
-        # ... (all the way down to the return) ...
+
+        all_categories = [row['category'] for row in all_cats_raw]
+        goalie_categories = [cat for cat in all_categories if cat in known_goalie_stats]
+        skater_categories = [cat for cat in all_categories if cat not in known_goalie_stats]
+
+        # 4. Fetch Bench Stats
+        sql_params = [team_id]
+        sql_query = """
+            SELECT d.date_, d.player_id, p.player_name, p.positions, d.category, d.stat_value
+            FROM daily_bench_stats d
+            JOIN players p ON d.player_id = p.player_id
+            WHERE d.team_id = ?
+        """
+
+        if start_date and end_date:
+            sql_query += " AND d.date_ >= ? AND d.date_ <= ?"
+            sql_params.extend([start_date, end_date])
+
+        sql_query += " ORDER BY d.date_, p.player_name"
+
+        cursor.execute(sql_query, tuple(sql_params))
+        raw_stats = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        # 5. Pivot the data
+        daily_player_stats = defaultdict(lambda: defaultdict(float))
+        player_positions = {}
+        for row in raw_stats:
+            key = (row['date_'], row['player_id'], row['player_name'])
+            daily_player_stats[key][row['category']] = row['stat_value']
+            player_positions[key] = row['positions']
+
+        # 6. Process and separate data
+        skater_rows = []  # <--- This is where the variable is defined
+        goalie_rows = []
+
+        for (date, player_id, player_name), stats in daily_player_stats.items():
+
+            if sum(stats.values()) == 0:
+                continue
+
+            key = (date, player_id, player_name)
+            positions_str = player_positions.get(key, '')
+
+            base_row = {'Date': date, 'Player': player_name, 'Positions': positions_str}
+
+            is_goalie = 'G' in positions_str.split(',')
+
+            if is_goalie:
+                for cat in goalie_categories:
+                    base_row[cat] = stats.get(cat, 0)
+                goalie_rows.append(base_row)
+            else:
+                for cat in skater_categories:
+                    base_row[cat] = stats.get(cat, 0)
+                skater_rows.append(base_row)
+
+        # --- END OF THE BENCH STATS LOGIC ---
 
         # 8. Return the processed data
         return jsonify({
@@ -1170,7 +1227,7 @@ def get_bench_points_data():
             'skater_headers': skater_categories,
             'goalie_data': goalie_rows,
             'goalie_headers': goalie_categories,
-            'matchup_data': matchup_data # --- NEW: Add matchup data to response ---
+            'matchup_data': matchup_data
         })
 
     except Exception as e:
@@ -1179,7 +1236,6 @@ def get_bench_points_data():
     finally:
         if conn:
             conn.close()
-
 
 @app.route('/api/roster_data', methods=['POST'])
 def get_roster_data():
