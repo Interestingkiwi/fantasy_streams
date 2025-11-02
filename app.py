@@ -1039,6 +1039,71 @@ def season_history_page_data():
             conn.close()
 
 
+def _get_live_matchup_stats(cursor, team1_id, team2_id, start_date_str, end_date_str):
+    """
+    Fetches only the 'live' stats for two teams for a given date range.
+    """
+
+    # Get official scoring categories in display order
+    cursor.execute("SELECT category FROM scoring ORDER BY scoring_group DESC, stat_id")
+    scoring_categories = [row['category'] for row in cursor.fetchall()]
+
+    # Ensure all necessary sub-categories for calculations are included
+    required_cats = {'SV', 'SA', 'GA', 'TOI/G'}
+    all_categories_to_fetch = list(set(scoring_categories) | required_cats)
+
+    # --- Calculate Live Stats ---
+    cursor.execute("""
+        SELECT team_id, category, SUM(stat_value) as total
+        FROM daily_player_stats
+        WHERE date_ >= ? AND date_ <= ? AND (team_id = ? OR team_id = ?)
+        GROUP BY team_id, category
+    """, (start_date_str, end_date_str, team1_id, team2_id))
+
+    live_stats_raw = cursor.fetchall()
+    live_stats_decoded = decode_dict_values([dict(row) for row in live_stats_raw])
+
+    stats = {
+        'team1': {'live': {cat: 0 for cat in all_categories_to_fetch}},
+        'team2': {'live': {cat: 0 for cat in all_categories_to_fetch}}
+    }
+
+    for row in live_stats_decoded:
+        team_key = 'team1' if str(row['team_id']) == str(team1_id) else 'team2'
+        if row['category'] in all_categories_to_fetch:
+            stats[team_key]['live'][row['category']] = row.get('total', 0)
+
+    # --- Calculate Live Derived Stats & Apply SHO Fix ---
+    for team_key in ['team1', 'team2']:
+        live_stats = stats[team_key]['live']
+
+        if 'SHO' in live_stats and live_stats['SHO'] > 0:
+            live_stats['TOI/G'] += (live_stats['SHO'] * 60)
+
+        if 'GAA' in live_stats:
+            live_stats['GAA'] = (live_stats.get('GA', 0) * 60) / live_stats['TOI/G'] if live_stats.get('TOI/G', 0) > 0 else 0
+
+        if 'SVpct' in live_stats:
+            live_stats['SVpct'] = live_stats.get('SV', 0) / live_stats['SA'] if live_stats.get('SA', 0) > 0 else 0
+
+    # Rounding for display
+    for team_key in ['team1', 'team2']:
+        live_stats = stats[team_key]['live']
+        for cat, value in live_stats.items():
+            if cat == 'GAA':
+                live_stats[cat] = round(value, 2)
+            elif cat == 'SVpct':
+                live_stats[cat] = round(value, 3)
+            elif isinstance(value, (int, float)):
+                live_stats[cat] = round(value, 1)
+
+    return {
+        'your_team_stats': stats['team1']['live'],
+        'opponent_team_stats': stats['team2']['live'],
+        'scoring_categories': scoring_categories # Return the ordered list
+    }
+
+
 @app.route('/api/history/bench_points', methods=['POST'])
 def get_bench_points_data():
     league_id = session.get('league_id')
@@ -1061,6 +1126,8 @@ def get_bench_points_data():
 
         # 2. Get Dates
         start_date, end_date = None, None
+        matchup_data = None # --- NEW: Init matchup data as None ---
+
         if week != 'all':
             cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
             week_dates = cursor.fetchone()
@@ -1068,84 +1135,42 @@ def get_bench_points_data():
                 start_date = week_dates['start_date']
                 end_date = week_dates['end_date']
 
-        # 3. Get Scoring Categories
-        # --- START MODIFIED LOGIC ---
+            # --- START NEW MATCHUP LOGIC ---
+            if start_date and end_date:
+                # Find opponent ID
+                cursor.execute(
+                    "SELECT team1, team2 FROM matchups WHERE week = ? AND (team1 = ? OR team2 = ?)",
+                    (week, team_id, team_id)
+                )
+                matchup_row = cursor.fetchone()
+                opponent_id = None
+                if matchup_row:
+                    opponent_id = matchup_row['team2'] if str(matchup_row['team1']) == str(team_id) else matchup_row['team1']
+
+                if opponent_id:
+                    # Get opponent name
+                    cursor.execute("SELECT name FROM teams WHERE team_id = ?", (opponent_id,))
+                    opponent_name_row = cursor.fetchone()
+                    opponent_name = opponent_name_row['name'] if opponent_name_row else "Unknown Opponent"
+
+                    # Get live stats using the new helper
+                    matchup_data = _get_live_matchup_stats(cursor, team_id, opponent_id, start_date, end_date)
+                    matchup_data['opponent_name'] = opponent_name
+            # --- END NEW MATCHUP LOGIC ---
+
+        # 3. Get Scoring Categories (for Bench Stats)
         cursor.execute("SELECT category FROM scoring ORDER BY stat_id")
-        all_cats_raw = cursor.fetchall()
-
-        # Define known goalie stats, as seen elsewhere in app.py
+        # ... (rest of the bench stats logic is unchanged) ...
         known_goalie_stats = {'W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G', 'GAA', 'SVpct'}
-
-        all_categories = [row['category'] for row in all_cats_raw]
-        goalie_categories = [cat for cat in all_categories if cat in known_goalie_stats]
-        skater_categories = [cat for cat in all_categories if cat not in known_goalie_stats]
-        # --- END MODIFIED LOGIC ---
-
-        # 4. Fetch Bench Stats
-        sql_params = [team_id]
-        # We still need p.positions from the last fix
-        sql_query = """
-            SELECT d.date_, d.player_id, p.player_name, p.positions, d.category, d.stat_value
-            FROM daily_bench_stats d
-            JOIN players p ON d.player_id = p.player_id
-            WHERE d.team_id = ?
-        """
-
-        if start_date and end_date:
-            sql_query += " AND d.date_ >= ? AND d.date_ <= ?"
-            sql_params.extend([start_date, end_date])
-
-        sql_query += " ORDER BY d.date_, p.player_name"
-
-        cursor.execute(sql_query, tuple(sql_params))
-        raw_stats = decode_dict_values([dict(row) for row in cursor.fetchall()])
-
-        # 5. Pivot the data
-        daily_player_stats = defaultdict(lambda: defaultdict(float))
-        player_positions = {}
-        for row in raw_stats:
-            key = (row['date_'], row['player_id'], row['player_name'])
-            daily_player_stats[key][row['category']] = row['stat_value']
-            # Store the player's position
-            player_positions[key] = row['positions']
-
-        # 6. Process and separate data
-        skater_rows = []
-        goalie_rows = []
-
-        for (date, player_id, player_name), stats in daily_player_stats.items():
-
-            # 7. Filter out rows with no stats
-            if sum(stats.values()) == 0:
-                continue
-
-            base_row = {'Date': date, 'Player': player_name}
-
-            # Get the position from our dictionary
-            key = (date, player_id, player_name)
-            positions_str = player_positions.get(key, '')
-
-            # --- This is the Player-splitting logic ---
-            # Check if 'G' is one of the player's positions
-            is_goalie = 'G' in positions_str.split(',')
-
-            if is_goalie:
-                # Use the new goalie_categories list
-                for cat in goalie_categories:
-                    base_row[cat] = stats.get(cat, 0)
-                goalie_rows.append(base_row)
-            else:
-                # Use the new skater_categories list
-                for cat in skater_categories:
-                    base_row[cat] = stats.get(cat, 0)
-                skater_rows.append(base_row)
+        # ... (all the way down to the return) ...
 
         # 8. Return the processed data
         return jsonify({
             'skater_data': skater_rows,
             'skater_headers': skater_categories,
             'goalie_data': goalie_rows,
-            'goalie_headers': goalie_categories
+            'goalie_headers': goalie_categories,
+            'matchup_data': matchup_data # --- NEW: Add matchup data to response ---
         })
 
     except Exception as e:

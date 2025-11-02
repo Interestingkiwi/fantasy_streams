@@ -88,7 +88,9 @@
                         <thead>
                             <tr>
                                 <th class="table-header">Date</th>
-                                <th class="table-header">Player</th>`;
+                                <th class="table-header">Player</th>
+                                <th class="table-header">Positions</th>
+                                `;
 
         // Filter headers to only include those with data
         const headersWithData = headers.filter(header =>
@@ -105,10 +107,12 @@
 
         for (const row of rows) {
             html += `<tr>
-                        <td class="table-cell">${row['Date']}</td>
-                        <td class="table-cell">${row['Player']}</td>`;
+                        <td class="table-cell text-center">${row['Date']}</td>
+                        <td class="table-cell text-center">${row['Player']}</td>
+                        <td class="table-cell text-center">${row['Positions'] || ''}</td>
+                        `;
             for (const header of headersWithData) {
-                html += `<td class="table-cell">${row[header] || 0}</td>`;
+                html += `<td class="table-cell text-center">${row[header] || 0}</td>`;
             }
             html += `</tr>`;
         }
@@ -119,6 +123,62 @@
             </div>`;
         return html;
     }
+
+
+    function createMatchupStatsTable(matchup_data) {
+            const { your_team_stats, opponent_team_stats, opponent_name, scoring_categories } = matchup_data;
+
+            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                            <h3 class="text-lg font-semibold text-white mb-3">Matchup Result</h3>
+                            <h4 class="text-sm text-gray-400 mb-3 -mt-2">vs. ${opponent_name}</h4>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full">
+                                    <thead>
+                                        <tr>
+                                            <th class="table-header !text-left">Category</th>
+                                            <th class="table-header">You</th>
+                                            <th class="table-header">Opp</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+            for (const category of scoring_categories) {
+                const your_val = your_team_stats[category] || 0;
+                const opp_val = opponent_team_stats[category] || 0;
+
+                // Add styling for wins/losses
+                let your_class = 'text-gray-400';
+                let opp_class = 'text-gray-400';
+
+                // Handle reverse-scoring categories (GAA, GA)
+                if (['GAA', 'GA'].includes(category)) {
+                    if (your_val < opp_val) {
+                        your_class = 'text-green-400 font-bold';
+                    } else if (opp_val < your_val) {
+                        opp_class = 'text-green-400 font-bold';
+                    }
+                } else { // Handle normal scoring
+                    if (your_val > opp_val) {
+                        your_class = 'text-green-400 font-bold';
+                    } else if (opp_val > your_val) {
+                        opp_class = 'text-green-400 font-bold';
+                    }
+                }
+
+                html += `<tr>
+                            <td class="table-cell !text-left">${category}</td>
+                            <td class="table-cell text-center ${your_class}">${your_val}</td>
+                            <td class="table-cell text-center ${opp_class}">${opp_val}</td>
+                         </tr>`;
+            }
+
+            html += `           </tbody>
+                            </table>
+                        </div>
+                    </div>`;
+            return html;
+        }
+
 
     // --- NEW: Function to fetch and render bench points ---
     async function fetchBenchPoints(teamName, week) {
@@ -142,13 +202,23 @@
                 throw new Error(data.error);
             }
 
-            // Render the two tables
+            // Render the two bench tables
             const skaterTable = createTable('Skaters', data.skater_headers, data.skater_data);
             const goalieTable = createTable('Goalies', data.goalie_headers, data.goalie_data);
 
-            // Use a flex container to create a 2-column layout.
-            // On large screens (lg:), it will be a row. On small, it will stack.
-            // 'flex-grow' lets the table side expand to fill available space.
+            // --- START MODIFIED LAYOUT ---
+            let matchupHtml = '';
+            if (data.matchup_data) {
+                // If matchup data exists, render the table
+                matchupHtml = createMatchupStatsTable(data.matchup_data);
+            } else {
+                // Otherwise, show the "All Season" message
+                matchupHtml = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                                <h3 class="text-lg font-semibold text-white mb-3">Matchup Result</h3>
+                                <p class="text-gray-400">Matchup outcome unavailable when "All Season" is selected.</p>
+                               </div>`;
+            }
+
             historyContent.innerHTML = `
                 <div class="flex flex-col lg:flex-row gap-6">
                     <div class="flex-grow space-y-6">
@@ -156,13 +226,11 @@
                         ${goalieTable}
                     </div>
                     <div class="w-full lg:w-1/3 xl:w-1/4 flex-shrink-0">
-                        <div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                            <h3 class="text-lg font-semibold text-white mb-3">Additional Info</h3>
-                            <p class="text-gray-400">Your future content will go here.</p>
-                        </div>
+                        ${matchupHtml}
                     </div>
                 </div>
             `;
+            // --- END MODIFIED LAYOUT ---
 
         } catch (error) {
             console.error('Error fetching bench points:', error);
@@ -172,33 +240,34 @@
         }
     }
 
-    // --- MODIFIED: This function is now a router ---
+
     async function fetchAndRenderTable() {
-        const selectedTeam = yourTeamSelect.value;
-        const selectedWeek = weekSelect.value;
-        const selectedReport = reportSelect.value;
+            const selectedTeam = yourTeamSelect.value;
+            const selectedWeek = weekSelect.value;
+            const selectedReport = reportSelect.value;
 
-        console.log(`Fetching data for: Team ${selectedTeam}, Week ${selectedWeek}, Report ${selectedReport}`);
+            console.log(`Fetching data for: Team ${selectedTeam}, Week ${selectedWeek}, Report ${selectedReport}`);
 
-        // Route based on the selected report
-        switch (selectedReport) {
-            case 'bench_points':
-                await fetchBenchPoints(selectedTeam, selectedWeek);
-                break;
+            // Route based on the selected report
+            switch (selectedReport) {
+                case 'bench_points':
+                    await fetchBenchPoints(selectedTeam, selectedWeek);
+                    break;
 
-            case 'tbd':
-                loadingSpinner.classList.remove('hidden');
-                historyContent.innerHTML = `<p class="text-gray-400">The "TBD" report is not yet implemented.</p>`;
-                loadingSpinner.classList.add('hidden');
-                break;
+                case 'tbd':
+                    loadingSpinner.classList.remove('hidden');
+                    historyContent.innerHTML = `<p class="text-gray-400">The "TBD" report is not yet implemented.</p>`;
+                    loadingSpinner.classList.add('hidden');
+                    break;
 
-            case 'please_select':
-            default:
-                loadingSpinner.classList.add('hidden');
-                historyContent.innerHTML = `<p class="text-gray-400">Please select a report to view.</p>`;
-                break;
+                case 'please_select':
+                default:
+                    loadingSpinner.classList.add('hidden');
+                    historyContent.innerHTML = `<p class="text-gray-400">Please select a report to view.</p>`;
+                    break;
+            }
         }
-    }
+
 
     async function init() {
         loadingSpinner.classList.remove('hidden');
