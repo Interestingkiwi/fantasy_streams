@@ -1129,7 +1129,9 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
         # Create a deep copy of our stats to modify
         optimized_stats = copy.deepcopy(matchup_data['your_team_stats'])
 
-        # Get all daily stats for our team (starters and bench)
+        # --- START FIX: Query BOTH tables ---
+        # We must get all players (starters AND bench) for the simulation
+        logging.info("Querying for ALL player stats (starters and bench)...")
         cursor.execute("""
             SELECT
                 d.date_, d.player_id, d.lineup_pos, d.category, d.stat_value,
@@ -1137,14 +1139,27 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
             FROM daily_player_stats d
             JOIN players p ON d.player_id = p.player_id
             WHERE d.team_id = ? AND d.date_ >= ? AND d.date_ <= ?
-            ORDER BY d.date_, d.player_id
-        """, (team_id, start_date, end_date))
+
+            UNION ALL
+
+            SELECT
+                b.date_, b.player_id, b.lineup_pos, b.category, b.stat_value,
+                p.player_name, p.positions
+            FROM daily_bench_stats b
+            JOIN players p ON b.player_id = p.player_id
+            WHERE b.team_id = ? AND b.date_ >= ? AND b.date_ <= ?
+
+            ORDER BY date_, player_id
+        """, (team_id, start_date, end_date, team_id, start_date, end_date))
+        # --- END FIX ---
 
         all_stats_raw = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
         if not all_stats_raw:
-            logging.warning("No daily_player_stats found for optimization.")
+            logging.warning("No daily_player_stats or daily_bench_stats found for optimization.")
             return matchup_data, []
+
+        logging.info(f"Found {len(all_stats_raw)} total stat rows for simulation.")
 
         # 2. Pivot data by day and player
         daily_player_performances = defaultdict(lambda: defaultdict(lambda: {
@@ -1160,30 +1175,39 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
             player['stats'][row['category']] = row['stat_value']
             player['player_id'] = pid
             player['player_name'] = row['player_name']
-            player['lineup_pos'] = row['lineup_pos']
+            player['lineup_pos'] = row['lineup_pos'] # This will be 'c', 'l', 'd', 'b', etc.
             player['eligible_positions'] = row['positions'].split(',')
 
         # 3. Start the simulation
         swaps_log = []
 
         week_dates = sorted(daily_player_performances.keys())
+        logging.info(f"Simulating days: {week_dates}")
 
         for day in week_dates:
+            logging.info(f"--- Simulating Day: {day} ---")
             performances = daily_player_performances[day]
 
             starters = [p for p in performances.values() if p['lineup_pos'] in starter_positions]
-            bench = [p for p in performances.values() if p['lineup_pos'] == 'BN' and sum(p['stats'].values()) > 0]
+
+            # --- START FIX: Look for 'b' not 'BN' ---
+            bench = [p for p in performances.values() if p['lineup_pos'] == 'b' and sum(p['stats'].values()) > 0]
+            # --- END FIX ---
+
+            logging.info(f"Found {len(starters)} starters and {len(bench)} scoring bench players.")
 
             if not bench or not starters:
-                continue # No bench players or no starters, skip day
+                logging.info("No bench players or starters, skipping day.")
+                continue
 
             replaced_starters_today = set() # Prevent double-swapping
 
             # Iterate through each bench player
             for bench_player in bench:
+                logging.info(f"Evaluating bench player: {bench_player['player_name']}")
                 best_swap = {
                     'starter_to_replace': None,
-                    'net_gain_score': 0 # We will score swaps
+                    'net_gain_score': 0
                 }
 
                 bench_stats = bench_player['stats']
@@ -1199,8 +1223,6 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
 
                     # This is a valid swap. Let's score it.
                     starter_stats = starter['stats']
-
-                    # --- START MODIFIED SCORING LOGIC ---
                     current_swap_score = 0
 
                     for cat in scoring_categories:
@@ -1230,7 +1252,8 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
 
                         # --- ADD THE DIFFERENCE ---
                         current_swap_score += (new_points - current_points)
-                    # --- END MODIFIED SCORING LOGIC ---
+
+                    logging.debug(f"  -> vs {starter['player_name']} ({starter['lineup_pos']}): net score = {current_swap_score}")
 
                     # Check if this is the best swap for this bench player
                     if current_swap_score > best_swap['net_gain_score']:
@@ -1240,6 +1263,8 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
                 # After checking all starters, make the best swap if it's beneficial
                 if best_swap['net_gain_score'] > 0 and best_swap['starter_to_replace']:
                     starter_to_replace = best_swap['starter_to_replace']
+
+                    logging.info(f"  ==> SWAP FOUND: {bench_player['player_name']} for {starter_to_replace['player_name']} (Score: {best_swap['net_gain_score']})")
 
                     # 1. Log the swap
                     swaps_log.append({
@@ -1256,7 +1281,12 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
                     starter_stats = starter_to_replace['stats']
                     for cat in scoring_categories:
                         stat_diff = bench_stats.get(cat, 0) - starter_stats.get(cat, 0)
-                        optimized_stats[cat] += stat_diff
+                        if stat_diff != 0:
+                            logging.info(f"    Applying {cat}: {optimized_stats[cat]} + ({stat_diff}) = {optimized_stats[cat] + stat_diff}")
+                            optimized_stats[cat] += stat_diff
+                else:
+                    logging.info(f"  -> No beneficial swap found for {bench_player['player_name']}.")
+
 
         # 4. Create the final optimized matchup data object
         # Recalculate derived stats (GAA, SVpct)
@@ -1284,7 +1314,6 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
         logging.error(f"Error in _calculate_bench_optimization: {e}", exc_info=True)
         # Return the original data if simulation fails
         return matchup_data, []
-
 
 @app.route('/api/history/bench_points', methods=['POST'])
 def get_bench_points_data():
