@@ -223,56 +223,179 @@
             return html;
         }
 
+
+    function createOptimizedMatchupTable(matchup_data) {
+            // This is a copy of the function above, but with a new title
+            // and it compares the new stats to the opponent
+
+            const { your_team_stats, opponent_team_stats, opponent_name, scoring_categories } = matchup_data;
+
+            // --- Define goalie sub-category relationships ---
+            const goalieCats = {
+                'SVpct': ['SV', 'SA'],
+                'GAA': ['GA', 'TOI/G']
+            };
+            const scoringCategoriesSet = new Set(scoring_categories);
+            const catsToSkip = new Set();
+            if (scoringCategoriesSet.has('SVpct')) {
+                goalieCats['SVpct'].forEach(cat => catsToSkip.add(cat));
+            }
+            if (scoringCategoriesSet.has('GAA')) {
+                goalieCats['GAA'].forEach(cat => catsToSkip.add(cat));
+            }
+
+            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                            <h3 class="text-lg font-semibold text-white mb-3">Optimized Result (What If)</h3>
+                            <h4 class="text-sm text-gray-400 mb-3 -mt-2">vs. ${opponent_name}</h4>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full">
+                                    <thead>
+                                        <tr>
+                                            <th class="table-header !text-left">Category</th>
+                                            <th class="table-header">You (Opt)</th>
+                                            <th class="table-header">Opp</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+            for (const category of scoring_categories) {
+                if (catsToSkip.has(category)) continue;
+
+                const your_val = your_team_stats[category] || 0;
+                const opp_val = opponent_team_stats[category] || 0;
+
+                let your_class = 'text-gray-400';
+                let opp_class = 'text-gray-400';
+
+                if (['GAA', 'GA'].includes(category)) {
+                    if (your_val < opp_val) your_class = 'text-green-400 font-bold';
+                    else if (opp_val < your_val) opp_class = 'text-green-400 font-bold';
+                } else {
+                    if (your_val > opp_val) your_class = 'text-green-400 font-bold';
+                    else if (opp_val > your_val) opp_class = 'text-green-400 font-bold';
+                }
+
+                html += `<tr>
+                            <td class="table-cell !text-left ${your_class.includes('font-bold') ? 'font-semibold' : ''}">${category}</td>
+                            <td class="table-cell text-center ${your_class}">${your_val}</td>
+                            <td class="table-cell text-center ${opp_class}">${opp_val}</td>
+                         </tr>`;
+
+                if (goalieCats.hasOwnProperty(category)) {
+                    for (const subCat of goalieCats[category]) {
+                        const your_sub_val = your_team_stats[subCat] || 0;
+                        const opp_sub_val = opponent_team_stats[subCat] || 0;
+                        html += `<tr class="hover:bg-gray-700/50">
+                                    <td class="table-cell !text-left pl-8 text-sm text-gray-400">${subCat}</td>
+                                    <td class="table-cell text-center text-sm text-gray-400">${your_sub_val}</td>
+                                    <td class="table-cell text-center text-sm text-gray-400">${opp_sub_val}</td>
+                                </tr>`;
+                    }
+                }
+            }
+            html += `           </tbody>
+                            </table>
+                        </div>
+                    </div>`;
+            return html;
+        }
+
+
+    function createSwapsLogTable(swaps_log) {
+            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                            <h3 class="text-lg font-semibold text-white mb-3">Suggested Swaps</h3>`;
+
+            if (swaps_log.length === 0) {
+                html += '<p class="text-gray-400">No beneficial swaps were found.</p></div>';
+                return html;
+            }
+
+            html += `<div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-700">
+                            <thead>
+                                <tr>
+                                    <th class="table-header">Date</th>
+                                    <th class="table-header">Pos</th>
+                                    <th class="table-header">Bench Player</th>
+                                    <th class="table-header">Replaced Player</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+            for (const swap of swaps_log) {
+                html += `<tr>
+                            <td class="table-cell text-center">${swap.date}</td>
+                            <td class="table-cell text-center">${swap.position}</td>
+                            <td class="table-cell text-center text-green-400">${swap.bench_player}</td>
+                            <td class="table-cell text-center text-red-400">${swap.replaced_player}</td>
+                         </tr>`;
+            }
+
+            html += `       </tbody>
+                        </table>
+                    </div>
+                </div>`;
+            return html;
+        }
+
+
     // --- NEW: Function to fetch and render bench points ---
     async function fetchBenchPoints(teamName, week) {
-        loadingSpinner.classList.remove('hidden');
-        historyContent.innerHTML = '';
-        errorDiv.classList.add('hidden'); // Hide old errors
+            loadingSpinner.classList.remove('hidden');
+            historyContent.innerHTML = '';
+            errorDiv.classList.add('hidden');
 
-        try {
-            const response = await fetch('/api/history/bench_points', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ team_name: teamName, week: week })
-            });
+            try {
+                const response = await fetch('/api/history/bench_points', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ team_name: teamName, week: week })
+                });
 
-            if (!response.ok) {
-                throw new Error(`Server error: ${response.status}`);
-            }
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
 
-            const data = await response.json();
-            if (data.error) {
-                throw new Error(data.error);
-            }
+                // Render the two bench tables
+                const skaterTable = createTable('Skaters', data.skater_headers, data.skater_data);
+                const goalieTable = createTable('Goalies', data.goalie_headers, data.goalie_data);
 
-            // Render the two bench tables
-            const skaterTable = createTable('Skaters', data.skater_headers, data.skater_data);
-            const goalieTable = createTable('Goalies', data.goalie_headers, data.goalie_data);
+                // --- START MODIFIED LAYOUT ---
+                let matchupHtml = '';
+                let optimizedHtml = '';
+                let swapsHtml = '';
 
-            // --- START MODIFIED LAYOUT ---
-            let matchupHtml = '';
-            if (data.matchup_data) {
-                // If matchup data exists, render the table
-                matchupHtml = createMatchupStatsTable(data.matchup_data);
-            } else {
-                // Otherwise, show the "All Season" message
-                matchupHtml = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                                <h3 class="text-lg font-semibold text-white mb-3">Matchup Result</h3>
-                                <p class="text-gray-400">Matchup outcome unavailable when "All Season" is selected.</p>
-                               </div>`;
-            }
+                if (data.matchup_data) {
+                    // If matchup data exists, render the original table
+                    matchupHtml = createMatchupStatsTable(data.matchup_data);
 
-            historyContent.innerHTML = `
-                <div class="flex flex-col lg:flex-row gap-6">
-                    <div class="flex-grow space-y-6">
-                        ${skaterTable}
-                        ${goalieTable}
+                    // Render the new "Optimized" table
+                    optimizedHtml = createOptimizedMatchupTable(data.optimized_matchup_data);
+
+                    // Render the new "Swaps Log" table
+                    swapsHtml = createSwapsLogTable(data.swaps_log);
+
+                } else {
+                    // Otherwise, show the "All Season" message
+                    matchupHtml = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                                    <h3 class="text-lg font-semibold text-white mb-3">Matchup Result</h3>
+                                    <p class="text-gray-400">Matchup outcome unavailable when "All Season" is selected.</p>
+                                   </div>`;
+                }
+
+                historyContent.innerHTML = `
+                    <div class="flex flex-col lg:flex-row gap-6">
+                        <div class="flex-grow space-y-6">
+                            ${skaterTable}
+                            ${goalieTable}
+                        </div>
+                        <div class="w-full lg:w-1/3 xl:w-1/4 flex-shrink-0 space-y-6">
+                            ${matchupHtml}
+                            ${optimizedHtml}
+                            ${swapsHtml}
+                        </div>
                     </div>
-                    <div class="w-full lg:w-1/3 xl:w-1/4 flex-shrink-0">
-                        ${matchupHtml}
-                    </div>
-                </div>
-            `;
+                `;
             // --- END MODIFIED LAYOUT ---
 
         } catch (error) {

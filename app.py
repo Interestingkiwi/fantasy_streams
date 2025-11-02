@@ -1104,6 +1104,184 @@ def _get_live_matchup_stats(cursor, team1_id, team2_id, start_date_str, end_date
     }
 
 
+def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_date, matchup_data):
+    """
+    Performs a daily greedy simulation to find the "optimal" lineup
+    by swapping bench players for the weakest starters.
+    """
+    try:
+        logging.info("--- Starting Bench Optimization ---")
+
+        # 1. Get data needed for simulation
+
+        # Get lineup settings to know what positions are starters
+        cursor.execute("SELECT position FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
+        starter_positions = {row['position'] for row in cursor.fetchall()}
+        logging.info(f"Starter positions: {starter_positions}")
+
+        # Get all scoring categories
+        scoring_categories = matchup_data['scoring_categories']
+        reverse_cats = {'GA', 'GAA'}
+
+        # Get opponent stats
+        opponent_stats = matchup_data['opponent_team_stats']
+
+        # Create a deep copy of our stats to modify
+        optimized_stats = copy.deepcopy(matchup_data['your_team_stats'])
+
+        # Get all daily stats for our team (starters and bench)
+        cursor.execute("""
+            SELECT
+                d.date_, d.player_id, d.lineup_pos, d.category, d.stat_value,
+                p.player_name, p.positions
+            FROM daily_player_stats d
+            JOIN players p ON d.player_id = p.player_id
+            WHERE d.team_id = ? AND d.date_ >= ? AND d.date_ <= ?
+            ORDER BY d.date_, d.player_id
+        """, (team_id, start_date, end_date))
+
+        all_stats_raw = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        if not all_stats_raw:
+            logging.warning("No daily_player_stats found for optimization.")
+            return matchup_data, []
+
+        # 2. Pivot data by day and player
+        daily_player_performances = defaultdict(lambda: defaultdict(lambda: {
+            'stats': defaultdict(float), 'player_id': None, 'player_name': None,
+            'lineup_pos': None, 'eligible_positions': []
+        }))
+
+        for row in all_stats_raw:
+            day = row['date_']
+            pid = row['player_id']
+            player = daily_player_performances[day][pid]
+
+            player['stats'][row['category']] = row['stat_value']
+            player['player_id'] = pid
+            player['player_name'] = row['player_name']
+            player['lineup_pos'] = row['lineup_pos']
+            player['eligible_positions'] = row['positions'].split(',')
+
+        # 3. Start the simulation
+        swaps_log = []
+
+        week_dates = sorted(daily_player_performances.keys())
+
+        for day in week_dates:
+            performances = daily_player_performances[day]
+
+            starters = [p for p in performances.values() if p['lineup_pos'] in starter_positions]
+            bench = [p for p in performances.values() if p['lineup_pos'] == 'BN' and sum(p['stats'].values()) > 0]
+
+            if not bench or not starters:
+                continue # No bench players or no starters, skip day
+
+            replaced_starters_today = set() # Prevent double-swapping
+
+            # Iterate through each bench player
+            for bench_player in bench:
+                best_swap = {
+                    'starter_to_replace': None,
+                    'net_gain_score': 0 # We will score swaps
+                }
+
+                bench_stats = bench_player['stats']
+
+                # Find all starters this player is eligible to replace
+                for starter in starters:
+                    if starter['player_id'] in replaced_starters_today:
+                        continue
+
+                    # Check for eligible position
+                    if starter['lineup_pos'] not in bench_player['eligible_positions']:
+                        continue
+
+                    # This is a valid swap. Let's score it.
+                    starter_stats = starter['stats']
+                    current_swap_score = 0
+
+                    for cat in scoring_categories:
+                        stat_diff = bench_stats.get(cat, 0) - starter_stats.get(cat, 0)
+                        if stat_diff == 0:
+                            continue
+
+                        my_current_total = optimized_stats[cat]
+                        opp_total = opponent_stats.get(cat, 0)
+                        my_new_total = my_current_total + stat_diff
+
+                        is_reverse = cat in reverse_cats
+
+                        # Get current/new win/loss/tie status
+                        current_win = (my_current_total > opp_total) if not is_reverse else (my_current_total < opp_total)
+                        new_win = (my_new_total > opp_total) if not is_reverse else (my_new_total < opp_total)
+                        current_tie = (my_current_total == opp_total)
+                        new_tie = (my_new_total == opp_total)
+
+                        # Score the change
+                        if not current_win and new_win: # Flipped a loss/tie to a win
+                            current_swap_score += 100
+                        elif current_win and not new_win: # Flipped a win to a loss/tie
+                            current_swap_score -= 100
+                        elif not current_tie and new_tie: # Created a tie
+                            current_swap_score += 1
+                        elif current_tie and not new_tie: # Broke a tie
+                            current_swap_score += 1 if new_win else -1
+
+                    # Check if this is the best swap for this bench player
+                    if current_swap_score > best_swap['net_gain_score']:
+                        best_swap['net_gain_score'] = current_swap_score
+                        best_swap['starter_to_replace'] = starter
+
+                # After checking all starters, make the best swap if it's beneficial
+                if best_swap['net_gain_score'] > 0 and best_swap['starter_to_replace']:
+                    starter_to_replace = best_swap['starter_to_replace']
+
+                    # 1. Log the swap
+                    swaps_log.append({
+                        'date': day,
+                        'position': starter_to_replace['lineup_pos'],
+                        'bench_player': bench_player['player_name'],
+                        'replaced_player': starter_to_replace['player_name']
+                    })
+
+                    # 2. Mark starter as "used" for this day
+                    replaced_starters_today.add(starter_to_replace['player_id'])
+
+                    # 3. Apply the stat changes to our optimized totals
+                    starter_stats = starter_to_replace['stats']
+                    for cat in scoring_categories:
+                        stat_diff = bench_stats.get(cat, 0) - starter_stats.get(cat, 0)
+                        optimized_stats[cat] += stat_diff
+
+        # 4. Create the final optimized matchup data object
+        # Recalculate derived stats (GAA, SVpct)
+        if 'GAA' in optimized_stats:
+            optimized_stats['GAA'] = (optimized_stats.get('GA', 0) * 60) / optimized_stats['TOI/G'] if optimized_stats.get('TOI/G', 0) > 0 else 0
+        if 'SVpct' in optimized_stats:
+            optimized_stats['SVpct'] = optimized_stats.get('SV', 0) / optimized_stats['SA'] if optimized_stats.get('SA', 0) > 0 else 0
+
+        # Rounding
+        for cat, value in optimized_stats.items():
+            if cat == 'GAA':
+                optimized_stats[cat] = round(value, 2)
+            elif cat == 'SVpct':
+                optimized_stats[cat] = round(value, 3)
+            elif isinstance(value, (int, float)):
+                optimized_stats[cat] = round(value, 1)
+
+        optimized_matchup_data = copy.deepcopy(matchup_data)
+        optimized_matchup_data['your_team_stats'] = optimized_stats
+
+        logging.info(f"--- Bench Optimization Complete. Found {len(swaps_log)} swaps. ---")
+        return optimized_matchup_data, swaps_log
+
+    except Exception as e:
+        logging.error(f"Error in _calculate_bench_optimization: {e}", exc_info=True)
+        # Return the original data if simulation fails
+        return matchup_data, []
+
+
 @app.route('/api/history/bench_points', methods=['POST'])
 def get_bench_points_data():
     league_id = session.get('league_id')
@@ -1114,38 +1292,34 @@ def get_bench_points_data():
     try:
         cursor = conn.cursor()
         data = request.get_json()
-        team_name = data.get('team_name') # e.g., "Aurora Borealis"
-        week = data.get('week') # e.g., "1"
+        team_name = data.get('team_name')
+        week = data.get('week')
 
-        # --- DEBUG ---
-        logging.info("--- History Report Debug ---")
-        logging.info(f"Selected team: {team_name}")
-        logging.info(f"Selected week: '{week}'")
+        logging.info("--- History Report ---")
+        logging.info(f"Selected team: {team_name}, week: '{week}'")
 
         # 1. Get team_id
         cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
         team_id_row = cursor.fetchone()
         if not team_id_row:
-            logging.error(f"Could not find team_id for team_name = {team_name}")
             return jsonify({'error': f'Team not found: {team_name}'}), 404
-        team_id = team_id_row['team_id'] # e.g., 1
+        team_id = team_id_row['team_id']
         logging.info(f"Found team_id: {team_id}")
 
-        # 2. Get Dates & Matchup Logic
+        # 2. Get Dates & Matchup Data
         start_date, end_date = None, None
         matchup_data = None
+        optimized_matchup_data = None
+        swaps_log = []
+        week_num_int = None # Initialize
 
         if week != 'all':
-            logging.info("Week is not 'all', attempting to find matchup...")
-
             try:
                 week_num_int = int(week)
             except (ValueError, TypeError):
-                logging.error(f"Could not convert week='{week}' to an integer.")
                 return jsonify({'error': 'Invalid week format.'}), 400
 
-            # Query 1: Get week dates
-            logging.info(f"Querying 'weeks' table for week_num = {week_num_int} (as INTEGER)")
+            logging.info(f"Querying 'weeks' table for week_num = {week_num_int}")
             cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num_int,))
             week_dates = cursor.fetchone()
 
@@ -1153,14 +1327,9 @@ def get_bench_points_data():
                 start_date = week_dates['start_date']
                 end_date = week_dates['end_date']
                 logging.info(f"Found week dates: {start_date} to {end_date}")
-            else:
-                logging.warning(f"Query 1 FAILED: Could not find week_dates for week_num = {week_num_int}.")
 
             if start_date and end_date:
-                logging.info("Proceeding to find opponent...")
-
-                # Query 2: Get matchup
-                logging.info(f"Querying 'matchups' table for week = {week_num_int} and team_name = '{team_name}'")
+                logging.info(f"Querying 'matchups' for week = {week_num_int}, team = '{team_name}'")
                 cursor.execute(
                     "SELECT team1, team2 FROM matchups WHERE week = ? AND (CAST(team1 AS TEXT) = ? OR CAST(team2 AS TEXT) = ?)",
                     (week_num_int, team_name, team_name)
@@ -1168,19 +1337,10 @@ def get_bench_points_data():
                 matchup_row = cursor.fetchone()
 
                 if matchup_row:
-                    # --- START FIX: Decode the bytes string ---
-                    # The database is returning b'Aurora Borealis'. We must decode it.
                     matchup_row_decoded = decode_dict_values(dict(matchup_row))
-                    team1_from_db = matchup_row_decoded['team1'] # This is now a clean string
-                    team2_from_db = matchup_row_decoded['team2'] # This is now a clean string
-
-                    # This logic will now work correctly
-                    opponent_name = team2_from_db if team1_from_db == team_name else team1_from_db
-                    # --- END FIX ---
-
+                    opponent_name = matchup_row_decoded['team2'] if matchup_row_decoded['team1'] == team_name else matchup_row_decoded['team1']
                     logging.info(f"Found opponent_name: {opponent_name}")
 
-                    # Now, get the opponent_id from the 'teams' table
                     cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (opponent_name,))
                     opponent_id_row = cursor.fetchone()
 
@@ -1188,34 +1348,36 @@ def get_bench_points_data():
                         opponent_id = opponent_id_row['team_id']
                         logging.info(f"Found opponent_id: {opponent_id}")
 
-                        # Now we have both team_id (user) and opponent_id (opponent)
+                        # Get original matchup results
                         matchup_data = _get_live_matchup_stats(cursor, team_id, opponent_id, start_date, end_date)
-                        matchup_data['opponent_name'] = opponent_name # Add the name for display
-                        logging.info("Successfully generated matchup_data.")
+                        matchup_data['opponent_name'] = opponent_name
+                        logging.info("Successfully generated base matchup_data.")
+
+                        # --- RUN OPTIMIZATION ---
+                        optimized_matchup_data, swaps_log = _calculate_bench_optimization(
+                            cursor, team_id, week_num_int, start_date, end_date, matchup_data
+                        )
+                        # --- END OPTIMIZATION ---
                     else:
                         logging.warning(f"Could not find team_id for opponent_name = {opponent_name}")
                 else:
-                    logging.warning(f"Query 2 FAILED: Could not find matchup_row for week = {week_num_int} and team_name = '{team_name}'")
-
+                    logging.warning(f"Query 2 FAILED: Could not find matchup_row for week = {week_num_int}")
             else:
-                logging.warning("Skipping matchup data fetch because start_date and end_date were not found (see Query 1).")
+                logging.warning("Query 1 FAILED: Could not find week_dates.")
         else:
-            logging.info("Week is 'all', skipping matchup data fetch as intended.")
+            logging.info("Week is 'all', skipping matchup data fetch.")
 
+        # --- 3. GET BENCH STATS (for the table) ---
+        # This logic is now separate from the optimization
 
-        # --- START OF THE BENCH STATS LOGIC (This part is correct) ---
-        logging.info("Proceeding to fetch bench stats...")
-        # 3. Get Scoring Categories (for Bench Stats)
+        logging.info("Proceeding to fetch bench stats for table display...")
         cursor.execute("SELECT category FROM scoring ORDER BY stat_id")
         all_cats_raw = cursor.fetchall()
-
         known_goalie_stats = {'W', 'L', 'GA', 'SV', 'SA', 'SHO', 'TOI/G', 'GAA', 'SVpct'}
-
         all_categories = [row['category'] for row in all_cats_raw]
         goalie_categories = [cat for cat in all_categories if cat in known_goalie_stats]
         skater_categories = [cat for cat in all_categories if cat not in known_goalie_stats]
 
-        # 4. Fetch Bench Stats
         sql_params = [team_id]
         sql_query = """
             SELECT d.date_, d.player_id, p.player_name, p.positions, d.category, d.stat_value
@@ -1224,17 +1386,20 @@ def get_bench_points_data():
             WHERE d.team_id = ?
         """
 
-        if start_date and end_date:
+        if start_date and end_date: # Only show week-specific bench stats
             sql_query += " AND d.date_ >= ? AND d.date_ <= ?"
             sql_params.extend([start_date, end_date])
+        elif week != 'all': # Week was selected but no dates found (error)
+             sql_query += " AND 1=0" # Force no results
+        else: # 'all' weeks selected
+             pass # Get all bench stats for the season
 
         sql_query += " ORDER BY d.date_, p.player_name"
-
         cursor.execute(sql_query, tuple(sql_params))
         raw_stats = decode_dict_values([dict(row) for row in cursor.fetchall()])
-        logging.info(f"Found {len(raw_stats)} raw bench stat rows.")
+        logging.info(f"Found {len(raw_stats)} raw bench stat rows for table.")
 
-        # 5. Pivot the data
+        # Pivot the data
         daily_player_stats = defaultdict(lambda: defaultdict(float))
         player_positions = {}
         for row in raw_stats:
@@ -1242,22 +1407,14 @@ def get_bench_points_data():
             daily_player_stats[key][row['category']] = row['stat_value']
             player_positions[key] = row['positions']
 
-        # 6. Process and separate data
-        skater_rows = []
-        goalie_rows = []
-
+        skater_rows, goalie_rows = [], []
         for (date, player_id, player_name), stats in daily_player_stats.items():
-
             if sum(stats.values()) == 0:
                 continue
-
             key = (date, player_id, player_name)
             positions_str = player_positions.get(key, '')
-
             base_row = {'Date': date, 'Player': player_name, 'Positions': positions_str}
-
             is_goalie = 'G' in positions_str.split(',')
-
             if is_goalie:
                 for cat in goalie_categories:
                     base_row[cat] = stats.get(cat, 0)
@@ -1267,17 +1424,18 @@ def get_bench_points_data():
                     base_row[cat] = stats.get(cat, 0)
                 skater_rows.append(base_row)
 
-        logging.info(f"Processed into {len(skater_rows)} skater rows and {len(goalie_rows)} goalie rows.")
-        # --- END OF THE BENCH STATS LOGIC ---
+        logging.info(f"Processed into {len(skater_rows)} skater and {len(goalie_rows)} goalie rows.")
 
-        # 8. Return the processed data
-        logging.info("--- History Report Debug End ---")
+        # 4. Return all data
+        logging.info("--- History Report End ---")
         return jsonify({
             'skater_data': skater_rows,
             'skater_headers': skater_categories,
             'goalie_data': goalie_rows,
             'goalie_headers': goalie_categories,
-            'matchup_data': matchup_data
+            'matchup_data': matchup_data, # Original
+            'optimized_matchup_data': optimized_matchup_data, # New
+            'swaps_log': swaps_log # New
         })
 
     except Exception as e:
