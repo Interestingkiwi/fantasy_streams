@@ -224,11 +224,10 @@
         }
 
 
-    function createOptimizedMatchupTable(matchup_data) {
-            // This is a copy of the function above, but with a new title
-            // and it compares the new stats to the opponent
+        function createOptimizedMatchupTable(optimized_data, original_data) {
 
-            const { your_team_stats, opponent_team_stats, opponent_name, scoring_categories } = matchup_data;
+            const { your_team_stats, opponent_team_stats, opponent_name, scoring_categories } = optimized_data;
+            const original_your_stats = original_data.your_team_stats;
 
             // --- Define goalie sub-category relationships ---
             const goalieCats = {
@@ -243,6 +242,17 @@
             if (scoringCategoriesSet.has('GAA')) {
                 goalieCats['GAA'].forEach(cat => catsToSkip.add(cat));
             }
+
+            // --- Helper function for scoring ---
+            const getPoints = (my_val, opp_val, is_reverse) => {
+                if ((my_val > opp_val && !is_reverse) || (my_val < opp_val && is_reverse)) {
+                    return 2; // Win
+                }
+                if (my_val === opp_val) {
+                    return 1; // Tie
+                }
+                return 0; // Loss
+            };
 
             let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                             <h3 class="text-lg font-semibold text-white mb-3">Optimized Result (What If)</h3>
@@ -263,11 +273,27 @@
 
                 const your_val = your_team_stats[category] || 0;
                 const opp_val = opponent_team_stats[category] || 0;
+                const original_val = original_your_stats[category] || 0;
 
+                const is_reverse = ['GAA', 'GA'].includes(category);
+
+                // --- Calculate points for highlighting ---
+                const original_points = getPoints(original_val, opp_val, is_reverse);
+                const new_points = getPoints(your_val, opp_val, is_reverse);
+
+                let highlight_class = '';
+                if (new_points > original_points) {
+                    if (new_points === 2) highlight_class = 'bg-green-600/30'; // Became a Win
+                    else if (new_points === 1) highlight_class = 'bg-yellow-600/30'; // Became a Tie
+                } else if (new_points < original_points) {
+                    highlight_class = 'bg-red-600/30'; // Became a Loss
+                }
+
+                // --- Get win/loss text styling ---
                 let your_class = 'text-gray-400';
                 let opp_class = 'text-gray-400';
 
-                if (['GAA', 'GA'].includes(category)) {
+                if (is_reverse) {
                     if (your_val < opp_val) your_class = 'text-green-400 font-bold';
                     else if (opp_val < your_val) opp_class = 'text-green-400 font-bold';
                 } else {
@@ -275,12 +301,14 @@
                     else if (opp_val > your_val) opp_class = 'text-green-400 font-bold';
                 }
 
-                html += `<tr>
+                // --- Render the main category row ---
+                html += `<tr class="${highlight_class}">
                             <td class="table-cell !text-left ${your_class.includes('font-bold') ? 'font-semibold' : ''}">${category}</td>
                             <td class="table-cell text-center ${your_class}">${your_val}</td>
                             <td class="table-cell text-center ${opp_class}">${opp_val}</td>
                          </tr>`;
 
+                // --- Render sub-categories (no highlighting) ---
                 if (goalieCats.hasOwnProperty(category)) {
                     for (const subCat of goalieCats[category]) {
                         const your_sub_val = your_team_stats[subCat] || 0;
@@ -301,101 +329,159 @@
         }
 
 
-    function createSwapsLogTable(swaps_log) {
-            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                            <h3 class="text-lg font-semibold text-white mb-3">Suggested Swaps</h3>`;
+        function createSwapsStatTable(swaps_log, skater_headers, goalie_headers) {
+                const all_headers = [...skater_headers, ...goalie_headers];
 
-            if (swaps_log.length === 0) {
-                html += '<p class="text-gray-400">No beneficial swaps were found.</p></div>';
-                return html;
-            }
+                // Filter headers to only those that actually changed
+                const headers_with_changes = all_headers.filter(header =>
+                    swaps_log.some(swap => swap.stat_diffs[header])
+                );
 
-            html += `<div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-700">
-                            <thead>
-                                <tr>
-                                    <th class="table-header">Date</th>
-                                    <th class="table-header">Pos</th>
-                                    <th class="table-header">Bench Player</th>
-                                    <th class="table-header">Replaced Player</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+                let html = `<div class"bg-gray-800 rounded-lg shadow-lg p-4">
+                                <h3 class="text-lg font-semibold text-white mb-3">Suggested Swaps & Stat Changes</h3>`;
 
-            for (const swap of swaps_log) {
-                html += `<tr>
-                            <td class="table-cell text-center">${swap.date}</td>
-                            <td class="table-cell text-center">${swap.position}</td>
-                            <td class="table-cell text-center text-green-400">${swap.bench_player}</td>
-                            <td class="table-cell text-center text-red-400">${swap.replaced_player}</td>
-                         </tr>`;
-            }
+                if (swaps_log.length === 0) {
+                    html += '<p class="text-gray-400">No beneficial swaps were found.</p></div>';
+                    return html;
+                }
 
-            html += `       </tbody>
+                html += `<div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-700">
+                                <thead>
+                                    <tr>
+                                        <th class="table-header">Date</th>
+                                        <th class="table-header">Bench Player</th>
+                                        <th class="table-header">Replaced Player</th>
+                                        `;
+
+                // Create headers
+                for (const header of headers_with_changes) {
+                    html += `<th class="table-header">${header}</th>`;
+                }
+
+                html += `       </tr>
+                                </thead>
+                                <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+                const totals = {};
+
+                // Create data rows
+                for (const swap of swaps_log) {
+                    html += `<tr>
+                                <td class="table-cell text-center">${swap.date}</td>
+                                <td class="table-cell text-center text-green-400">${swap.bench_player}</td>
+                                <td class="table-cell text-center text-red-400">${swap.replaced_player}</td>
+                             `;
+
+                    for (const header of headers_with_changes) {
+                        const diff = swap.stat_diffs[header] || 0;
+
+                        // Add to totals
+                        totals[header] = (totals[header] || 0) + diff;
+
+                        // Format the diff
+                        let diff_text = diff === 0 ? '0' : (diff > 0 ? `+${diff}` : `${diff}`);
+                        let diff_class = diff > 0 ? 'text-green-400' : (diff < 0 ? 'text-red-400' : 'text-gray-500');
+
+                        html += `<td class="table-cell text-center ${diff_class}">${diff_text}</td>`;
+                    }
+                    html += `</tr>`;
+                }
+
+                // --- Create Total Row ---
+                html += `<tr class="border-t-2 border-gray-500">
+                            <td class="table-cell text-center font-bold">Total</td>
+                            <td class="table-cell"></td>
+                            <td class="table-cell"></td>
+                         `;
+
+                for (const header of headers_with_changes) {
+                    const total_diff = totals[header] || 0;
+
+                    let diff_text = total_diff === 0 ? '0' : (total_diff > 0 ? `+${total_diff}` : `${total_diff}`);
+                    let diff_class = total_diff > 0 ? 'text-green-400' : (total_diff < 0 ? 'text-red-400' : 'text-gray-500');
+
+                    html += `<td class="table-cell text-center ${diff_class} font-bold">${diff_text}</td>`;
+                }
+
+                html += `       </tr>
+                            </tbody>
                         </table>
                     </div>
                 </div>`;
-            return html;
-        }
+                return html;
+            }
 
 
     // --- NEW: Function to fetch and render bench points ---
     async function fetchBenchPoints(teamName, week) {
-            loadingSpinner.classList.remove('hidden');
-            historyContent.innerHTML = '';
-            errorDiv.classList.add('hidden');
+        loadingSpinner.classList.remove('hidden');
+        historyContent.innerHTML = '';
+        errorDiv.classList.add('hidden');
 
-            try {
-                const response = await fetch('/api/history/bench_points', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ team_name: teamName, week: week })
-                });
+        try {
+            const response = await fetch('/api/history/bench_points', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ team_name: teamName, week: week })
+            });
 
-                if (!response.ok) throw new Error(`Server error: ${response.status}`);
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
+            if (!response.ok) throw new Error(`Server error: ${response.status}`);
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
 
-                // Render the two bench tables
-                const skaterTable = createTable('Skaters', data.skater_headers, data.skater_data);
-                const goalieTable = createTable('Goalies', data.goalie_headers, data.goalie_data);
+            // Render the two bench tables
+            const skaterTable = createTable('Skaters', data.skater_headers, data.skater_data);
+            const goalieTable = createTable('Goalies', data.goalie_headers, data.goalie_data);
 
-                // --- START MODIFIED LAYOUT ---
-                let matchupHtml = '';
-                let optimizedHtml = '';
-                let swapsHtml = '';
+            // --- START MODIFIED LAYOUT ---
+            let matchupHtml = '';
+            let optimizedHtml = '';
+            let swapsHtml = ''; // This will now go to the left column
 
-                if (data.matchup_data) {
-                    // If matchup data exists, render the original table
-                    matchupHtml = createMatchupStatsTable(data.matchup_data);
+            if (data.matchup_data) {
+                // If matchup data exists, render the original table
+                matchupHtml = createMatchupStatsTable(data.matchup_data);
 
-                    // Render the new "Optimized" table
-                    optimizedHtml = createOptimizedMatchupTable(data.optimized_matchup_data);
+                // Render the new "Optimized" table
+                optimizedHtml = createOptimizedMatchupTable(data.optimized_matchup_data, data.matchup_data);
 
-                    // Render the new "Swaps Log" table
-                    swapsHtml = createSwapsLogTable(data.swaps_log);
+                // --- Render the new "Swaps Stat Table" ---
+                swapsHtml = createSwapsStatTable(data.swaps_log, data.skater_headers, data.goalie_headers);
 
-                } else {
-                    // Otherwise, show the "All Season" message
-                    matchupHtml = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                                    <h3 class="text-lg font-semibold text-white mb-3">Matchup Result</h3>
-                                    <p class="text-gray-400">Matchup outcome unavailable when "All Season" is selected.</p>
-                                   </div>`;
-                }
+            } else {
+                // Otherwise, show the "All Season" message
+                matchupHtml = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                                <h3 class="text-lg font-semibold text-white mb-3">Matchup Result</h3>
+                                <p class="text-gray-400">Matchup outcome unavailable when "All Season" is selected.</p>
+                               </div>`;
+            }
 
-                historyContent.innerHTML = `
-                    <div class="flex flex-col lg:flex-row gap-6">
-                        <div class="flex-grow space-y-6">
-                            ${skaterTable}
-                            ${goalieTable}
-                        </div>
-                        <div class="w-full lg:w-1/3 xl:w-1/4 flex-shrink-0 space-y-6">
-                            ${matchupHtml}
-                            ${optimizedHtml}
-                            ${swapsHtml}
-                        </div>
+            // --- New Layout Structure ---
+            historyContent.innerHTML = `
+                <div class="flex flex-col lg:flex-row gap-6">
+
+                    <div class="flex-grow space-y-6">
+                        ${skaterTable}
+                        ${goalieTable}
+                        ${swapsHtml}
                     </div>
-                `;
+
+                    <div class="w-full lg:w-2/5 xl:w-1/2 flex-shrink-0 space-y-6">
+
+                        <div class="flex flex-col lg:flex-row gap-6">
+                            <div class="w-full lg:w-1/2">
+                                ${matchupHtml}
+                            </div>
+                            <div class="w-full lg:w-1/2">
+                                ${optimizedHtml}
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div>
+            `;
             // --- END MODIFIED LAYOUT ---
 
         } catch (error) {
