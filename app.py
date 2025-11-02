@@ -1039,6 +1039,105 @@ def season_history_page_data():
             conn.close()
 
 
+@app.route('/api/history/bench_points', methods=['POST'])
+def get_bench_points_data():
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg}), 404
+
+    try:
+        cursor = conn.cursor()
+        data = request.get_json()
+        team_name = data.get('team_name')
+        week = data.get('week')
+
+        # 1. Get team_id
+        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
+        team_id_row = cursor.fetchone()
+        if not team_id_row:
+            return jsonify({'error': f'Team not found: {team_name}'}), 404
+        team_id = team_id_row['team_id']
+
+        # 2. Get Dates
+        start_date, end_date = None, None
+        if week != 'all':
+            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
+            week_dates = cursor.fetchone()
+            if week_dates:
+                start_date = week_dates['start_date']
+                end_date = week_dates['end_date']
+
+        # 3. Get Scoring Categories
+        cursor.execute("SELECT category, scoring_group FROM scoring ORDER BY scoring_group DESC, stat_id")
+        all_cats = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        skater_categories = [c['category'] for c in all_cats if c.get('scoring_group') != 'G']
+        goalie_categories = [c['category'] for c in all_cats if c.get('scoring_group') == 'G']
+        goalie_cat_set = set(goalie_categories)
+
+        # 4. Fetch Bench Stats
+        sql_params = [team_id]
+        sql_query = """
+            SELECT d.date_, d.player_id, p.player_name, d.category, d.stat_value
+            FROM daily_bench_stats d
+            JOIN players p ON d.player_id = p.player_id
+            WHERE d.team_id = ?
+        """
+
+        if start_date and end_date:
+            sql_query += " AND d.date_ >= ? AND d.date_ <= ?"
+            sql_params.extend([start_date, end_date])
+
+        sql_query += " ORDER BY d.date_, p.player_name"
+
+        cursor.execute(sql_query, tuple(sql_params))
+        raw_stats = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        # 5. Pivot the data
+        daily_player_stats = defaultdict(lambda: defaultdict(float))
+        for row in raw_stats:
+            key = (row['date_'], row['player_id'], row['player_name'])
+            daily_player_stats[key][row['category']] = row['stat_value']
+
+        # 6. Process and separate data
+        skater_rows = []
+        goalie_rows = []
+
+        for (date, player_id, player_name), stats in daily_player_stats.items():
+
+            # 7. Filter out rows with no stats
+            if sum(stats.values()) == 0:
+                continue
+
+            base_row = {'Date': date, 'Player': player_name}
+            is_goalie = any(cat in goalie_cat_set for cat in stats.keys())
+
+            if is_goalie:
+                for cat in goalie_categories:
+                    base_row[cat] = stats.get(cat, 0)
+                goalie_rows.append(base_row)
+            else:
+                for cat in skater_categories:
+                    base_row[cat] = stats.get(cat, 0)
+                skater_rows.append(base_row)
+
+        # 8. Return the processed data
+        return jsonify({
+            'skater_data': skater_rows,
+            'skater_headers': skater_categories,
+            'goalie_data': goalie_rows,
+            'goalie_headers': goalie_categories
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching bench points data: {e}", exc_info=True)
+        return jsonify({'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
 @app.route('/api/roster_data', methods=['POST'])
 def get_roster_data():
     league_id = session.get('league_id')
