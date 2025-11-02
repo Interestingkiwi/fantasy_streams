@@ -128,6 +128,24 @@
     function createMatchupStatsTable(matchup_data) {
             const { your_team_stats, opponent_team_stats, opponent_name, scoring_categories } = matchup_data;
 
+            // --- START NEW LOGIC ---
+            // 1. Define goalie sub-category relationships
+            const goalieCats = {
+                'SVpct': ['SV', 'SA'],
+                'GAA': ['GA', 'TOI/G']
+            };
+            const scoringCategoriesSet = new Set(scoring_categories);
+
+            // 2. Create a set of categories to skip in the main loop
+            const catsToSkip = new Set();
+            if (scoringCategoriesSet.has('SVpct')) {
+                goalieCats['SVpct'].forEach(cat => catsToSkip.add(cat));
+            }
+            if (scoringCategoriesSet.has('GAA')) {
+                goalieCats['GAA'].forEach(cat => catsToSkip.add(cat));
+            }
+            // --- END NEW LOGIC ---
+
             let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                             <h3 class="text-lg font-semibold text-white mb-3">Matchup Result</h3>
                             <h4 class="text-sm text-gray-400 mb-3 -mt-2">vs. ${opponent_name}</h4>
@@ -143,6 +161,14 @@
                                     <tbody class="bg-gray-900 divide-y divide-gray-700">`;
 
             for (const category of scoring_categories) {
+
+                // --- START MODIFIED LOGIC ---
+                // 3. Skip rendering this category if it's a sub-category of one that exists
+                if (catsToSkip.has(category)) {
+                    continue;
+                }
+                // --- END MODIFIED LOGIC ---
+
                 const your_val = your_team_stats[category] || 0;
                 const opp_val = opponent_team_stats[category] || 0;
 
@@ -165,11 +191,29 @@
                     }
                 }
 
+                // 4. Render the main category row (with a style fix to make winning cats bold)
                 html += `<tr>
-                            <td class="table-cell !text-left">${category}</td>
+                            <td class="table-cell !text-left ${your_class.includes('font-bold') ? 'font-semibold' : ''}">${category}</td>
                             <td class="table-cell text-center ${your_class}">${your_val}</td>
                             <td class="table-cell text-center ${opp_class}">${opp_val}</td>
                          </tr>`;
+
+                // --- START NEW LOGIC ---
+                // 5. Check for and render sub-categories
+                if (goalieCats.hasOwnProperty(category)) {
+                    for (const subCat of goalieCats[category]) {
+                        // Get sub-cat values (no win/loss styling)
+                        const your_sub_val = your_team_stats[subCat] || 0;
+                        const opp_sub_val = opponent_team_stats[subCat] || 0;
+
+                        html += `<tr class="hover:bg-gray-700/50">
+                                    <td class="table-cell !text-left pl-8 text-sm text-gray-400">${subCat}</td>
+                                    <td class="table-cell text-center text-sm text-gray-400">${your_sub_val}</td>
+                                    <td class="table-cell text-center text-sm text-gray-400">${opp_sub_val}</td>
+                                </tr>`;
+                    }
+                }
+                // --- END NEW LOGIC ---
             }
 
             html += `           </tbody>
@@ -178,7 +222,6 @@
                     </div>`;
             return html;
         }
-
 
     // --- NEW: Function to fetch and render bench points ---
     async function fetchBenchPoints(teamName, week) {
