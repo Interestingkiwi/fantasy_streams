@@ -1129,14 +1129,11 @@ def get_bench_points_data():
         matchup_data = None
 
         if week != 'all':
-            # --- START FIX ---
-            # REMOVED: week_num_int = int(week)
-            # We will use the 'week' string directly in the queries.
+            # This line is correct, we need the integer for the 'weeks' table
+            week_num_int = int(week)
 
-            # Use the 'week' string in the query
-            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
-            # --- END FIX ---
-
+            # This query is CORRECT, it uses the integer
+            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num_int,))
             week_dates = cursor.fetchone()
             if week_dates:
                 start_date = week_dates['start_date']
@@ -1144,10 +1141,16 @@ def get_bench_points_data():
 
             if start_date and end_date:
                 # Find opponent ID
+
+                # --- THIS IS THE FIX ---
+                # The 'matchups' table uses a TEXT 'week' column,
+                # so we must use the original 'week' string, NOT 'week_num_int'
                 cursor.execute(
                     "SELECT team1, team2 FROM matchups WHERE week = ? AND (team1 = ? OR team2 = ?)",
-                    (week, team_id, team_id) # --- ALSO USE STRING 'week' HERE ---
+                    (week, team_id, team_id) # <--- Changed from week_num_int to week
                 )
+                # --- END FIX ---
+
                 matchup_row = cursor.fetchone()
                 opponent_id = None
                 if matchup_row:
@@ -1164,6 +1167,7 @@ def get_bench_points_data():
                     matchup_data['opponent_name'] = opponent_name
 
         # --- START OF THE BENCH STATS LOGIC ---
+        # (The rest of your function is 100% correct)
 
         # 3. Get Scoring Categories (for Bench Stats)
         cursor.execute("SELECT category FROM scoring ORDER BY stat_id")
