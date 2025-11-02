@@ -1105,7 +1105,6 @@ def _get_live_matchup_stats(cursor, team1_id, team2_id, start_date_str, end_date
 
 
 @app.route('/api/history/bench_points', methods=['POST'])
-@app.route('/api/history/bench_points', methods=['POST'])
 def get_bench_points_data():
     league_id = session.get('league_id')
     conn, error_msg = get_db_connection_for_league(league_id)
