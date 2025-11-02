@@ -999,6 +999,46 @@ def lineup_page_data():
             conn.close()
 
 
+@app.route('/api/season_history_page_data')
+def season_history_page_data():
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+
+    if not conn:
+        return jsonify({'db_exists': False, 'error': error_msg})
+
+    try:
+        cursor = conn.cursor()
+
+        # Fetch weeks
+        cursor.execute("SELECT week_num, start_date, end_date FROM weeks ORDER BY week_num")
+        weeks = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        # Fetch teams
+        cursor.execute("SELECT team_id, name FROM teams ORDER BY name")
+        teams = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        # Determine current week
+        today = date.today().isoformat()
+        cursor.execute("SELECT week_num FROM weeks WHERE start_date <= ? AND end_date >= ?", (today, today))
+        current_week_row = cursor.fetchone()
+        current_week = current_week_row['week_num'] if current_week_row else (weeks[0]['week_num'] if weeks else 1)
+
+        return jsonify({
+            'db_exists': True,
+            'weeks': weeks,
+            'teams': teams,
+            'current_week': current_week
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching season history page data: {e}", exc_info=True)
+        return jsonify({'db_exists': False, 'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
 @app.route('/api/roster_data', methods=['POST'])
 def get_roster_data():
     league_id = session.get('league_id')
