@@ -1141,7 +1141,7 @@ def get_bench_points_data():
 
             # Query 1: Get week dates (uses 'week' string)
             logging.info(f"Querying 'weeks' table for week_num = '{week}'")
-            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (int_week,))
+            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
             week_dates = cursor.fetchone()
 
             if week_dates:
@@ -1158,7 +1158,7 @@ def get_bench_points_data():
                 logging.info(f"Querying 'matchups' table for week = '{week}' and team_name = '{team_name}'")
                 cursor.execute(
                     "SELECT team1, team2 FROM matchups WHERE week = ? AND (team1 = ? OR team2 = ?)",
-                    (week, team_name, team_name) # Use the NAME here
+                    (int_week, team_name, team_name) # Use the NAME here
                 )
                 matchup_row = cursor.fetchone()
 
