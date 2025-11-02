@@ -1116,6 +1116,7 @@ def get_bench_points_data():
         data = request.get_json()
         team_name = data.get('team_name') # e.g., "Aurora Borealis"
         week = data.get('week') # e.g., "1"
+        int_week = int(week)
 
         # --- DEBUG ---
         logging.info("--- History Report Debug ---")
@@ -1140,7 +1141,7 @@ def get_bench_points_data():
 
             # Query 1: Get week dates (uses 'week' string)
             logging.info(f"Querying 'weeks' table for week_num = '{week}'")
-            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
+            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (int_week,))
             week_dates = cursor.fetchone()
 
             if week_dates:
