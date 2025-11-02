@@ -1144,7 +1144,7 @@ def get_bench_points_data():
                 logging.error(f"Could not convert week='{week}' to an integer.")
                 return jsonify({'error': 'Invalid week format.'}), 400
 
-            # Query 1: Get week dates (uses 'week_num_int')
+            # Query 1: Get week dates
             logging.info(f"Querying 'weeks' table for week_num = {week_num_int} (as INTEGER)")
             cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num_int,))
             week_dates = cursor.fetchone()
@@ -1159,19 +1159,25 @@ def get_bench_points_data():
             if start_date and end_date:
                 logging.info("Proceeding to find opponent...")
 
-                # --- START FIX: Add CAST to the query ---
-                logging.info(f"Querying 'matchups' table for week = {week_num_int} (as INTEGER) and team_name = '{team_name}'")
+                # Query 2: Get matchup
+                logging.info(f"Querying 'matchups' table for week = {week_num_int} and team_name = '{team_name}'")
                 cursor.execute(
                     "SELECT team1, team2 FROM matchups WHERE week = ? AND (CAST(team1 AS TEXT) = ? OR CAST(team2 AS TEXT) = ?)",
-                    (week_num_int, team_name, team_name) # Use the INTEGER for week, string for names
+                    (week_num_int, team_name, team_name)
                 )
-                # --- END FIX ---
-
                 matchup_row = cursor.fetchone()
 
                 if matchup_row:
-                    # Get opponent_name from the row
-                    opponent_name = matchup_row['team2'] if matchup_row['team1'] == team_name else matchup_row['team1']
+                    # --- START FIX: Decode the bytes string ---
+                    # The database is returning b'Aurora Borealis'. We must decode it.
+                    matchup_row_decoded = decode_dict_values(dict(matchup_row))
+                    team1_from_db = matchup_row_decoded['team1'] # This is now a clean string
+                    team2_from_db = matchup_row_decoded['team2'] # This is now a clean string
+
+                    # This logic will now work correctly
+                    opponent_name = team2_from_db if team1_from_db == team_name else team1_from_db
+                    # --- END FIX ---
+
                     logging.info(f"Found opponent_name: {opponent_name}")
 
                     # Now, get the opponent_id from the 'teams' table
@@ -1197,7 +1203,7 @@ def get_bench_points_data():
             logging.info("Week is 'all', skipping matchup data fetch as intended.")
 
 
-        # --- START OF THE BENCH STATS LOGIC ---
+        # --- START OF THE BENCH STATS LOGIC (This part is correct) ---
         logging.info("Proceeding to fetch bench stats...")
         # 3. Get Scoring Categories (for Bench Stats)
         cursor.execute("SELECT category FROM scoring ORDER BY stat_id")
