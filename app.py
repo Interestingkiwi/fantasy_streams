@@ -1199,6 +1199,8 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
 
                     # This is a valid swap. Let's score it.
                     starter_stats = starter['stats']
+
+                    # --- START MODIFIED SCORING LOGIC ---
                     current_swap_score = 0
 
                     for cat in scoring_categories:
@@ -1212,21 +1214,23 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
 
                         is_reverse = cat in reverse_cats
 
-                        # Get current/new win/loss/tie status
-                        current_win = (my_current_total > opp_total) if not is_reverse else (my_current_total < opp_total)
-                        new_win = (my_new_total > opp_total) if not is_reverse else (my_new_total < opp_total)
-                        current_tie = (my_current_total == opp_total)
-                        new_tie = (my_new_total == opp_total)
+                        # --- CALCULATE CURRENT POINTS (2=W, 1=T, 0=L) ---
+                        current_points = 0
+                        if (my_current_total > opp_total and not is_reverse) or (my_current_total < opp_total and is_reverse):
+                            current_points = 2 # Current Win
+                        elif my_current_total == opp_total:
+                            current_points = 1 # Current Tie
 
-                        # Score the change
-                        if not current_win and new_win: # Flipped a loss/tie to a win
-                            current_swap_score += 100
-                        elif current_win and not new_win: # Flipped a win to a loss/tie
-                            current_swap_score -= 100
-                        elif not current_tie and new_tie: # Created a tie
-                            current_swap_score += 1
-                        elif current_tie and not new_tie: # Broke a tie
-                            current_swap_score += 1 if new_win else -1
+                        # --- CALCULATE NEW POINTS (2=W, 1=T, 0=L) ---
+                        new_points = 0
+                        if (my_new_total > opp_total and not is_reverse) or (my_new_total < opp_total and is_reverse):
+                            new_points = 2 # New Win
+                        elif my_new_total == opp_total:
+                            new_points = 1 # New Tie
+
+                        # --- ADD THE DIFFERENCE ---
+                        current_swap_score += (new_points - current_points)
+                    # --- END MODIFIED SCORING LOGIC ---
 
                     # Check if this is the best swap for this bench player
                     if current_swap_score > best_swap['net_gain_score']:
