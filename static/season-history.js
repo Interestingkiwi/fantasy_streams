@@ -9,7 +9,9 @@
     });
 
     const errorDiv = document.getElementById('db-error-message');
-    const weekSelect = document.getElementById('week-select');
+    // CHANGED: ID selector for week
+    const weekSelect = document.getElementById('history-week-select');
+    // REVERTED: ID selector for team
     const yourTeamSelect = document.getElementById('your-team-select');
     const historyContent = document.getElementById('history-content');
     const loadingSpinner = document.getElementById('loading-spinner');
@@ -43,23 +45,11 @@
     }
 
     function populateDropdowns() {
-        // 1. Populate "Your Team" dropdown (same as before)
-        const teamOptions = pageData.teams.map(team =>
-            `<option value="${team.name}">${team.name}</option>`
-        ).join('');
-        yourTeamSelect.innerHTML = teamOptions;
+        // --- Team Dropdown ---
+        // REMOVED: All population logic for 'yourTeamSelect'.
+        // 'home.js' will handle populating it.
 
-        // Set saved team
-        const savedTeam = localStorage.getItem('selectedTeam');
-        if (savedTeam && pageData.teams.some(t => t.name === savedTeam)) {
-            yourTeamSelect.value = savedTeam;
-        } else if (pageData.teams.length > 0) {
-            // Default to first team if no selection saved
-            yourTeamSelect.value = pageData.teams[0].name;
-            localStorage.setItem('selectedTeam', pageData.teams[0].name);
-        }
-
-        // 2. Populate "Week" dropdown (New Logic)
+        // --- Week Dropdown (New Logic) ---
 
         // Filter for completed weeks
         const completedWeeks = pageData.weeks.filter(week => week.week_num < pageData.current_week);
@@ -81,29 +71,26 @@
     }
 
     function setupEventListeners() {
+        // Add listener for this page's unique week dropdown
         weekSelect.addEventListener('change', fetchAndRenderTable);
 
-        yourTeamSelect.addEventListener('change', () => {
-            localStorage.setItem('selectedTeam', yourTeamSelect.value);
-            fetchAndRenderTable();
-        });
+        // Add listener for the global team dropdown
+        yourTeamSelect.addEventListener('change', fetchAndRenderTable);
     }
 
     async function fetchAndRenderTable() {
-        // This is the placeholder for your next step.
-        // We will build this out to fetch and display the historical data.
-        console.log(`Fetching data for: ${yourTeamSelect.value}, Week: ${weekSelect.value}`);
+        // We can safely read the value from the global team select
+        const selectedTeam = yourTeamSelect.value;
+        const selectedWeek = weekSelect.value;
 
-        // Show spinner (and hide it after a delay, for now)
+        console.log(`Fetching data for: ${selectedTeam}, Week: ${selectedWeek}`);
+
         loadingSpinner.classList.remove('hidden');
         historyContent.innerHTML = ''; // Clear previous content
 
-        // --- SIMULATE API CALL ---
-        // In the future, this is where you'll fetch data from the backend
-        // based on the selected team and week.
         await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
 
-        historyContent.innerHTML = `<p class="text-gray-400">Data for ${yourTeamSelect.value} (Week ${weekSelect.value}) will be displayed here.</p>`;
+        historyContent.innerHTML = `<p class="text-gray-400">Data for ${selectedTeam} (Week ${selectedWeek}) will be displayed here.</p>`;
         loadingSpinner.classList.add('hidden');
     }
 
@@ -113,6 +100,8 @@
         if (success) {
             populateDropdowns();
             setupEventListeners();
+            // We need to wait for home.js to potentially populate the team dropdown,
+            // but for now, we'll just load with whatever value is present.
             await fetchAndRenderTable(); // Load initial data
         }
     }
