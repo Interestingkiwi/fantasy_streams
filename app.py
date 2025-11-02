@@ -1105,6 +1105,7 @@ def _get_live_matchup_stats(cursor, team1_id, team2_id, start_date_str, end_date
 
 
 @app.route('/api/history/bench_points', methods=['POST'])
+@app.route('/api/history/bench_points', methods=['POST'])
 def get_bench_points_data():
     league_id = session.get('league_id')
     conn, error_msg = get_db_connection_for_league(league_id)
@@ -1130,14 +1131,11 @@ def get_bench_points_data():
 
         if week != 'all':
             # --- START FIX ---
-            try:
-                # Convert the week string (e.g., "3") to an integer (e.g., 3)
-                week_num_int = int(week)
-            except (ValueError, TypeError):
-                return jsonify({'error': 'Invalid week format.'}), 400
+            # REMOVED: week_num_int = int(week)
+            # We will use the 'week' string directly in the queries.
 
-            # Use the integer in the query
-            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num_int,))
+            # Use the 'week' string in the query
+            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
             # --- END FIX ---
 
             week_dates = cursor.fetchone()
@@ -1149,7 +1147,7 @@ def get_bench_points_data():
                 # Find opponent ID
                 cursor.execute(
                     "SELECT team1, team2 FROM matchups WHERE week = ? AND (team1 = ? OR team2 = ?)",
-                    (week_num_int, team_id, team_id) # --- ALSO USE INTEGER HERE ---
+                    (week, team_id, team_id) # --- ALSO USE STRING 'week' HERE ---
                 )
                 matchup_row = cursor.fetchone()
                 opponent_id = None
