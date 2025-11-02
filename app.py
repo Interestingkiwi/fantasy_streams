@@ -1114,25 +1114,18 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
 
         # 1. Get data needed for simulation
 
-        # Get lineup settings to know what positions are starters
+        # Get lineup settings
         cursor.execute("SELECT position FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
         starter_positions = {row['position'] for row in cursor.fetchall()} # e.g., {'C', 'LW', 'RW', 'D', 'G'}
         logging.info(f"Starter positions: {starter_positions}")
 
-        # --- START FIX: Create position mapping ---
-        # Maps the lowercase abbreviations from daily_player_stats to the uppercase standard
+        # Create position mapping
         pos_map = {
-            'c': 'C',
-            'l': 'LW',
-            'r': 'RW',
-            'd': 'D',
-            'g': 'G',
-            'b': 'BN', # Use 'BN' for consistency
-            'i': 'IR'  # Use 'IR' for consistency
+            'c': 'C', 'l': 'LW', 'r': 'RW', 'd': 'D', 'g': 'G',
+            'b': 'BN', 'i': 'IR'
         }
-        # --- END FIX ---
 
-        # Get all scoring categories
+        # Get scoring categories
         scoring_categories = matchup_data['scoring_categories']
         reverse_cats = {'GA', 'GAA'}
 
@@ -1144,6 +1137,8 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
 
         # Query BOTH tables
         logging.info("Querying for ALL player stats (starters and bench)...")
+
+        # --- START FIX: Change ORDER BY to use positional indexes ---
         cursor.execute("""
             SELECT
                 d.date_, d.player_id, d.lineup_pos, d.category, d.stat_value,
@@ -1161,8 +1156,9 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
             JOIN players p ON b.player_id = p.player_id
             WHERE b.team_id = ? AND b.date_ >= ? AND b.date_ <= ?
 
-            ORDER BY date_, player_id
+            ORDER BY 1, 2
         """, (team_id, start_date, end_date, team_id, start_date, end_date))
+        # --- END FIX ---
 
         all_stats_raw = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
@@ -1186,12 +1182,8 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
             player['stats'][row['category']] = row['stat_value']
             player['player_id'] = pid
             player['player_name'] = row['player_name']
-
-            # --- START FIX: Normalize the lineup_pos ---
-            player['lineup_pos'] = pos_map.get(row['lineup_pos'], row['lineup_pos']) # e.g., 'c' becomes 'C'
-            # --- END FIX ---
-
-            player['eligible_positions'] = row['positions'].split(',') # e.g., ['C', 'LW', 'RW']
+            player['lineup_pos'] = pos_map.get(row['lineup_pos'], row['lineup_pos']) # Normalize pos
+            player['eligible_positions'] = row['positions'].split(',')
 
         # 3. Start the simulation
         swaps_log = []
@@ -1203,12 +1195,8 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
             logging.info(f"--- Simulating Day: {day} ---")
             performances = daily_player_performances[day]
 
-            # --- START FIX: Use the normalized position ---
-            # 'p['lineup_pos']' is now 'C', which IS IN starter_positions {'C', 'LW', ...}
             starters = [p for p in performances.values() if p['lineup_pos'] in starter_positions]
-            # 'p['lineup_pos']' is now 'BN', which we check for
             bench = [p for p in performances.values() if p['lineup_pos'] == 'BN' and sum(p['stats'].values()) > 0]
-            # --- END FIX ---
 
             logging.info(f"Found {len(starters)} starters and {len(bench)} scoring bench players.")
 
@@ -1233,12 +1221,9 @@ def _calculate_bench_optimization(cursor, team_id, week_num, start_date, end_dat
                     if starter['player_id'] in replaced_starters_today:
                         continue
 
-                    # --- START FIX: Check normalized pos vs. eligible_positions ---
-                    # Check if 'C' (starter) is in ['C', 'LW'] (bench)
                     if starter['lineup_pos'] not in bench_player['eligible_positions']:
                         logging.debug(f"  -> Skipping {starter['player_name']}: Bench player not eligible for {starter['lineup_pos']}")
                         continue
-                    # --- END FIX ---
 
                     # This is a valid swap. Let's score it.
                     starter_stats = starter['stats']
