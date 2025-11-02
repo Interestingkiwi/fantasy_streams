@@ -1114,14 +1114,13 @@ def get_bench_points_data():
     try:
         cursor = conn.cursor()
         data = request.get_json()
-        team_name = data.get('team_name')
-        week = data.get('week') # This is a string ("3" or "all")
+        team_name = data.get('team_name') # e.g., "Aurora Borealis"
+        week = data.get('week') # e.g., "1"
 
-        # --- START DEBUGGING ---
+        # --- DEBUG ---
         logging.info("--- History Report Debug ---")
         logging.info(f"Selected team: {team_name}")
-        logging.info(f"Selected week: '{week}' (type: {type(week)})")
-        # --- END DEBUGGING ---
+        logging.info(f"Selected week: '{week}'")
 
         # 1. Get team_id
         cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
@@ -1129,22 +1128,19 @@ def get_bench_points_data():
         if not team_id_row:
             logging.error(f"Could not find team_id for team_name = {team_name}")
             return jsonify({'error': f'Team not found: {team_name}'}), 404
-        team_id = team_id_row['team_id']
+        team_id = team_id_row['team_id'] # e.g., 1
         logging.info(f"Found team_id: {team_id}")
 
-        # 2. Get Dates & NEW Matchup Logic
+        # 2. Get Dates & Matchup Logic
         start_date, end_date = None, None
         matchup_data = None
 
         if week != 'all':
             logging.info("Week is not 'all', attempting to find matchup...")
 
-            # --- START FIX: Use 'week' (string) directly ---
-            # REMOVED: week_num_int = int(week)
-            logging.info(f"Querying 'weeks' table for week_num = '{week}' (as TEXT)")
+            # Query 1: Get week dates (uses 'week' string)
+            logging.info(f"Querying 'weeks' table for week_num = '{week}'")
             cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
-            # --- END FIX ---
-
             week_dates = cursor.fetchone()
 
             if week_dates:
@@ -1156,28 +1152,38 @@ def get_bench_points_data():
 
             if start_date and end_date:
                 logging.info("Proceeding to find opponent...")
-                # --- START FIX: Use 'week' (string) directly ---
-                logging.info(f"Querying 'matchups' table for week = '{week}' (as TEXT) and team_id = {team_id}")
+
+                # --- START FIX: Use team_name to find opponent_name ---
+                logging.info(f"Querying 'matchups' table for week = '{week}' and team_name = '{team_name}'")
                 cursor.execute(
                     "SELECT team1, team2 FROM matchups WHERE week = ? AND (team1 = ? OR team2 = ?)",
-                    (week, team_id, team_id)
+                    (week, team_name, team_name) # Use the NAME here
                 )
-                # --- END FIX ---
                 matchup_row = cursor.fetchone()
 
                 if matchup_row:
-                    opponent_id = matchup_row['team2'] if str(matchup_row['team1']) == str(team_id) else matchup_row['team1']
-                    logging.info(f"Found opponent_id: {opponent_id}")
-
-                    cursor.execute("SELECT name FROM teams WHERE team_id = ?", (opponent_id,))
-                    opponent_name_row = cursor.fetchone()
-                    opponent_name = opponent_name_row['name'] if opponent_name_row else "Unknown Opponent"
+                    # Get opponent_name from the row
+                    opponent_name = matchup_row['team2'] if matchup_row['team1'] == team_name else matchup_row['team1']
                     logging.info(f"Found opponent_name: {opponent_name}")
 
-                    matchup_data = _get_live_matchup_stats(cursor, team_id, opponent_id, start_date, end_date)
-                    logging.info("Successfully generated matchup_data.")
+                    # Now, get the opponent_id from the 'teams' table
+                    cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (opponent_name,))
+                    opponent_id_row = cursor.fetchone()
+
+                    if opponent_id_row:
+                        opponent_id = opponent_id_row['team_id']
+                        logging.info(f"Found opponent_id: {opponent_id}")
+
+                        # Now we have both team_id (user) and opponent_id (opponent)
+                        matchup_data = _get_live_matchup_stats(cursor, team_id, opponent_id, start_date, end_date)
+                        matchup_data['opponent_name'] = opponent_name # Add the name for display
+                        logging.info("Successfully generated matchup_data.")
+                    else:
+                        logging.warning(f"Could not find team_id for opponent_name = {opponent_name}")
                 else:
-                    logging.warning(f"Query 2 FAILED: Could not find matchup_row for week = '{week}' and team_id = {team_id}")
+                    logging.warning(f"Query 2 FAILED: Could not find matchup_row for week = '{week}' and team_name = '{team_name}'")
+                # --- END FIX ---
+
             else:
                 logging.warning("Skipping matchup data fetch because start_date and end_date were not found (see Query 1).")
         else:
