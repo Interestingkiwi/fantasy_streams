@@ -1115,7 +1115,7 @@ def get_bench_points_data():
         cursor = conn.cursor()
         data = request.get_json()
         team_name = data.get('team_name')
-        week = data.get('week')
+        week = data.get('week') # This is a string ("3" or "all")
 
         # 1. Get team_id
         cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
@@ -1129,7 +1129,17 @@ def get_bench_points_data():
         matchup_data = None
 
         if week != 'all':
-            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week,))
+            # --- START FIX ---
+            try:
+                # Convert the week string (e.g., "3") to an integer (e.g., 3)
+                week_num_int = int(week)
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Invalid week format.'}), 400
+
+            # Use the integer in the query
+            cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num_int,))
+            # --- END FIX ---
+
             week_dates = cursor.fetchone()
             if week_dates:
                 start_date = week_dates['start_date']
@@ -1139,7 +1149,7 @@ def get_bench_points_data():
                 # Find opponent ID
                 cursor.execute(
                     "SELECT team1, team2 FROM matchups WHERE week = ? AND (team1 = ? OR team2 = ?)",
-                    (week, team_id, team_id)
+                    (week_num_int, team_id, team_id) # --- ALSO USE INTEGER HERE ---
                 )
                 matchup_row = cursor.fetchone()
                 opponent_id = None
@@ -1156,7 +1166,7 @@ def get_bench_points_data():
                     matchup_data = _get_live_matchup_stats(cursor, team_id, opponent_id, start_date, end_date)
                     matchup_data['opponent_name'] = opponent_name
 
-        # --- START OF THE BENCH STATS LOGIC (This was missing) ---
+        # --- START OF THE BENCH STATS LOGIC ---
 
         # 3. Get Scoring Categories (for Bench Stats)
         cursor.execute("SELECT category FROM scoring ORDER BY stat_id")
@@ -1195,7 +1205,7 @@ def get_bench_points_data():
             player_positions[key] = row['positions']
 
         # 6. Process and separate data
-        skater_rows = []  # <--- This is where the variable is defined
+        skater_rows = []
         goalie_rows = []
 
         for (date, player_id, player_name), stats in daily_player_stats.items():
