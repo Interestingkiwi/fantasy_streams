@@ -1111,7 +1111,7 @@ def _update_league_transactions(yq, cursor):
     Writes player name, fantasy team id, add or drop, and yahoo id to transactions
     table for all transactions in the league
     """
-    logger.info("Fetching player info...")
+    logging.info("Fetching player info...")
     try:
         transactions = yq.get_league_transactions()
         transaction_data_to_insert = []
