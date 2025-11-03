@@ -722,7 +722,12 @@
                         </div>
                     `;
                 }
-                historyContent.innerHTML = `<div class="space-y-6">${leagueHtml}</div>`;
+
+                // --- MODIFICATION: Replaced single-column layout with a 3-column grid ---
+                // This will be 1 column on small, 2 on medium, and 3 on extra-large screens.
+                historyContent.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">${leagueHtml}</div>`;
+                // --- END MODIFICATION ---
+
             }
             // --- END NEW ---
 
