@@ -1600,7 +1600,8 @@ def get_transaction_success_data():
 
             # Get team name -> team_id map
             cursor.execute("SELECT team_id, name FROM teams")
-            teams_map = {row['name']: row['team_id'] for row in cursor.fetchall()}
+            # --- MODIFIED: Strip whitespace from names when creating map ---
+            teams_map = {row['name'].strip(): row['team_id'] for row in cursor.fetchall()}
 
             # Get all 'add' transactions for the week
             cursor.execute("""
@@ -1617,7 +1618,8 @@ def get_transaction_success_data():
             league_data = defaultdict(list)
 
             for player in all_adds:
-                team_name = player['fantasy_team']
+                # --- MODIFIED: Strip whitespace from transaction team name before lookup ---
+                team_name = player['fantasy_team'].strip()
                 team_id = teams_map.get(team_name)
 
                 if not team_id:
@@ -1669,6 +1671,7 @@ def get_transaction_success_data():
     finally:
         if conn:
             conn.close()
+
 
 
 @app.route('/api/roster_data', methods=['POST'])
