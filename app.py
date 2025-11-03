@@ -1485,8 +1485,8 @@ def get_bench_points_data():
             conn.close()
 
 
-@app.route('/api/history/transaction_success', methods=['POST'])
-def get_transaction_success_data():
+@app.route('/api/history/transaction_history', methods=['POST'])
+def get_transaction_history_data():
     league_id = session.get('league_id')
     conn, error_msg = get_db_connection_for_league(league_id)
     if not conn:

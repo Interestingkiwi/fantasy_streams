@@ -68,7 +68,7 @@
         let reportOptions = '';
         reportOptions += '<option value="please_select">--Please Select--</option>'; // Your default
         reportOptions += '<option value="bench_points">Bench Points</option>';
-        reportOptions += '<option value="transaction_success">Transaction Success</option>';
+        reportOptions += '<option value="transaction_history">Transaction History</option>';
         reportOptions += '<option value="tbd">TBD</option>';
 
         reportSelect.innerHTML = reportOptions;
@@ -84,7 +84,7 @@
     // --- NEW: Show/hide controls based on report ---
     function handleReportChange() {
         const selectedReport = reportSelect.value;
-        if (selectedReport === 'transaction_success') {
+        if (selectedReport === 'transaction_history') {
             viewToggleButton.classList.remove('hidden');
             // Restore view state
             updateControlsForViewMode();
@@ -642,7 +642,7 @@
         errorDiv.classList.add('hidden');
 
         try {
-            const response = await fetch('/api/history/transaction_success', {
+            const response = await fetch('/api/history/transaction_history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 // --- MODIFIED: Send the viewMode ---
@@ -755,7 +755,7 @@
                     await fetchBenchPoints(selectedTeam, selectedWeek);
                     break;
 
-                case 'transaction_success':
+                case 'transaction_history':
                     await fetchTransactionSuccess(selectedTeam, selectedWeek, currentViewMode);
                     break;
                 // --- END MODIFICATION ---
