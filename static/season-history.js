@@ -62,6 +62,7 @@
         let reportOptions = '';
         reportOptions += '<option value="please_select">--Please Select--</option>'; // Your default
         reportOptions += '<option value="bench_points">Bench Points</option>';
+        reportOptions += '<option value="transaction_success">Transaction Success</option>';
         reportOptions += '<option value="tbd">TBD</option>';
 
         reportSelect.innerHTML = reportOptions;
@@ -493,6 +494,83 @@
     }
 
 
+    function createTransactionTable(title, rows) {
+            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                            <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
+
+            if (rows.length === 0) {
+                html += '<p class="text-gray-400">No transactions found for this period.</p></div>';
+                return html;
+            }
+
+            html += `<div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-700">
+                            <thead>
+                                <tr>
+                                    <th class="table-header !text-left">Date</th>
+                                    <th class="table-header !text-left">Player</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+            for (const row of rows) {
+                html += `<tr>
+                            <td class="table-cell !text-left">${row['transaction_date']}</td>
+                            <td class="table-cell !text-left">${row['player_name']}</td>
+                         </tr>`;
+            }
+
+            html += `       </tbody>
+                        </table>
+                    </div>
+                </div>`;
+            return html;
+        }
+
+
+        // --- NEW: Function to fetch and render transaction success ---
+    async function fetchTransactionSuccess(teamName, week) {
+        loadingSpinner.classList.remove('hidden');
+        historyContent.innerHTML = '';
+        errorDiv.classList.add('hidden');
+
+        try {
+            const response = await fetch('/api/history/transaction_success', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ team_name: teamName, week: week })
+            });
+
+            if (!response.ok) throw new Error(`Server error: ${response.status}`);
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
+
+            // Render the two tables
+            const addsTable = createTransactionTable('Player Adds', data.adds);
+            const dropsTable = createTransactionTable('Player Drops', data.drops);
+
+            // --- New Layout Structure ---
+            historyContent.innerHTML = `
+                <div class="flex flex-col lg:flex-row gap-6">
+                    <div class="w-full lg:w-1/2">
+                        ${addsTable}
+                    </div>
+                    <div class="w-full lg:w-1/2">
+                        ${dropsTable}
+                    </div>
+                </div>
+            `;
+
+        } catch (error) {
+            console.error('Error fetching transaction data:', error);
+            showError(error.message);
+        } finally {
+            loadingSpinner.classList.add('hidden');
+        }
+    }
+
+
+
     async function fetchAndRenderTable() {
             const selectedTeam = yourTeamSelect.value;
             const selectedWeek = weekSelect.value;
@@ -504,6 +582,10 @@
             switch (selectedReport) {
                 case 'bench_points':
                     await fetchBenchPoints(selectedTeam, selectedWeek);
+                    break;
+
+                case 'transaction_success':
+                    await fetchTransactionSuccess(selectedTeam, selectedWeek);
                     break;
 
                 case 'tbd':

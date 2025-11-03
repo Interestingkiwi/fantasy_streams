@@ -1484,6 +1484,71 @@ def get_bench_points_data():
         if conn:
             conn.close()
 
+
+@app.route('/api/history/transaction_success', methods=['POST'])
+def get_transaction_success_data():
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg}), 404
+
+    try:
+        cursor = conn.cursor()
+        data = request.get_json()
+        team_name = data.get('team_name')
+        week = data.get('week')
+
+        logging.info(f"--- Transaction Success Report ---")
+        logging.info(f"Selected team: {team_name}, week: '{week}'")
+
+        start_date, end_date = None, None
+        if week != 'all':
+            try:
+                week_num_int = int(week)
+                cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num_int,))
+                week_dates = cursor.fetchone()
+                if week_dates:
+                    start_date = week_dates['start_date']
+                    end_date = week_dates['end_date']
+                    logging.info(f"Found week dates: {start_date} to {end_date}")
+                else:
+                    logging.warning(f"Could not find week_num = {week_num_int}")
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Invalid week format.'}), 400
+
+        def fetch_transactions(move_type):
+            sql_params = [team_name, move_type]
+            sql_query = """
+                SELECT transaction_date, player_name
+                FROM transactions
+                WHERE CAST(fantasy_team AS TEXT) = ? AND move_type = ?
+            """
+            if start_date and end_date:
+                sql_query += " AND transaction_date >= ? AND transaction_date <= ?"
+                sql_params.extend([start_date, end_date])
+
+            sql_query += " ORDER BY transaction_date, player_name"
+            cursor.execute(sql_query, tuple(sql_params))
+            return decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        add_rows = fetch_transactions('add')
+        drop_rows = fetch_transactions('drop')
+
+        logging.info(f"Found {len(add_rows)} adds and {len(drop_rows)} drops.")
+
+        return jsonify({
+            'adds': add_rows,
+            'drops': drop_rows
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching transaction data: {e}", exc_info=True)
+        return jsonify({'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
 @app.route('/api/roster_data', methods=['POST'])
 def get_roster_data():
     league_id = session.get('league_id')
