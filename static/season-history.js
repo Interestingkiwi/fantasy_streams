@@ -255,7 +255,7 @@
             };
 
             let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                            <h3 class="text-lg font-semibold text-white mb-3">Optimized Result (What If)</h3>
+                            <h3 class="text-lg font-semibold text-white mb-3">Maximized Result (What If)</h3>
                             <h4 class="text-sm text-gray-400 mb-3 -mt-2">vs. ${opponent_name}</h4>
                             <div class="overflow-x-auto">
                                 <table class="min-w-full">
@@ -338,7 +338,7 @@
                 );
 
                 let html = `<div class"bg-gray-800 rounded-lg shadow-lg p-4">
-                                <h3 class="text-lg font-semibold text-white mb-3">Suggested Swaps & Stat Changes</h3>`;
+                                <h3 class="text-lg font-semibold text-white mb-3">Ideal Roster</h3>`;
 
                 if (swaps_log.length === 0) {
                     html += '<p class="text-gray-400">No beneficial swaps were found.</p></div>';
