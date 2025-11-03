@@ -1503,9 +1503,12 @@ def get_transaction_success_data():
         logging.info(f"--- Transaction Success Report ---")
         logging.info(f"Selected team: {team_name}, week: '{week}', view_mode: '{view_mode}'")
 
-        # Get scoring categories for headers
-        cursor.execute("SELECT category FROM scoring ORDER BY scoring_group DESC, stat_id")
-        scoring_categories = [row['category'] for row in cursor.fetchall()]
+        # --- MODIFIED: Get scoring group to differentiate skaters/goalies ---
+        cursor.execute("SELECT category, scoring_group FROM scoring ORDER BY scoring_group DESC, stat_id")
+        all_categories_raw = cursor.fetchall()
+        skater_categories = [row['category'] for row in all_categories_raw if row['scoring_group'] == 'offense']
+        goalie_categories = [row['category'] for row in all_categories_raw if row['scoring_group'] == 'goalie']
+        # --- END MODIFIED ---
 
         start_date, end_date = None, None
         is_weekly_view = False
@@ -1530,7 +1533,10 @@ def get_transaction_success_data():
 
         if view_mode == 'team':
             # --- This is the existing logic for Team View ---
-            added_player_stats = []
+            # --- MODIFIED: Create separate lists for skaters and goalies ---
+            added_skater_stats = []
+            added_goalie_stats = []
+            # --- END MODIFIED ---
 
             def fetch_transactions(move_type):
                 sql_params = [team_name, move_type]
@@ -1557,16 +1563,23 @@ def get_transaction_success_data():
                     player_stats = {'Player': player['player_name'], 'GP': 0}
                     player_id_str = str(player['player_id'])
 
+                    # --- MODIFIED: Query 1: Get aggregated stats AND lineup_pos ---
                     cursor.execute("""
-                        SELECT category, SUM(stat_value) as total
+                        SELECT category, SUM(stat_value) as total, lineup_pos
                         FROM daily_player_stats
                         WHERE CAST(player_id AS TEXT) = ?
                           AND date_ >= ? AND date_ <= ?
-                        GROUP BY category
+                        GROUP BY category, lineup_pos
                     """, (player_id_str, start_date, end_date))
 
                     stats_raw = cursor.fetchall()
-                    player_stat_map = {row['category']: row['total'] for row in stats_raw}
+                    player_stat_map = defaultdict(float)
+                    is_goalie = False
+                    for row in stats_raw:
+                        player_stat_map[row['category']] += row['total']
+                        if row['lineup_pos'] == 'g':
+                            is_goalie = True
+                    # --- END MODIFIED ---
 
                     cursor.execute("""
                         SELECT COUNT(DISTINCT date_) as games_played
@@ -1579,17 +1592,27 @@ def get_transaction_success_data():
                     if gp_row:
                         player_stats['GP'] = gp_row['games_played']
 
-                    for cat in scoring_categories:
-                        player_stats[cat] = player_stat_map.get(cat, 0)
-
-                    added_player_stats.append(player_stats)
+                    # --- MODIFIED: Populate based on position and fill 0s ---
+                    if is_goalie:
+                        for cat in goalie_categories:
+                            player_stats[cat] = player_stat_map.get(cat, 0)
+                        added_goalie_stats.append(player_stats)
+                    else:
+                        for cat in skater_categories:
+                            player_stats[cat] = player_stat_map.get(cat, 0)
+                        added_skater_stats.append(player_stats)
+                    # --- END MODIFIED ---
 
             return jsonify({
                 'view_mode': 'team',
                 'adds': add_rows,
                 'drops': drop_rows,
-                'added_player_stats': added_player_stats,
-                'stat_headers': scoring_categories,
+                # --- MODIFIED: Send separate lists and headers ---
+                'added_skater_stats': added_skater_stats,
+                'added_goalie_stats': added_goalie_stats,
+                'skater_stat_headers': skater_categories,
+                'goalie_stat_headers': goalie_categories,
+                # --- END MODIFIED ---
                 'is_weekly_view': is_weekly_view
             })
 
@@ -1620,7 +1643,9 @@ def get_transaction_success_data():
             all_adds = decode_dict_values([dict(row) for row in cursor.fetchall()])
             logging.info(f"Found {len(all_adds)} total adds for the league in week {week}.")
 
-            league_data = defaultdict(list)
+            # --- MODIFIED: league_data to hold skater/goalie lists ---
+            league_data = defaultdict(lambda: {'skaters': [], 'goalies': []})
+            # --- END MODIFIED ---
 
             for player in all_adds:
                 # --- MODIFIED: Strip whitespace from transaction team name before lookup ---
@@ -1639,17 +1664,23 @@ def get_transaction_success_data():
                 player_id_str = str(player['player_id'])
                 player_stats = {'Player': player['player_name'], 'GP': 0}
 
-                # Query 1: Get aggregated stats for that player *for that team*
+                # --- MODIFIED: Query 1: Get aggregated stats AND lineup_pos ---
                 cursor.execute("""
-                    SELECT category, SUM(stat_value) as total
+                    SELECT category, SUM(stat_value) as total, lineup_pos
                     FROM daily_player_stats
                     WHERE CAST(player_id AS TEXT) = ? AND team_id = ?
                       AND date_ >= ? AND date_ <= ?
-                    GROUP BY category
+                    GROUP BY category, lineup_pos
                 """, (player_id_str, team_id, start_date, end_date))
 
                 stats_raw = cursor.fetchall()
-                player_stat_map = {row['category']: row['total'] for row in stats_raw}
+                player_stat_map = defaultdict(float)
+                is_goalie = False
+                for row in stats_raw:
+                    player_stat_map[row['category']] += row['total']
+                    if row['lineup_pos'] == 'g':
+                        is_goalie = True
+                # --- END MODIFIED ---
 
                 # Query 2: Get Games Played for that player *for that team*
                 cursor.execute("""
@@ -1663,15 +1694,24 @@ def get_transaction_success_data():
                 if gp_row:
                     player_stats['GP'] = gp_row['games_played']
 
-                for cat in scoring_categories:
-                    player_stats[cat] = player_stat_map.get(cat, 0)
-
-                league_data[team_name].append(player_stats)
+                # --- MODIFIED: Populate based on position and fill 0s ---
+                if is_goalie:
+                    for cat in goalie_categories:
+                        player_stats[cat] = player_stat_map.get(cat, 0)
+                    league_data[team_name]['goalies'].append(player_stats)
+                else:
+                    for cat in skater_categories:
+                        player_stats[cat] = player_stat_map.get(cat, 0)
+                    league_data[team_name]['skaters'].append(player_stats)
+                # --- END MODIFIED ---
 
             return jsonify({
                 'view_mode': 'league',
                 'league_data': league_data,
-                'stat_headers': scoring_categories,
+                # --- MODIFIED: Send separate headers ---
+                'skater_stat_headers': skater_categories,
+                'goalie_stat_headers': goalie_categories,
+                # --- END MODIFIED ---
                 'is_weekly_view': True # League view is always weekly for now
             })
 
