@@ -582,7 +582,7 @@
 
 
     // --- (createAddedPlayerStatsTable function is unchanged) ---
-    function createAddedPlayerStatsTable(title, headers, rows) {
+    function createAddedPlayerStatsTable(title, headers = [], rows = []) {
         let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                         <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
 
@@ -596,19 +596,22 @@
                         <thead>
                             <tr>
                                 <th class="table-header !text-left">Player</th>
-                                <!-- NEW: Added GP column -->
                                 <th class="table-header">GP</th>
                                 `;
 
+        // --- MODIFIED: Use all headers, don't filter ---
         // Filter headers to only include those with data
-        // --- MODIFIED: Also filter out 'GP' since we added it manually ---
-        const headersWithData = headers.filter(header =>
-            header !== 'GP' && rows.some(row => row[header] && row[header] != 0)
-        );
+        // const headersWithData = headers.filter(header =>
+        //     header !== 'GP' && rows.some(row => row[header] && row[header] != 0)
+        // );
 
-        for (const header of headersWithData) {
+        // Use all headers provided by the server
+        const headersToDisplay = headers.filter(h => h !== 'GP'); // Still exclude GP, as it's manually added
+
+        for (const header of headersToDisplay) {
             html += `<th class="table-header">${header}</th>`;
         }
+        // --- END MODIFICATION ---
 
         html += `           </tr>
                         </thead>
@@ -617,12 +620,13 @@
         for (const row of rows) {
             html += `<tr>
                         <td class="table-cell !text-left">${row['Player']}</td>
-                        <!-- NEW: Added cell for GP data -->
                         <td class="table-cell text-center">${row['GP'] || 0}</td>
                         `;
-            for (const header of headersWithData) {
+            // --- MODIFIED: Loop over all headers ---
+            for (const header of headersToDisplay) {
                 html += `<td class="table-cell text-center">${row[header] || 0}</td>`;
             }
+            // --- END MODIFICATION ---
             html += `</tr>`;
         }
 
@@ -632,6 +636,7 @@
             </div>`;
         return html;
     }
+
 
 
     // --- MODIFIED: Function to fetch and render transaction success (handles both views) ---
