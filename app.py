@@ -1501,8 +1501,16 @@ def get_transaction_success_data():
         logging.info(f"--- Transaction Success Report ---")
         logging.info(f"Selected team: {team_name}, week: '{week}'")
 
+        # Get scoring categories for headers
+        cursor.execute("SELECT category FROM scoring ORDER BY scoring_group DESC, stat_id")
+        scoring_categories = [row['category'] for row in cursor.fetchall()]
+
         start_date, end_date = None, None
+        is_weekly_view = False
+        added_player_stats = []
+
         if week != 'all':
+            is_weekly_view = True
             try:
                 week_num_int = int(week)
                 cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num_int,))
@@ -1513,13 +1521,15 @@ def get_transaction_success_data():
                     logging.info(f"Found week dates: {start_date} to {end_date}")
                 else:
                     logging.warning(f"Could not find week_num = {week_num_int}")
+                    is_weekly_view = False
             except (ValueError, TypeError):
                 return jsonify({'error': 'Invalid week format.'}), 400
 
         def fetch_transactions(move_type):
             sql_params = [team_name, move_type]
+            # --- MODIFIED: Select player_id as well ---
             sql_query = """
-                SELECT transaction_date, player_name
+                SELECT transaction_date, player_name, player_id
                 FROM transactions
                 WHERE CAST(fantasy_team AS TEXT) = ? AND move_type = ?
             """
@@ -1536,9 +1546,51 @@ def get_transaction_success_data():
 
         logging.info(f"Found {len(add_rows)} adds and {len(drop_rows)} drops.")
 
+        # --- MODIFIED: Get stats AND games played for added players ---
+        if is_weekly_view and add_rows:
+            logging.info("Fetching weekly stats for added players...")
+            for player in add_rows:
+                # --- MODIFIED: Initialize with GP ---
+                player_stats = {'Player': player['player_name'], 'GP': 0}
+                player_id_str = str(player['player_id'])
+
+                # Query 1: Get aggregated stats
+                cursor.execute("""
+                    SELECT category, SUM(stat_value) as total
+                    FROM daily_player_stats
+                    WHERE CAST(player_id AS TEXT) = ?
+                      AND date_ >= ? AND date_ <= ?
+                    GROUP BY category
+                """, (player_id_str, start_date, end_date))
+
+                stats_raw = cursor.fetchall()
+                player_stat_map = {row['category']: row['total'] for row in stats_raw}
+
+                # --- NEW (Query 2): Get Games Played (distinct dates) ---
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT date_) as games_played
+                    FROM daily_player_stats
+                    WHERE CAST(player_id AS TEXT) = ?
+                      AND date_ >= ? AND date_ <= ?
+                """, (player_id_str, start_date, end_date))
+
+                gp_row = cursor.fetchone()
+                if gp_row:
+                    player_stats['GP'] = gp_row['games_played']
+                # --- END NEW ---
+
+                # Populate the player_stats dict
+                for cat in scoring_categories:
+                    player_stats[cat] = player_stat_map.get(cat, 0)
+
+                added_player_stats.append(player_stats)
+
         return jsonify({
             'adds': add_rows,
-            'drops': drop_rows
+            'drops': drop_rows,
+            'added_player_stats': added_player_stats,
+            'stat_headers': scoring_categories,
+            'is_weekly_view': is_weekly_view
         })
 
     except Exception as e:

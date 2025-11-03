@@ -528,6 +528,56 @@
         }
 
 
+        function createAddedPlayerStatsTable(title, headers, rows) {
+        let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                        <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
+
+        if (rows.length === 0) {
+            html += '<p class="text-gray-400">No stats found for added players this week.</p></div>';
+            return html;
+        }
+
+        html += `<div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead>
+                            <tr>
+                                <th class="table-header !text-left">Player</th>
+                                <th class="table-header">GP</th>
+                                `;
+
+        // Filter headers to only include those with data
+        // --- MODIFIED: Also filter out 'GP' since we added it manually ---
+        const headersWithData = headers.filter(header =>
+            header !== 'GP' && rows.some(row => row[header] && row[header] != 0)
+        );
+
+        for (const header of headersWithData) {
+            html += `<th class="table-header">${header}</th>`;
+        }
+
+        html += `           </tr>
+                        </thead>
+                        <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+        for (const row of rows) {
+            html += `<tr>
+                        <td class="table-cell !text-left">${row['Player']}</td>
+                        <td class="table-cell text-center">${row['GP'] || 0}</td>
+                        `;
+            for (const header of headersWithData) {
+                html += `<td class="table-cell text-center">${row[header] || 0}</td>`;
+            }
+            html += `</tr>`;
+        }
+
+        html += `       </tbody>
+                    </table>
+                </div>
+            </div>`;
+        return html;
+    }
+
+
         // --- NEW: Function to fetch and render transaction success ---
     async function fetchTransactionSuccess(teamName, week) {
         loadingSpinner.classList.remove('hidden');
@@ -545,15 +595,31 @@
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
-            // Render the two tables
+            // Render the two main tables
             const addsTable = createTransactionTable('Player Adds', data.adds);
             const dropsTable = createTransactionTable('Player Drops', data.drops);
 
-            // --- New Layout Structure ---
+            // --- NEW: Conditionally render the stats table ---
+            let statsTableHtml = '';
+            if (data.is_weekly_view && data.added_player_stats.length > 0) {
+                statsTableHtml = createAddedPlayerStatsTable(
+                    'Added Player Contributions',
+                    data.stat_headers,
+                    data.added_player_stats
+                );
+            } else if (data.is_weekly_view) {
+                 statsTableHtml = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                                     <h3 class="text-lg font-semibold text-white mb-3">Added Player Contributions</h3>
+                                     <p class="text-gray-400">No stats were recorded for added players during this week.</p>
+                                   </div>`;
+            }
+
+            // --- Modified Layout Structure ---
             historyContent.innerHTML = `
                 <div class="flex flex-col lg:flex-row gap-6">
-                    <div class="w-full lg:w-1/2">
+                    <div class="w-full lg:w-1/2 space-y-6">
                         ${addsTable}
+                        ${statsTableHtml}
                     </div>
                     <div class="w-full lg:w-1/2">
                         ${dropsTable}
