@@ -1600,10 +1600,14 @@ def get_transaction_success_data():
 
             # Get team name -> team_id map
             cursor.execute("SELECT team_id, name FROM teams")
-            # --- MODIFIED: Strip whitespace from names when creating map ---
-            teams_map = {row['name'].strip(): row['team_id'] for row in cursor.fetchall()}
 
+            # --- MODIFIED: Decode bytes to string, then strip whitespace ---
+            teams_map = {row['name'].decode('utf-8').strip(): row['team_id'] for row in cursor.fetchall()}
+
+            # --- NEW DEBUGGING ---
             logging.info(f"Team map keys: {list(teams_map.keys())}")
+            # --- END DEBUGGING ---
+
             # Get all 'add' transactions for the week
             cursor.execute("""
                 SELECT transaction_date, player_name, player_id, fantasy_team
@@ -1677,7 +1681,6 @@ def get_transaction_success_data():
     finally:
         if conn:
             conn.close()
-
 
 
 @app.route('/api/roster_data', methods=['POST'])
