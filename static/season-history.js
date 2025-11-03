@@ -10,12 +10,18 @@
 
     const errorDiv = document.getElementById('db-error-message');
     const weekSelect = document.getElementById('history-week-select');
-    const yourTeamSelect = document.getElementById('your-team-select');
+    const yourTeamSelect = document.getElementById('your-team-select'); // This is the <select>
     const reportSelect = document.getElementById('history-report-select');
     const historyContent = document.getElementById('history-content');
     const loadingSpinner = document.getElementById('loading-spinner');
 
+    // NEW: Get new elements
+    const viewToggleBtn = document.getElementById('history-view-toggle');
+    const teamSelectWrapper = document.getElementById('team-select-wrapper');
+
     let pageData = null;
+    let viewMode = 'team'; // NEW: State variable for the view
+    let firstWeekNum = null; // NEW: Store the first available week
 
     function showError(message) {
         errorDiv.textContent = message;
@@ -45,10 +51,20 @@
     }
 
     function populateDropdowns() {
-        // --- Team Dropdown --- (Handled by home.js)
+        // --- Team Dropdown --- (Handled by home.js, but we move it)
+        // NEW: Move the team select dropdown into its wrapper
+        if (yourTeamSelect) {
+            teamSelectWrapper.appendChild(yourTeamSelect.parentElement); // Move the label/select wrapper
+        }
 
         // --- Week Dropdown ---
         const completedWeeks = pageData.weeks.filter(week => week.week_num < pageData.current_week);
+
+        // NEW: Store the first week number
+        if (completedWeeks.length > 0) {
+            firstWeekNum = completedWeeks[0].week_num;
+        }
+
         let weekOptions = '<option value="all">All Season</option>';
         weekOptions += completedWeeks.map(week =>
             `<option value="${week.week_num}">
@@ -68,13 +84,46 @@
         reportSelect.innerHTML = reportOptions;
     }
 
+    // NEW: Function to handle view toggling
+    function toggleView() {
+        if (viewMode === 'team') {
+            viewMode = 'league';
+            viewToggleBtn.textContent = 'Switch to Team View';
+            teamSelectWrapper.classList.add('hidden');
+
+            // Disable "All Season" and switch to first week if 'all' is selected
+            const allSeasonOption = weekSelect.querySelector('option[value="all"]');
+            if (allSeasonOption) allSeasonOption.disabled = true;
+
+            if (weekSelect.value === 'all' && firstWeekNum) {
+                weekSelect.value = firstWeekNum;
+            }
+
+        } else {
+            viewMode = 'team';
+            viewToggleBtn.textContent = 'Switch to League View';
+            teamSelectWrapper.classList.remove('hidden');
+
+            // Re-enable "All Season"
+            const allSeasonOption = weekSelect.querySelector('option[value="all"]');
+            if (allSeasonOption) allSeasonOption.disabled = false;
+        }
+
+        // Re-fetch data for the new view
+        fetchAndRenderTable();
+    }
+
+
     function setupEventListeners() {
         weekSelect.addEventListener('change', fetchAndRenderTable);
         yourTeamSelect.addEventListener('change', fetchAndRenderTable);
         reportSelect.addEventListener('change', fetchAndRenderTable);
+
+        // NEW: Add listener for the toggle button
+        viewToggleBtn.addEventListener('click', toggleView);
     }
 
-    // --- NEW: Helper function to create a table ---
+    // --- (createTable function is unchanged) ---
     function createTable(title, headers, rows) {
         let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                         <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
@@ -126,6 +175,7 @@
     }
 
 
+    // --- (createMatchupStatsTable function is unchanged) ---
     function createMatchupStatsTable(matchup_data) {
             const { your_team_stats, opponent_team_stats, opponent_name, scoring_categories } = matchup_data;
 
@@ -225,7 +275,8 @@
         }
 
 
-        function createOptimizedMatchupTable(optimized_data, original_data) {
+    // --- (createOptimizedMatchupTable function is unchanged) ---
+    function createOptimizedMatchupTable(optimized_data, original_data) {
 
             const { your_team_stats, opponent_team_stats, opponent_name, scoring_categories } = optimized_data;
             const original_your_stats = original_data.your_team_stats;
@@ -330,7 +381,8 @@
         }
 
 
-        function createSwapsStatTable(swaps_log, skater_headers, goalie_headers) {
+    // --- (createSwapsStatTable function is unchanged) ---
+    function createSwapsStatTable(swaps_log, skater_headers, goalie_headers) {
                 const all_headers = [...skater_headers, ...goalie_headers];
 
                 // Filter headers to only those that actually changed
@@ -414,7 +466,7 @@
             }
 
 
-    // --- NEW: Function to fetch and render bench points ---
+    // --- (fetchBenchPoints function is unchanged) ---
     async function fetchBenchPoints(teamName, week) {
         loadingSpinner.classList.remove('hidden');
         historyContent.innerHTML = '';
@@ -494,41 +546,43 @@
     }
 
 
+    // --- (createTransactionTable function is unchanged) ---
     function createTransactionTable(title, rows) {
-            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                            <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
+        let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                        <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
 
-            if (rows.length === 0) {
-                html += '<p class="text-gray-400">No transactions found for this period.</p></div>';
-                return html;
-            }
-
-            html += `<div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-700">
-                            <thead>
-                                <tr>
-                                    <th class="table-header !text-left">Date</th>
-                                    <th class="table-header !text-left">Player</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-gray-900 divide-y divide-gray-700">`;
-
-            for (const row of rows) {
-                html += `<tr>
-                            <td class="table-cell !text-left">${row['transaction_date']}</td>
-                            <td class="table-cell !text-left">${row['player_name']}</td>
-                         </tr>`;
-            }
-
-            html += `       </tbody>
-                        </table>
-                    </div>
-                </div>`;
+        if (rows.length === 0) {
+            html += '<p class="text-gray-400">No transactions found for this period.</p></div>';
             return html;
         }
 
+        html += `<div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead>
+                            <tr>
+                                <th class="table-header !text-left">Date</th>
+                                <th class="table-header !text-left">Player</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-gray-900 divide-y divide-gray-700">`;
 
-        function createAddedPlayerStatsTable(title, headers, rows) {
+        for (const row of rows) {
+            html += `<tr>
+                        <td class="table-cell !text-left">${row['transaction_date']}</td>
+                        <td class="table-cell !text-left">${row['player_name']}</td>
+                     </tr>`;
+        }
+
+        html += `       </tbody>
+                    </table>
+                </div>
+            </div>`;
+        return html;
+    }
+
+
+    // --- (createAddedPlayerStatsTable function is unchanged) ---
+    function createAddedPlayerStatsTable(title, headers, rows) {
         let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                         <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
 
@@ -542,6 +596,7 @@
                         <thead>
                             <tr>
                                 <th class="table-header !text-left">Player</th>
+                                <!-- NEW: Added GP column -->
                                 <th class="table-header">GP</th>
                                 `;
 
@@ -562,6 +617,7 @@
         for (const row of rows) {
             html += `<tr>
                         <td class="table-cell !text-left">${row['Player']}</td>
+                        <!-- NEW: Added cell for GP data -->
                         <td class="table-cell text-center">${row['GP'] || 0}</td>
                         `;
             for (const header of headersWithData) {
@@ -578,7 +634,7 @@
     }
 
 
-        // --- NEW: Function to fetch and render transaction success ---
+    // --- MODIFIED: Function to fetch and render transaction success (handles both views) ---
     async function fetchTransactionSuccess(teamName, week) {
         loadingSpinner.classList.remove('hidden');
         historyContent.innerHTML = '';
@@ -588,44 +644,72 @@
             const response = await fetch('/api/history/transaction_success', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ team_name: teamName, week: week })
+                // MODIFIED: Send the viewMode
+                body: JSON.stringify({
+                    team_name: teamName,
+                    week: week,
+                    view_mode: viewMode
+                })
             });
 
             if (!response.ok) throw new Error(`Server error: ${response.status}`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
-            // Render the two main tables
-            const addsTable = createTransactionTable('Player Adds', data.adds);
-            const dropsTable = createTransactionTable('Player Drops', data.drops);
+            // NEW: Split rendering based on view_mode
+            if (data.view_mode === 'team') {
+                // --- Render Team View (existing logic) ---
+                const addsTable = createTransactionTable('Player Adds', data.adds);
+                const dropsTable = createTransactionTable('Player Drops', data.drops);
 
-            // --- NEW: Conditionally render the stats table ---
-            let statsTableHtml = '';
-            if (data.is_weekly_view && data.added_player_stats.length > 0) {
-                statsTableHtml = createAddedPlayerStatsTable(
-                    'Added Player Contributions',
-                    data.stat_headers,
-                    data.added_player_stats
-                );
-            } else if (data.is_weekly_view) {
-                 statsTableHtml = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                                     <h3 class="text-lg font-semibold text-white mb-3">Added Player Contributions</h3>
-                                     <p class="text-gray-400">No stats were recorded for added players during this week.</p>
-                                   </div>`;
+                let statsTableHtml = '';
+                if (data.is_weekly_view && data.added_player_stats.length > 0) {
+                    statsTableHtml = createAddedPlayerStatsTable(
+                        'Added Player Contributions',
+                        data.stat_headers,
+                        data.added_player_stats
+                    );
+                } else if (data.is_weekly_view) {
+                    statsTableHtml = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                                        <h3 class="text-lg font-semibold text-white mb-3">Added Player Contributions</h3>
+                                        <p class="text-gray-400">No stats were recorded for added players during this week.</p>
+                                      </div>`;
+                }
+
+                historyContent.innerHTML = `
+                    <div class="flex flex-col lg:flex-row gap-6">
+                        <div class="w-full lg:w-1/2 space-y-6">
+                            ${addsTable}
+                            ${statsTableHtml}
+                        </div>
+                        <div class="w-full lg:w-1/2">
+                            ${dropsTable}
+                        </div>
+                    </div>
+                `;
+
+            } else if (data.view_mode === 'league') {
+                // --- Render League View (new logic) ---
+                let leagueHtml = '';
+                const teamNames = Object.keys(data.league_data).sort();
+
+                if (teamNames.length === 0) {
+                    leagueHtml = '<p class="text-gray-400">No transactions found for any team this week.</p>';
+                } else {
+                    for (const teamName of teamNames) {
+                        const teamData = data.league_data[teamName];
+                        // We can re-use the stats table generator, just with the team name as the title
+                        leagueHtml += createAddedPlayerStatsTable(
+                            `${teamName} - Added Player Contributions`,
+                            data.stat_headers,
+                            teamData
+                        );
+                    }
+                }
+
+                // League view is one single column of tables
+                historyContent.innerHTML = `<div class="space-y-6">${leagueHtml}</div>`;
             }
-
-            // --- Modified Layout Structure ---
-            historyContent.innerHTML = `
-                <div class="flex flex-col lg:flex-row gap-6">
-                    <div class="w-full lg:w-1/2 space-y-6">
-                        ${addsTable}
-                        ${statsTableHtml}
-                    </div>
-                    <div class="w-full lg:w-1/2">
-                        ${dropsTable}
-                    </div>
-                </div>
-            `;
 
         } catch (error) {
             console.error('Error fetching transaction data:', error);
@@ -636,13 +720,31 @@
     }
 
 
-
+    // --- MODIFIED: Main function to handle report switching ---
     async function fetchAndRenderTable() {
             const selectedTeam = yourTeamSelect.value;
             const selectedWeek = weekSelect.value;
             const selectedReport = reportSelect.value;
 
-            console.log(`Fetching data for: Team ${selectedTeam}, Week ${selectedWeek}, Report ${selectedReport}`);
+            console.log(`Fetching data for: Team ${selectedTeam}, Week ${selectedWeek}, Report ${selectedReport}, View ${viewMode}`);
+
+            // NEW: Hide toggle button if the report is not 'transaction_success'
+            if (selectedReport === 'transaction_success') {
+                viewToggleBtn.classList.remove('hidden');
+            } else {
+                viewToggleBtn.classList.add('hidden');
+                // If viewMode is 'league', switch back to 'team' when changing reports
+                if (viewMode === 'league') {
+                    toggleView(); // This will reset the view and re-call fetchAndRenderTable
+                    return; // Exit this call, the toggleView will trigger a new one
+                }
+            }
+
+            // NEW: Add a check for 'All Season' in League View (should be disabled, but as a safeguard)
+            if (selectedReport === 'transaction_success' && viewMode === 'league' && selectedWeek === 'all') {
+                showError('League View requires a specific week to be selected. Please select a week.');
+                return;
+            }
 
             // Route based on the selected report
             switch (selectedReport) {
@@ -650,6 +752,7 @@
                     await fetchBenchPoints(selectedTeam, selectedWeek);
                     break;
 
+                // NEW: This case now handles both views
                 case 'transaction_success':
                     await fetchTransactionSuccess(selectedTeam, selectedWeek);
                     break;

@@ -1497,9 +1497,11 @@ def get_transaction_success_data():
         data = request.get_json()
         team_name = data.get('team_name')
         week = data.get('week')
+        # NEW: Get the view mode, default to 'team'
+        view_mode = data.get('view_mode', 'team')
 
         logging.info(f"--- Transaction Success Report ---")
-        logging.info(f"Selected team: {team_name}, week: '{week}'")
+        logging.info(f"Selected team: {team_name}, week: '{week}', view_mode: '{view_mode}'")
 
         # Get scoring categories for headers
         cursor.execute("SELECT category FROM scoring ORDER BY scoring_group DESC, stat_id")
@@ -1507,7 +1509,6 @@ def get_transaction_success_data():
 
         start_date, end_date = None, None
         is_weekly_view = False
-        added_player_stats = []
 
         if week != 'all':
             is_weekly_view = True
@@ -1525,73 +1526,142 @@ def get_transaction_success_data():
             except (ValueError, TypeError):
                 return jsonify({'error': 'Invalid week format.'}), 400
 
-        def fetch_transactions(move_type):
-            sql_params = [team_name, move_type]
-            # --- MODIFIED: Select player_id as well ---
-            sql_query = """
-                SELECT transaction_date, player_name, player_id
+        # --- NEW: Logic split for Team vs League View ---
+
+        if view_mode == 'team':
+            # --- This is the existing logic for Team View ---
+            added_player_stats = []
+
+            def fetch_transactions(move_type):
+                sql_params = [team_name, move_type]
+                sql_query = """
+                    SELECT transaction_date, player_name, player_id
+                    FROM transactions
+                    WHERE CAST(fantasy_team AS TEXT) = ? AND move_type = ?
+                """
+                if start_date and end_date:
+                    sql_query += " AND transaction_date >= ? AND transaction_date <= ?"
+                    sql_params.extend([start_date, end_date])
+
+                sql_query += " ORDER BY transaction_date, player_name"
+                cursor.execute(sql_query, tuple(sql_params))
+                return decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+            add_rows = fetch_transactions('add')
+            drop_rows = fetch_transactions('drop')
+            logging.info(f"Found {len(add_rows)} adds and {len(drop_rows)} drops for team '{team_name}'.")
+
+            if is_weekly_view and add_rows:
+                logging.info("Fetching weekly stats for added players (Team View)...")
+                for player in add_rows:
+                    player_stats = {'Player': player['player_name'], 'GP': 0}
+                    player_id_str = str(player['player_id'])
+
+                    cursor.execute("""
+                        SELECT category, SUM(stat_value) as total
+                        FROM daily_player_stats
+                        WHERE CAST(player_id AS TEXT) = ?
+                          AND date_ >= ? AND date_ <= ?
+                        GROUP BY category
+                    """, (player_id_str, start_date, end_date))
+
+                    stats_raw = cursor.fetchall()
+                    player_stat_map = {row['category']: row['total'] for row in stats_raw}
+
+                    cursor.execute("""
+                        SELECT COUNT(DISTINCT date_) as games_played
+                        FROM daily_player_stats
+                        WHERE CAST(player_id AS TEXT) = ?
+                          AND date_ >= ? AND date_ <= ?
+                    """, (player_id_str, start_date, end_date))
+
+                    gp_row = cursor.fetchone()
+                    if gp_row:
+                        player_stats['GP'] = gp_row['games_played']
+
+                    for cat in scoring_categories:
+                        player_stats[cat] = player_stat_map.get(cat, 0)
+
+                    added_player_stats.append(player_stats)
+
+            return jsonify({
+                'view_mode': 'team',
+                'adds': add_rows,
+                'drops': drop_rows,
+                'added_player_stats': added_player_stats,
+                'stat_headers': scoring_categories,
+                'is_weekly_view': is_weekly_view
+            })
+
+        elif view_mode == 'league':
+            # --- This is the new logic for League View ---
+            if not is_weekly_view:
+                return jsonify({'error': 'League View requires a specific week to be selected.'}), 400
+
+            # Get team name -> team_id map
+            cursor.execute("SELECT team_id, name FROM teams")
+            teams_map = {row['name']: row['team_id'] for row in cursor.fetchall()}
+
+            # Get all 'add' transactions for the week
+            cursor.execute("""
+                SELECT transaction_date, player_name, player_id, fantasy_team
                 FROM transactions
-                WHERE CAST(fantasy_team AS TEXT) = ? AND move_type = ?
-            """
-            if start_date and end_date:
-                sql_query += " AND transaction_date >= ? AND transaction_date <= ?"
-                sql_params.extend([start_date, end_date])
+                WHERE move_type = 'add'
+                  AND transaction_date >= ? AND transaction_date <= ?
+                ORDER BY fantasy_team, transaction_date, player_name
+            """, (start_date, end_date))
 
-            sql_query += " ORDER BY transaction_date, player_name"
-            cursor.execute(sql_query, tuple(sql_params))
-            return decode_dict_values([dict(row) for row in cursor.fetchall()])
+            all_adds = decode_dict_values([dict(row) for row in cursor.fetchall()])
+            logging.info(f"Found {len(all_adds)} total adds for the league in week {week}.")
 
-        add_rows = fetch_transactions('add')
-        drop_rows = fetch_transactions('drop')
+            league_data = defaultdict(list)
 
-        logging.info(f"Found {len(add_rows)} adds and {len(drop_rows)} drops.")
+            for player in all_adds:
+                team_name = player['fantasy_team']
+                team_id = teams_map.get(team_name)
 
-        # --- MODIFIED: Get stats AND games played for added players ---
-        if is_weekly_view and add_rows:
-            logging.info("Fetching weekly stats for added players...")
-            for player in add_rows:
-                # --- MODIFIED: Initialize with GP ---
-                player_stats = {'Player': player['player_name'], 'GP': 0}
+                if not team_id:
+                    logging.warning(f"Skipping player {player['player_name']}: could not find team_id for team '{team_name}'.")
+                    continue
+
                 player_id_str = str(player['player_id'])
+                player_stats = {'Player': player['player_name'], 'GP': 0}
 
-                # Query 1: Get aggregated stats
+                # Query 1: Get aggregated stats for that player *for that team*
                 cursor.execute("""
                     SELECT category, SUM(stat_value) as total
                     FROM daily_player_stats
-                    WHERE CAST(player_id AS TEXT) = ?
+                    WHERE CAST(player_id AS TEXT) = ? AND team_id = ?
                       AND date_ >= ? AND date_ <= ?
                     GROUP BY category
-                """, (player_id_str, start_date, end_date))
+                """, (player_id_str, team_id, start_date, end_date))
 
                 stats_raw = cursor.fetchall()
                 player_stat_map = {row['category']: row['total'] for row in stats_raw}
 
-                # --- NEW (Query 2): Get Games Played (distinct dates) ---
+                # Query 2: Get Games Played for that player *for that team*
                 cursor.execute("""
                     SELECT COUNT(DISTINCT date_) as games_played
                     FROM daily_player_stats
-                    WHERE CAST(player_id AS TEXT) = ?
+                    WHERE CAST(player_id AS TEXT) = ? AND team_id = ?
                       AND date_ >= ? AND date_ <= ?
-                """, (player_id_str, start_date, end_date))
+                """, (player_id_str, team_id, start_date, end_date))
 
                 gp_row = cursor.fetchone()
                 if gp_row:
                     player_stats['GP'] = gp_row['games_played']
-                # --- END NEW ---
 
-                # Populate the player_stats dict
                 for cat in scoring_categories:
                     player_stats[cat] = player_stat_map.get(cat, 0)
 
-                added_player_stats.append(player_stats)
+                league_data[team_name].append(player_stats)
 
-        return jsonify({
-            'adds': add_rows,
-            'drops': drop_rows,
-            'added_player_stats': added_player_stats,
-            'stat_headers': scoring_categories,
-            'is_weekly_view': is_weekly_view
-        })
+            return jsonify({
+                'view_mode': 'league',
+                'league_data': league_data,
+                'stat_headers': scoring_categories,
+                'is_weekly_view': True # League view is always weekly for now
+            })
 
     except Exception as e:
         logging.error(f"Error fetching transaction data: {e}", exc_info=True)

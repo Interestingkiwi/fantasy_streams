@@ -6,7 +6,8 @@
 
     <div id="db-error-message" class="hidden bg-red-800 text-white p-3 rounded-md"></div>
 
-    <div class="flex flex-wrap gap-4 items-center p-4 bg-gray-800 rounded-lg">
+    <!-- MODIFIED: Added flex-col/flex-row for layout and the new button -->
+    <div class="flex flex-col sm:flex-row sm:flex-wrap gap-4 items-center p-4 bg-gray-800 rounded-lg">
         <div>
             <label for="history-week-select" class="block text-sm font-medium text-gray-300">Select Week</label>
             <select id="history-week-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-700 text-white border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"></select>
@@ -15,7 +16,19 @@
             <label for="history-report-select" class="block text-sm font-medium text-gray-300">Report</label>
             <select id="history-report-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-700 text-white border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"></select>
         </div>
+
+        <!-- NEW: Wrapper for the team select dropdown (which is added by home.js) -->
+        <div id="team-select-wrapper">
+            <!-- The team select dropdown will be placed here by home.js -->
         </div>
+
+        <!-- NEW: Toggle Button - self-aligns to the end in a flex row -->
+        <div class="mt-1 sm:ml-auto">
+            <button id="history-view-toggle" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out">
+                Switch to League View
+            </button>
+        </div>
+    </div>
 
     <div id="history-content" class="space-y-4">
         <div id="loading-spinner" class="hidden text-center">
