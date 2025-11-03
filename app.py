@@ -1563,15 +1563,19 @@ def get_transaction_success_data():
                     player_stats = {'Player': player['player_name'], 'GP': 0}
                     player_id_str = str(player['player_id'])
 
-                    # --- MODIFIED: Query 1: Get player position ---
-                    cursor.execute("SELECT positions FROM players WHERE player_id = ?", (player_id_str,))
-                    player_info = cursor.fetchone()
-                    is_goalie = False
-                    if player_info and 'G' in player_info['positions'].split(','):
-                        is_goalie = True
-                    # --- END MODIFIED ---
+                    # --- REVERTED: Query 1: Check for 'g' in daily_player_stats ---
+                    cursor.execute("""
+                        SELECT 1
+                        FROM daily_player_stats
+                        WHERE CAST(player_id AS TEXT) = ?
+                          AND date_ >= ? AND date_ <= ?
+                          AND lineup_pos = 'g'
+                        LIMIT 1
+                    """, (player_id_str, start_date, end_date))
+                    is_goalie = cursor.fetchone() is not None
+                    # --- END REVERTED ---
 
-                    # --- MODIFIED: Query 2: Get aggregated stats (simplified) ---
+                    # --- Query 2: Get aggregated stats (simplified) ---
                     cursor.execute("""
                         SELECT category, SUM(stat_value) as total
                         FROM daily_player_stats
@@ -1582,7 +1586,6 @@ def get_transaction_success_data():
 
                     stats_raw = cursor.fetchall()
                     player_stat_map = {row['category']: row['total'] for row in stats_raw}
-                    # --- END MODIFIED ---
 
                     # --- MODIFIED: Query 3: Get Games Played with non-zero stats ---
                     cursor.execute("""
@@ -1674,15 +1677,19 @@ def get_transaction_success_data():
                 player_id_str = str(player['player_id'])
                 player_stats = {'Player': player['player_name'], 'GP': 0}
 
-                # --- MODIFIED: Query 1: Get player position ---
-                cursor.execute("SELECT positions FROM players WHERE player_id = ?", (player_id_str,))
-                player_info = cursor.fetchone()
-                is_goalie = False
-                if player_info and 'G' in player_info['positions'].split(','):
-                    is_goalie = True
-                # --- END MODIFIED ---
+                # --- REVERTED: Query 1: Check for 'g' in daily_player_stats ---
+                cursor.execute("""
+                    SELECT 1
+                    FROM daily_player_stats
+                    WHERE CAST(player_id AS TEXT) = ? AND team_id = ?
+                      AND date_ >= ? AND date_ <= ?
+                      AND lineup_pos = 'g'
+                    LIMIT 1
+                """, (player_id_str, team_id, start_date, end_date))
+                is_goalie = cursor.fetchone() is not None
+                # --- END REVERTED ---
 
-                # --- MODIFIED: Query 2: Get aggregated stats (simplified) ---
+                # --- Query 2: Get aggregated stats (simplified) ---
                 cursor.execute("""
                     SELECT category, SUM(stat_value) as total
                     FROM daily_player_stats
@@ -1693,7 +1700,6 @@ def get_transaction_success_data():
 
                 stats_raw = cursor.fetchall()
                 player_stat_map = {row['category']: row['total'] for row in stats_raw}
-                # --- END MODIFIED ---
 
                 # --- MODIFIED: Query 3: Get Games Played with non-zero stats *for that team* ---
                 cursor.execute("""
