@@ -1563,34 +1563,44 @@ def get_transaction_success_data():
                     player_stats = {'Player': player['player_name'], 'GP': 0}
                     player_id_str = str(player['player_id'])
 
-                    # --- MODIFIED: Query 1: Get aggregated stats AND lineup_pos ---
+                    # --- MODIFIED: Query 1: Get player position ---
+                    cursor.execute("SELECT positions FROM players WHERE player_id = ?", (player_id_str,))
+                    player_info = cursor.fetchone()
+                    is_goalie = False
+                    if player_info and 'G' in player_info['positions'].split(','):
+                        is_goalie = True
+                    # --- END MODIFIED ---
+
+                    # --- MODIFIED: Query 2: Get aggregated stats (simplified) ---
                     cursor.execute("""
-                        SELECT category, SUM(stat_value) as total, lineup_pos
+                        SELECT category, SUM(stat_value) as total
                         FROM daily_player_stats
                         WHERE CAST(player_id AS TEXT) = ?
                           AND date_ >= ? AND date_ <= ?
-                        GROUP BY category, lineup_pos
+                        GROUP BY category
                     """, (player_id_str, start_date, end_date))
 
                     stats_raw = cursor.fetchall()
-                    player_stat_map = defaultdict(float)
-                    is_goalie = False
-                    for row in stats_raw:
-                        player_stat_map[row['category']] += row['total']
-                        if row['lineup_pos'] == 'g':
-                            is_goalie = True
+                    player_stat_map = {row['category']: row['total'] for row in stats_raw}
                     # --- END MODIFIED ---
 
+                    # --- MODIFIED: Query 3: Get Games Played with non-zero stats ---
                     cursor.execute("""
-                        SELECT COUNT(DISTINCT date_) as games_played
-                        FROM daily_player_stats
-                        WHERE CAST(player_id AS TEXT) = ?
-                          AND date_ >= ? AND date_ <= ?
+                        SELECT COUNT(T.date_) as games_played
+                        FROM (
+                            SELECT date_, SUM(stat_value) as total_stats
+                            FROM daily_player_stats
+                            WHERE CAST(player_id AS TEXT) = ?
+                              AND date_ >= ? AND date_ <= ?
+                            GROUP BY date_
+                            HAVING total_stats > 0
+                        ) T
                     """, (player_id_str, start_date, end_date))
 
                     gp_row = cursor.fetchone()
                     if gp_row:
                         player_stats['GP'] = gp_row['games_played']
+                    # --- END MODIFIED ---
 
                     # --- MODIFIED: Populate based on position and fill 0s ---
                     if is_goalie:
@@ -1664,35 +1674,44 @@ def get_transaction_success_data():
                 player_id_str = str(player['player_id'])
                 player_stats = {'Player': player['player_name'], 'GP': 0}
 
-                # --- MODIFIED: Query 1: Get aggregated stats AND lineup_pos ---
+                # --- MODIFIED: Query 1: Get player position ---
+                cursor.execute("SELECT positions FROM players WHERE player_id = ?", (player_id_str,))
+                player_info = cursor.fetchone()
+                is_goalie = False
+                if player_info and 'G' in player_info['positions'].split(','):
+                    is_goalie = True
+                # --- END MODIFIED ---
+
+                # --- MODIFIED: Query 2: Get aggregated stats (simplified) ---
                 cursor.execute("""
-                    SELECT category, SUM(stat_value) as total, lineup_pos
+                    SELECT category, SUM(stat_value) as total
                     FROM daily_player_stats
                     WHERE CAST(player_id AS TEXT) = ? AND team_id = ?
                       AND date_ >= ? AND date_ <= ?
-                    GROUP BY category, lineup_pos
+                    GROUP BY category
                 """, (player_id_str, team_id, start_date, end_date))
 
                 stats_raw = cursor.fetchall()
-                player_stat_map = defaultdict(float)
-                is_goalie = False
-                for row in stats_raw:
-                    player_stat_map[row['category']] += row['total']
-                    if row['lineup_pos'] == 'g':
-                        is_goalie = True
+                player_stat_map = {row['category']: row['total'] for row in stats_raw}
                 # --- END MODIFIED ---
 
-                # Query 2: Get Games Played for that player *for that team*
+                # --- MODIFIED: Query 3: Get Games Played with non-zero stats *for that team* ---
                 cursor.execute("""
-                    SELECT COUNT(DISTINCT date_) as games_played
-                    FROM daily_player_stats
-                    WHERE CAST(player_id AS TEXT) = ? AND team_id = ?
-                      AND date_ >= ? AND date_ <= ?
+                    SELECT COUNT(T.date_) as games_played
+                    FROM (
+                        SELECT date_, SUM(stat_value) as total_stats
+                        FROM daily_player_stats
+                        WHERE CAST(player_id AS TEXT) = ? AND team_id = ?
+                          AND date_ >= ? AND date_ <= ?
+                        GROUP BY date_
+                        HAVING total_stats > 0
+                    ) T
                 """, (player_id_str, team_id, start_date, end_date))
 
                 gp_row = cursor.fetchone()
                 if gp_row:
                     player_stats['GP'] = gp_row['games_played']
+                # --- END MODIFIED ---
 
                 # --- MODIFIED: Populate based on position and fill 0s ---
                 if is_goalie:
