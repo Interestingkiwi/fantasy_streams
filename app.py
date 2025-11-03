@@ -1603,6 +1603,7 @@ def get_transaction_success_data():
             # --- MODIFIED: Strip whitespace from names when creating map ---
             teams_map = {row['name'].strip(): row['team_id'] for row in cursor.fetchall()}
 
+            logging.info(f"Team map keys: {list(teams_map.keys())}")
             # Get all 'add' transactions for the week
             cursor.execute("""
                 SELECT transaction_date, player_name, player_id, fantasy_team
@@ -1621,6 +1622,11 @@ def get_transaction_success_data():
                 # --- MODIFIED: Strip whitespace from transaction team name before lookup ---
                 team_name = player['fantasy_team'].strip()
                 team_id = teams_map.get(team_name)
+
+                # --- NEW DEBUGGING ---
+                if team_id is None:
+                    logging.warning(f"Lookup failed for team: '{team_name}' (Original from transactions: '{player['fantasy_team']}')")
+                # --- END DEBUGGING ---
 
                 if not team_id:
                     logging.warning(f"Skipping player {player['player_name']}: could not find team_id for team '{team_name}'.")
