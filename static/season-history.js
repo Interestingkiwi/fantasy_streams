@@ -10,18 +10,18 @@
 
     const errorDiv = document.getElementById('db-error-message');
     const weekSelect = document.getElementById('history-week-select');
-    const yourTeamSelect = document.getElementById('your-team-select'); // This is the <select>
+    const yourTeamSelect = document.getElementById('your-team-select');
     const reportSelect = document.getElementById('history-report-select');
     const historyContent = document.getElementById('history-content');
     const loadingSpinner = document.getElementById('loading-spinner');
 
-    // NEW: Get new elements
-    const viewToggleBtn = document.getElementById('history-view-toggle');
+    // --- NEW: Add toggle button and team select wrapper ---
+    const viewToggleButton = document.getElementById('view-toggle-button');
     const teamSelectWrapper = document.getElementById('team-select-wrapper');
+    let currentViewMode = 'team'; // 'team' or 'league'
+    // --- END NEW ---
 
     let pageData = null;
-    let viewMode = 'team'; // NEW: State variable for the view
-    let firstWeekNum = null; // NEW: Store the first available week
 
     function showError(message) {
         errorDiv.textContent = message;
@@ -51,20 +51,10 @@
     }
 
     function populateDropdowns() {
-        // --- Team Dropdown --- (Handled by home.js, but we move it)
-        // NEW: Move the team select dropdown into its wrapper
-        if (yourTeamSelect) {
-            teamSelectWrapper.appendChild(yourTeamSelect.parentElement); // Move the label/select wrapper
-        }
+        // --- Team Dropdown --- (Handled by home.js)
 
         // --- Week Dropdown ---
         const completedWeeks = pageData.weeks.filter(week => week.week_num < pageData.current_week);
-
-        // NEW: Store the first week number
-        if (completedWeeks.length > 0) {
-            firstWeekNum = completedWeeks[0].week_num;
-        }
-
         let weekOptions = '<option value="all">All Season</option>';
         weekOptions += completedWeeks.map(week =>
             `<option value="${week.week_num}">
@@ -84,46 +74,60 @@
         reportSelect.innerHTML = reportOptions;
     }
 
-    // NEW: Function to handle view toggling
-    function toggleView() {
-        if (viewMode === 'team') {
-            viewMode = 'league';
-            viewToggleBtn.textContent = 'Switch to Team View';
-            teamSelectWrapper.classList.add('hidden');
-
-            // Disable "All Season" and switch to first week if 'all' is selected
-            const allSeasonOption = weekSelect.querySelector('option[value="all"]');
-            if (allSeasonOption) allSeasonOption.disabled = true;
-
-            if (weekSelect.value === 'all' && firstWeekNum) {
-                weekSelect.value = firstWeekNum;
-            }
-
-        } else {
-            viewMode = 'team';
-            viewToggleBtn.textContent = 'Switch to League View';
-            teamSelectWrapper.classList.remove('hidden');
-
-            // Re-enable "All Season"
-            const allSeasonOption = weekSelect.querySelector('option[value="all"]');
-            if (allSeasonOption) allSeasonOption.disabled = false;
-        }
-
-        // Re-fetch data for the new view
-        fetchAndRenderTable();
-    }
-
-
     function setupEventListeners() {
         weekSelect.addEventListener('change', fetchAndRenderTable);
         yourTeamSelect.addEventListener('change', fetchAndRenderTable);
-        reportSelect.addEventListener('change', fetchAndRenderTable);
-
-        // NEW: Add listener for the toggle button
-        viewToggleBtn.addEventListener('click', toggleView);
+        reportSelect.addEventListener('change', handleReportChange); // --- MODIFIED ---
+        viewToggleButton.addEventListener('click', toggleViewMode); // --- NEW ---
     }
 
-    // --- (createTable function is unchanged) ---
+    // --- NEW: Show/hide controls based on report ---
+    function handleReportChange() {
+        const selectedReport = reportSelect.value;
+        if (selectedReport === 'transaction_success') {
+            viewToggleButton.classList.remove('hidden');
+            // Restore view state
+            updateControlsForViewMode();
+        } else {
+            viewToggleButton.classList.add('hidden');
+            // Always show team select for other reports
+            teamSelectWrapper.classList.remove('hidden');
+        }
+        fetchAndRenderTable();
+    }
+
+    // --- NEW: Toggle view mode logic ---
+    function toggleViewMode() {
+        currentViewMode = (currentViewMode === 'team') ? 'league' : 'team';
+        updateControlsForViewMode();
+        fetchAndRenderTable();
+    }
+
+    // --- NEW: Update UI based on view mode ---
+    function updateControlsForViewMode() {
+        if (currentViewMode === 'league') {
+            viewToggleButton.textContent = 'Switch to Team View';
+            viewToggleButton.classList.replace('bg-blue-600', 'bg-indigo-600');
+            viewToggleButton.classList.replace('hover:bg-blue-700', 'hover:bg-indigo-700');
+            teamSelectWrapper.classList.add('hidden'); // Hide team select in league view
+
+            // --- NEW: Disable "All Season" in league view ---
+            if (weekSelect.value === 'all') {
+                weekSelect.value = pageData.weeks.filter(w => w.week_num < pageData.current_week)[0]?.week_num || '1';
+            }
+            weekSelect.querySelector('option[value="all"]').disabled = true;
+
+        } else { // 'team' view
+            viewToggleButton.textContent = 'Switch to League View';
+            viewToggleButton.classList.replace('bg-indigo-600', 'bg-blue-600');
+            viewToggleButton.classList.replace('hover:bg-indigo-700', 'hover:bg-blue-700');
+            teamSelectWrapper.classList.remove('hidden'); // Show team select
+            weekSelect.querySelector('option[value="all"]').disabled = false; // Re-enable "All Season"
+        }
+    }
+
+
+    // --- Helper function to create a table ---
     function createTable(title, headers, rows) {
         let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                         <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
@@ -175,7 +179,6 @@
     }
 
 
-    // --- (createMatchupStatsTable function is unchanged) ---
     function createMatchupStatsTable(matchup_data) {
             const { your_team_stats, opponent_team_stats, opponent_name, scoring_categories } = matchup_data;
 
@@ -275,8 +278,7 @@
         }
 
 
-    // --- (createOptimizedMatchupTable function is unchanged) ---
-    function createOptimizedMatchupTable(optimized_data, original_data) {
+        function createOptimizedMatchupTable(optimized_data, original_data) {
 
             const { your_team_stats, opponent_team_stats, opponent_name, scoring_categories } = optimized_data;
             const original_your_stats = original_data.your_team_stats;
@@ -381,8 +383,7 @@
         }
 
 
-    // --- (createSwapsStatTable function is unchanged) ---
-    function createSwapsStatTable(swaps_log, skater_headers, goalie_headers) {
+        function createSwapsStatTable(swaps_log, skater_headers, goalie_headers) {
                 const all_headers = [...skater_headers, ...goalie_headers];
 
                 // Filter headers to only those that actually changed
@@ -466,7 +467,7 @@
             }
 
 
-    // --- (fetchBenchPoints function is unchanged) ---
+    // --- Function to fetch and render bench points ---
     async function fetchBenchPoints(teamName, week) {
         loadingSpinner.classList.remove('hidden');
         historyContent.innerHTML = '';
@@ -545,13 +546,12 @@
         }
     }
 
-
-    // --- (createTransactionTable function is unchanged) ---
+    // --- Helper function to create a simple transaction table ---
     function createTransactionTable(title, rows) {
         let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                         <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
 
-        if (rows.length === 0) {
+        if (!rows || rows.length === 0) {
             html += '<p class="text-gray-400">No transactions found for this period.</p></div>';
             return html;
         }
@@ -581,13 +581,15 @@
     }
 
 
-    // --- (createAddedPlayerStatsTable function is unchanged) ---
+    // --- Helper function to create the added player stats table ---
+    // --- MODIFIED: Added defaults for headers and rows to prevent undefined errors ---
     function createAddedPlayerStatsTable(title, headers = [], rows = []) {
         let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                         <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
 
         if (rows.length === 0) {
-            html += '<p class="text-gray-400">No stats found for added players this week.</p></div>';
+            // --- MODIFIED: More specific message ---
+            html += `<p class="text-gray-400">No ${title.toLowerCase()} found or no stats recorded.</p></div>`;
             return html;
         }
 
@@ -600,11 +602,6 @@
                                 `;
 
         // --- MODIFIED: Use all headers, don't filter ---
-        // Filter headers to only include those with data
-        // const headersWithData = headers.filter(header =>
-        //     header !== 'GP' && rows.some(row => row[header] && row[header] != 0)
-        // );
-
         // Use all headers provided by the server
         const headersToDisplay = headers.filter(h => h !== 'GP'); // Still exclude GP, as it's manually added
 
@@ -638,9 +635,8 @@
     }
 
 
-
-    // --- MODIFIED: Function to fetch and render transaction success (handles both views) ---
-    async function fetchTransactionSuccess(teamName, week) {
+    // --- MODIFIED: Function to fetch and render transaction success ---
+    async function fetchTransactionSuccess(teamName, week, viewMode) {
         loadingSpinner.classList.remove('hidden');
         historyContent.innerHTML = '';
         errorDiv.classList.add('hidden');
@@ -649,7 +645,7 @@
             const response = await fetch('/api/history/transaction_success', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                // MODIFIED: Send the viewMode
+                // --- MODIFIED: Send the viewMode ---
                 body: JSON.stringify({
                     team_name: teamName,
                     week: week,
@@ -661,31 +657,34 @@
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
-            // NEW: Split rendering based on view_mode
+            // --- NEW: Handle different view modes ---
             if (data.view_mode === 'team') {
-                // --- Render Team View (existing logic) ---
+                // --- TEAM VIEW LOGIC ---
                 const addsTable = createTransactionTable('Player Adds', data.adds);
                 const dropsTable = createTransactionTable('Player Drops', data.drops);
 
-                let statsTableHtml = '';
-                if (data.is_weekly_view && data.added_player_stats.length > 0) {
-                    statsTableHtml = createAddedPlayerStatsTable(
-                        'Added Player Contributions',
-                        data.stat_headers,
-                        data.added_player_stats
+                let skaterStatsHtml = '';
+                let goalieStatsHtml = '';
+
+                if (data.is_weekly_view) {
+                    skaterStatsHtml = createAddedPlayerStatsTable(
+                        'Added Skater Contributions',
+                        data.skater_stat_headers,
+                        data.added_skater_stats
                     );
-                } else if (data.is_weekly_view) {
-                    statsTableHtml = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                                        <h3 class="text-lg font-semibold text-white mb-3">Added Player Contributions</h3>
-                                        <p class="text-gray-400">No stats were recorded for added players during this week.</p>
-                                      </div>`;
+                    goalieStatsHtml = createAddedPlayerStatsTable(
+                        'Added Goalie Contributions',
+                        data.goalie_stat_headers,
+                        data.added_goalie_stats
+                    );
                 }
 
                 historyContent.innerHTML = `
                     <div class="flex flex-col lg:flex-row gap-6">
                         <div class="w-full lg:w-1/2 space-y-6">
                             ${addsTable}
-                            ${statsTableHtml}
+                            ${skaterStatsHtml}
+                            ${goalieStatsHtml}
                         </div>
                         <div class="w-full lg:w-1/2">
                             ${dropsTable}
@@ -694,27 +693,38 @@
                 `;
 
             } else if (data.view_mode === 'league') {
-                // --- Render League View (new logic) ---
+                // --- LEAGUE VIEW LOGIC ---
                 let leagueHtml = '';
                 const teamNames = Object.keys(data.league_data).sort();
 
                 if (teamNames.length === 0) {
-                    leagueHtml = '<p class="text-gray-400">No transactions found for any team this week.</p>';
-                } else {
-                    for (const teamName of teamNames) {
-                        const teamData = data.league_data[teamName];
-                        // We can re-use the stats table generator, just with the team name as the title
-                        leagueHtml += createAddedPlayerStatsTable(
-                            `${teamName} - Added Player Contributions`,
-                            data.stat_headers,
-                            teamData
-                        );
-                    }
+                     leagueHtml = '<p class="text-gray-400">No transactions found for any team this week.</p>';
                 }
 
-                // League view is one single column of tables
+                for (const teamName of teamNames) {
+                    const teamData = data.league_data[teamName];
+                    const skaterStatsHtml = createAddedPlayerStatsTable(
+                        'Skaters',
+                        data.skater_stat_headers,
+                        teamData.skaters
+                    );
+                    const goalieStatsHtml = createAddedPlayerStatsTable(
+                        'Goalies',
+                        data.goalie_stat_headers,
+                        teamData.goalies
+                    );
+
+                    leagueHtml += `
+                        <div class="bg-gray-900 rounded-lg shadow-lg p-4 space-y-4">
+                            <h2 class="text-xl font-semibold text-white">${teamName}</h2>
+                            ${skaterStatsHtml}
+                            ${goalieStatsHtml}
+                        </div>
+                    `;
+                }
                 historyContent.innerHTML = `<div class="space-y-6">${leagueHtml}</div>`;
             }
+            // --- END NEW ---
 
         } catch (error) {
             console.error('Error fetching transaction data:', error);
@@ -725,31 +735,14 @@
     }
 
 
-    // --- MODIFIED: Main function to handle report switching ---
+    // --- MODIFIED: fetchAndRenderTable to pass view mode ---
     async function fetchAndRenderTable() {
             const selectedTeam = yourTeamSelect.value;
             const selectedWeek = weekSelect.value;
             const selectedReport = reportSelect.value;
 
-            console.log(`Fetching data for: Team ${selectedTeam}, Week ${selectedWeek}, Report ${selectedReport}, View ${viewMode}`);
-
-            // NEW: Hide toggle button if the report is not 'transaction_success'
-            if (selectedReport === 'transaction_success') {
-                viewToggleBtn.classList.remove('hidden');
-            } else {
-                viewToggleBtn.classList.add('hidden');
-                // If viewMode is 'league', switch back to 'team' when changing reports
-                if (viewMode === 'league') {
-                    toggleView(); // This will reset the view and re-call fetchAndRenderTable
-                    return; // Exit this call, the toggleView will trigger a new one
-                }
-            }
-
-            // NEW: Add a check for 'All Season' in League View (should be disabled, but as a safeguard)
-            if (selectedReport === 'transaction_success' && viewMode === 'league' && selectedWeek === 'all') {
-                showError('League View requires a specific week to be selected. Please select a week.');
-                return;
-            }
+            // --- MODIFIED: Pass currentViewMode to transaction report ---
+            console.log(`Fetching data for: Team ${selectedTeam}, Week ${selectedWeek}, Report ${selectedReport}, View ${currentViewMode}`);
 
             // Route based on the selected report
             switch (selectedReport) {
@@ -757,10 +750,10 @@
                     await fetchBenchPoints(selectedTeam, selectedWeek);
                     break;
 
-                // NEW: This case now handles both views
                 case 'transaction_success':
-                    await fetchTransactionSuccess(selectedTeam, selectedWeek);
+                    await fetchTransactionSuccess(selectedTeam, selectedWeek, currentViewMode);
                     break;
+                // --- END MODIFICATION ---
 
                 case 'tbd':
                     loadingSpinner.classList.remove('hidden');
@@ -784,6 +777,8 @@
             populateDropdowns();
             setupEventListeners();
             await fetchAndRenderTable(); // Load initial data (will show "Please select")
+            // Initially hide the toggle button until a report is selected
+            handleReportChange();
         }
     }
 
