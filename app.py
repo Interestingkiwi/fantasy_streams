@@ -46,22 +46,11 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-strong-dev-secret-key-for
 # Configure root logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Logging Queue for Streaming ---
-log_queue = Queue()
+DB_BUILD_QUEUES = {}
+DB_QUEUES_LOCK = threading.Lock() # To safely add/remove from the dict
 
-class QueueLogHandler(logging.Handler):
-    def __init__(self, queue):
-        super().__init__()
-        self.queue = queue
-
-    def emit(self, record):
-        self.queue.put(self.format(record))
-
-# Add the queue handler to the root logger
-queue_handler = QueueLogHandler(log_queue)
-formatter = logging.Formatter('%(message)s')
-queue_handler.setFormatter(formatter)
-logging.getLogger().addHandler(queue_handler)
+db_build_status = {"running": False, "error": None}
+db_build_status_lock = threading.Lock()
 
 # --- Yahoo OAuth2 Settings ---
 authorization_base_url = 'https://api.login.yahoo.com/oauth2/request_auth'
@@ -2471,6 +2460,159 @@ def db_status():
         'timestamp': int(timestamp) if timestamp else None,
         'is_test_db': False
     })
+
+
+@app.route('/api/db_action', methods=['POST'])
+def db_action():
+    if not session.get('oauth_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    league_id = session.get('league_id')
+    if not league_id:
+        return jsonify({'error': 'No league selected'}), 400
+
+    global db_build_status
+    with db_build_status_lock:
+        if db_build_status["running"]:
+            return jsonify({'error': 'A build is already in progress.'}), 409
+        db_build_status = {"running": True, "error": None}
+
+    data = request.get_json()
+    options = {
+        'capture_lineups': data.get('capture_lineups', False),
+        'skip_static': data.get('skip_static', False),
+        'skip_players': data.get('skip_players', False)
+    }
+
+    # --- NEW: Create session-specific build items ---
+    build_id = str(uuid.uuid4())
+    build_queue = Queue()
+    with DB_QUEUES_LOCK:
+        DB_BUILD_QUEUES[build_id] = build_queue
+    # --- END NEW ---
+
+    def run_task(build_id, build_queue, options):
+        # --- NEW: Create a temporary logger FOR THIS THREAD ONLY ---
+        logger = logging.getLogger(f"db_build_{build_id}")
+        logger.setLevel(logging.INFO)
+        logger.propagate = False  # IMPORTANT: Do not send to root logger
+
+        class QueueLogHandler(logging.Handler):
+            def __init__(self, queue):
+                super().__init__()
+                self.queue = queue
+
+            def emit(self, record):
+                log_entry = self.format(record)
+                self.queue.put(f"{log_entry}\n")
+
+        queue_handler = QueueLogHandler(build_queue)
+        queue_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(message)s')
+        queue_handler.setFormatter(formatter)
+
+        if not logger.handlers:
+            logger.addHandler(queue_handler)
+        # --- END NEW LOGGER SETUP ---
+
+        try:
+            sc = OAuth2(None, None, from_file=session['oauth_token_path'])
+            yq = YahooFantasySportsQuery(
+                sc,
+                league_id=league_id,
+                league_code='nhl' # Assuming 'nhl', adjust if needed
+            )
+
+            league_data = yq.get_league_metadata()
+            league_name = league_data.name
+            sanitized_name = re.sub(r'[^\w\s-]', '', league_name).strip().replace(' ', '_')
+            db_filename = f"yahoo-{league_id}-{sanitized_name}.db"
+            db_path = os.path.join(app.config['DATA_DIR'], db_filename)
+
+            logger.info("--- Starting Database Update ---")
+            logger.info(f"League ID: {league_id}")
+            logger.info(f"Build ID: {build_id}")
+
+            # --- MODIFIED: Pass the new logger to the builder ---
+            result = db_builder.run_build_process(
+                yq,
+                league_id,
+                league_name,
+                db_path,
+                logger,  # <--- Pass the new logger
+                capture_lineups=options['capture_lineups'],
+                skip_static=options['skip_static'],
+                skip_players=options['skip_players']
+            )
+
+            if result and result.get('success'):
+                logger.info(f"--- SUCCESS: {result.get('league_name')} updated. ---")
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                logger.error(f"--- ERROR: {error_msg} ---")
+                with db_build_status_lock:
+                    db_build_status["error"] = error_msg
+
+        except Exception as e:
+            error_str = f"--- FATAL ERROR: {str(e)} ---"
+            logger.error(error_str, exc_info=True)
+            with db_build_status_lock:
+                db_build_status["error"] = str(e)
+        finally:
+            with db_build_status_lock:
+                db_build_status["running"] = False
+            build_queue.put(None) # Sentinel to end the stream
+
+    # --- MODIFIED: Start thread with new args ---
+    threading.Thread(target=run_task, args=(build_id, build_queue, options)).start()
+
+    # --- MODIFIED: Return the build_id to the client ---
+    return jsonify({'success': True, 'build_id': build_id})
+
+
+@app.route('/api/db_log_stream')
+def db_log_stream():
+    # --- NEW: Get build_id from client ---
+    build_id = request.args.get('build_id')
+    if not build_id:
+        return Response("data: ERROR: No build_id provided.\n\ndata: __DONE__\n\n", mimetype='text/event-stream')
+
+    with DB_QUEUES_LOCK:
+        build_queue = DB_BUILD_QUEUES.get(build_id)
+
+    if not build_queue:
+        return Response(f"data: ERROR: Invalid build ID {build_id}. It may be complete or never existed.\n\ndata: __DONE__\n\n", mimetype='text/event-stream')
+    # --- END NEW ---
+
+    def generate():
+        try:
+            while True:
+                try:
+                    # --- MODIFIED: Read from session-specific queue ---
+                    message = build_queue.get(timeout=20)
+
+                    if message is None: # The sentinel
+                        yield 'data: __DONE__\n\n'
+                        break
+
+                    # Ensure message is a single line for SSE
+                    message = message.strip()
+                    yield f"data: {message}\n\n"
+
+                except: # queue.Empty exception
+                    # Send a keep-alive comment if no message for 20s
+                    yield ': keep-alive\n\n'
+
+        finally:
+            # --- NEW: Clean up the queue from the global dict ---
+            with DB_QUEUES_LOCK:
+                if build_id in DB_BUILD_QUEUES:
+                    del DB_BUILD_QUEUES[build_id]
+            logging.info(f"Closed log stream and cleaned up queue for build {build_id}")
+            # --- END NEW ---
+
+    return Response(generate(), mimetype='text/event-stream')
+
 
 @app.route('/static/<path:filename>')
 def serve_static(filename):
