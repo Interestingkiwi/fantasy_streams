@@ -219,6 +219,37 @@ def decode_dict_values(data):
     return data
 
 
+def _get_daily_simulated_roster(base_roster, simulated_moves, day_str):
+    """
+    Calculates the correct active roster for a given day, applying all
+    simulated add/drops that have occurred up to and including that day.
+    """
+    # 1. Find all players dropped by this date
+    # Use int for robust matching
+    dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= day_str}
+
+    daily_active_roster = []
+
+    # 2. Add players from the base roster who haven't been dropped
+    for p in base_roster:
+        if int(p.get('player_id', 0)) not in dropped_player_ids_today:
+            daily_active_roster.append(p)
+
+    # 3. Add simulated players who have been added AND have not been subsequently dropped
+    for move in simulated_moves:
+        added_player = move['added_player']
+        add_date = move['date']
+        added_player_id = int(added_player.get('player_id', 0))
+
+        is_added = (add_date <= day_str)
+        is_not_dropped = (added_player_id not in dropped_player_ids_today)
+
+        if is_added and is_not_dropped:
+            daily_active_roster.append(added_player)
+
+    return daily_active_roster
+
+
 def get_optimal_lineup(players, lineup_settings):
     """
     Calculates the optimal lineup using a three-pass greedy algorithm that prioritizes
@@ -407,21 +438,7 @@ def _calculate_unused_spots(days_in_week, active_players, lineup_settings, simul
         day_str = day_date.strftime('%Y-%m-%d')
         day_name = day_date.strftime('%a')
 
-        # --- NEW: Build the roster for this specific day based on simulation ---
-        daily_active_roster = []
-        # Use int for player_id comparisons for robustness
-        dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= day_str}
-
-        # 1. Add players from the base roster who haven't been dropped by today
-        for p in active_players:
-            if int(p.get('player_id', 0)) not in dropped_player_ids_today:
-                daily_active_roster.append(p)
-
-        # 2. Add players from simulated moves who have been added by today
-        for move in simulated_moves:
-            if move['date'] <= day_str:
-                daily_active_roster.append(move['added_player'])
-        # --- END NEW ---
+        daily_active_roster = _get_daily_simulated_roster(active_players, simulated_moves, day_str)
 
         players_playing_today = []
         for p in daily_active_roster:
@@ -821,17 +838,8 @@ def get_matchup_stats():
             current_date_str = current_date.strftime('%Y-%m-%d')
 
             # --- NEW: Build Team 1's daily roster ---
-            t1_daily_roster = []
+            t1_daily_roster = _get_daily_simulated_roster(team1_ranked_roster, simulated_moves, current_date_str)
             # Use int for robust matching
-            dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= current_date_str}
-
-            for p in team1_ranked_roster: # 1. Base roster
-                if int(p.get('player_id', 0)) not in dropped_player_ids_today:
-                    t1_daily_roster.append(p)
-
-            for move in simulated_moves: # 2. Sim players
-                if move['date'] <= current_date_str:
-                    t1_daily_roster.append(move['added_player'])
 
             t1_players_today = []
             for p in t1_daily_roster:
@@ -902,14 +910,7 @@ def get_matchup_stats():
             day_str = day_date.strftime('%Y-%m-%d')
 
             # --- NEW: Build Team 1's daily roster (repeat logic) ---
-            t1_daily_roster = []
-            dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= day_str}
-            for p in team1_ranked_roster:
-                if int(p.get('player_id', 0)) not in dropped_player_ids_today:
-                    t1_daily_roster.append(p)
-            for move in simulated_moves:
-                if move['date'] <= day_str:
-                    t1_daily_roster.append(move['added_player'])
+            t1_daily_roster = _get_daily_simulated_roster(team1_ranked_roster, simulated_moves, day_str)
 
             t1_players_today = []
             for p in t1_daily_roster:
@@ -1963,19 +1964,7 @@ def get_roster_data():
         for day_date in days_in_week:
             day_str = day_date.strftime('%Y-%m-%d')
 
-            # --- NEW: Build the roster for this specific day based on simulation ---
-            daily_active_roster = []
-            # Use int for robust matching
-            dropped_player_ids_today = {int(m['dropped_player']['player_id']) for m in simulated_moves if m['date'] <= day_str}
-
-            for p in active_players: # 1. Use base active roster
-                if int(p.get('player_id', 0)) not in dropped_player_ids_today:
-                    daily_active_roster.append(p)
-
-            for move in simulated_moves: # 2. Add simulated players
-                if move['date'] <= day_str:
-                    daily_active_roster.append(move['added_player'])
-            # --- END NEW ---
+            daily_active_roster = _get_daily_simulated_roster(active_players, simulated_moves, day_str)
 
             players_playing_today = []
             for p in daily_active_roster:
