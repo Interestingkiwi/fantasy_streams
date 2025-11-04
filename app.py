@@ -79,16 +79,13 @@ def model_to_dict(obj):
 
 def get_yfpy_instance():
     """Helper function to get an authenticated yfpy instance."""
+    # --- THIS FUNCTION IS NOT THREAD-SAFE (relies on session) ---
     if 'yahoo_token' not in session:
         return None
 
-    # Dev mode will have a mock token, which is fine for bypassing checks
-    # but will fail on actual API calls, which is expected.
     if session.get('dev_mode'):
         logging.info("Dev mode: Skipping real yfpy init.")
-        # Return a mock object or None, depending on what's safer.
-        # Let's try to initialize it; it will fail on use, which is fine.
-        pass # Fall through to normal init, it will use the 'dev_token'
+        pass
 
     token = session['yahoo_token']
     auth_data = {
@@ -113,12 +110,13 @@ def get_yfpy_instance():
 
 def get_yfa_lg_instance():
     """Helper function to get an authenticated yfa league instance."""
+    # --- THIS FUNCTION IS NOT THREAD-SAFE (relies on session) ---
     if 'yahoo_token' not in session:
         return None
 
     if session.get('dev_mode'):
         logging.info("Dev mode: Skipping real yfa init.")
-        return None # YFA logic is more complex, safer to return None.
+        return None
 
     token = session['yahoo_token']
     consumer_key = session.get('consumer_key')
@@ -129,7 +127,6 @@ def get_yfa_lg_instance():
         logging.error("YFA instance requires token and credentials in session.")
         return None
 
-    # yahoo_oauth library requires a file, so we create a temporary one.
     creds = {
         "consumer_key": consumer_key,
         "consumer_secret": consumer_secret,
@@ -152,9 +149,11 @@ def get_yfa_lg_instance():
         if not sc.token_is_valid():
             logging.info("YFA token expired, refreshing...")
             sc.refresh_access_token()
+            # Read the *new* credentials back from the file
             with open(temp_file_path, 'r') as f:
                 new_creds = json.load(f)
 
+            # --- CRITICAL: Update the session ---
             session['yahoo_token']['access_token'] = new_creds.get('access_token')
             session['yahoo_token']['refresh_token'] = new_creds.get('refresh_token')
             session['yahoo_token']['expires_at'] = new_creds.get('token_time')
@@ -179,8 +178,6 @@ def get_db_connection_for_league(league_id):
         if not os.path.exists(TEST_DB_PATH):
             return None, f"Test database '{TEST_DB_FILENAME}' not found in 'server' directory."
         try:
-            # Render has an ephemeral filesystem. The test DB in the repo (`server/`) is read-only.
-            # It's safer to copy it to the writable `data` dir to connect.
             writable_test_db_path = os.path.join(DATA_DIR, f"temp_{TEST_DB_FILENAME}")
             shutil.copy2(TEST_DB_PATH, writable_test_db_path)
             conn = sqlite3.connect(writable_test_db_path)
@@ -191,7 +188,6 @@ def get_db_connection_for_league(league_id):
             logging.error(f"Error connecting to test DB at {TEST_DB_PATH}: {e}")
             return None, "Could not connect to the test database."
 
-    # Original logic if not using test DB
     if not league_id:
         return None, "League ID not found in session."
 
@@ -551,18 +547,16 @@ def login():
         session['league_id'] = '22705' # Use the test DB's league ID
         session['use_test_db'] = True
         session['dev_mode'] = True
-        # Create a mock token to pass authentication checks
         session['yahoo_token'] = {
             'access_token': 'dev_token',
             'refresh_token': 'dev_refresh',
             'expires_at': time.time() + 3600
         }
         logging.info("Developer login successful using code 99999. Using test DB.")
-        # Send a specific response for the frontend to handle
         return jsonify({'dev_login': True, 'redirect_url': url_for('home')})
     # --- [END] DEV CODE BYPASS ---
 
-    session['league_id'] = league_id # Original logic
+    session['league_id'] = league_id
     session['consumer_key'] = os.environ.get("YAHOO_CONSUMER_KEY")
     session['consumer_secret'] = os.environ.get("YAHOO_CONSUMER_SECRET")
 
@@ -576,7 +570,6 @@ def login():
     yahoo = OAuth2Session(session['consumer_key'], redirect_uri=redirect_uri)
     authorization_url, state = yahoo.authorization_url(authorization_base_url)
     session['oauth_state'] = state
-    # Original response
     return jsonify({'auth_url': authorization_url})
 
 @app.route('/callback')
@@ -2462,9 +2455,11 @@ def db_status():
     })
 
 
+# --- MODIFIED: This entire route is corrected ---
 @app.route('/api/db_action', methods=['POST'])
 def db_action():
-    if not session.get('oauth_token'):
+    # --- FIX 1: Check for 'yahoo_token' (from /callback) not 'oauth_token' ---
+    if not session.get('yahoo_token'):
         return jsonify({'error': 'Not authenticated'}), 401
 
     league_id = session.get('league_id')
@@ -2480,19 +2475,28 @@ def db_action():
     data = request.get_json()
     options = {
         'capture_lineups': data.get('capture_lineups', False),
-        'skip_static': data.get('skip_static', False),
-        'skip_players': data.get('skip_players', False)
+        'skip_static': data.get('skip_static', False), # From your HTML
+        'skip_players': data.get('skip_players', False) # From your HTML
     }
 
-    # --- NEW: Create session-specific build items ---
+    # --- FIX 2: Get all session data *before* starting the thread ---
+    thread_data = {
+        "league_id": league_id,
+        "token": session.get('yahoo_token'),
+        "consumer_key": session.get('consumer_key'),
+        "consumer_secret": session.get('consumer_secret'),
+        "dev_mode": session.get('dev_mode', False)
+    }
+    # --- End FIX 2 ---
+
+    # --- Create session-specific build items ---
     build_id = str(uuid.uuid4())
     build_queue = Queue()
     with DB_QUEUES_LOCK:
         DB_BUILD_QUEUES[build_id] = build_queue
-    # --- END NEW ---
 
-    def run_task(build_id, build_queue, options):
-        # --- NEW: Create a temporary logger FOR THIS THREAD ONLY ---
+    def run_task(build_id, build_queue, options, data):
+        # --- Create a temporary logger FOR THIS THREAD ONLY ---
         logger = logging.getLogger(f"db_build_{build_id}")
         logger.setLevel(logging.INFO)
         logger.propagate = False  # IMPORTANT: Do not send to root logger
@@ -2515,35 +2519,82 @@ def db_action():
             logger.addHandler(queue_handler)
         # --- END NEW LOGGER SETUP ---
 
-        try:
-            sc = OAuth2(None, None, from_file=session['oauth_token_path'])
-            yq = YahooFantasySportsQuery(
-                sc,
-                league_id=league_id,
-                league_code='nhl' # Assuming 'nhl', adjust if needed
-            )
+        yq = None
+        lg = None
 
-            league_data = yq.get_league_metadata()
-            league_name = league_data.name
-            sanitized_name = re.sub(r'[^\w\s-]', '', league_name).strip().replace(' ', '_')
-            db_filename = f"yahoo-{league_id}-{sanitized_name}.db"
-            db_path = os.path.join(app.config['DATA_DIR'], db_filename)
+        try:
+            # --- FIX 3: Instantiate API objects *inside* the thread ---
+            if not data.get('dev_mode'):
+                # 3a. Create yfpy (yq) instance
+                auth_data = {
+                    'consumer_key': data['consumer_key'],
+                    'consumer_secret': data['consumer_secret'],
+                    'access_token': data['token'].get('access_token'),
+                    'refresh_token': data['token'].get('refresh_token'),
+                    'token_type': data['token'].get('token_type', 'bearer'),
+                    'token_time': data['token'].get('expires_at', time.time() + 3600),
+                    'guid': data['token'].get('xoauth_yahoo_guid')
+                }
+                yq = YahooFantasySportsQuery(
+                    data['league_id'],
+                    game_code="nhl",
+                    yahoo_access_token_json=auth_data
+                )
+
+                # 3b. Create yfa (lg) instance
+                # We must create a new temp file for this thread
+                creds = {
+                    "consumer_key": data['consumer_key'],
+                    "consumer_secret": data['consumer_secret'],
+                    "access_token": data['token'].get('access_token'),
+                    "refresh_token": data['token'].get('refresh_token'),
+                    "token_type": data['token'].get('token_type', 'bearer'),
+                    "token_time": data['token'].get('expires_at', time.time() + 3600),
+                    "xoauth_yahoo_guid": data['token'].get('xoauth_yahoo_guid')
+                }
+                temp_dir = os.path.join(DATA_DIR, 'temp_creds')
+                os.makedirs(temp_dir, exist_ok=True)
+                temp_file_path = os.path.join(temp_dir, f"thread_{build_id}.json")
+
+                with open(temp_file_path, 'w') as f:
+                    json.dump(creds, f)
+
+                sc = OAuth2(None, None, from_file=temp_file_path)
+                if not sc.token_is_valid():
+                    logger.info("Thread token expired, refreshing...")
+                    sc.refresh_access_token()
+
+                gm = yfa.Game(sc, 'nhl')
+                lg = gm.to_league(f"nhl.l.{data['league_id']}")
+
+                if os.path.exists(temp_file_path):
+                    os.remove(temp_file_path)
+
+            else:
+                logger.info("Dev mode: Skipping real API object creation in thread.")
+                # You might need mock objects here if db_builder fails without them
+                yq = None
+                lg = None
 
             logger.info("--- Starting Database Update ---")
-            logger.info(f"League ID: {league_id}")
+            logger.info(f"League ID: {data['league_id']}")
             logger.info(f"Build ID: {build_id}")
 
-            # --- MODIFIED: Pass the new logger to the builder ---
-            result = db_builder.run_build_process(
+            # --- FIX 4: Call the correct function from db_builder.py ---
+            # And pass the new logger to it.
+            result = db_builder.update_league_db(
                 yq,
-                league_id,
-                league_name,
-                db_path,
-                logger,  # <--- Pass the new logger
-                capture_lineups=options['capture_lineups'],
-                skip_static=options['skip_static'],
-                skip_players=options['skip_players']
+                lg,
+                data['league_id'],
+                app.config['DATA_DIR'], # Pass the data directory
+                logger, # Pass the new logger
+                capture_lineups=options['capture_lineups']
+                # Note: I am using the function from your db_builder.py file,
+                # which does not include skip_static or skip_players.
+                # If you re-add those to league-database.html, you must
+                # add them here and to update_league_db in db_builder.py
             )
+            # --- END FIX 4 ---
 
             if result and result.get('success'):
                 logger.info(f"--- SUCCESS: {result.get('league_name')} updated. ---")
@@ -2563,16 +2614,15 @@ def db_action():
                 db_build_status["running"] = False
             build_queue.put(None) # Sentinel to end the stream
 
-    # --- MODIFIED: Start thread with new args ---
-    threading.Thread(target=run_task, args=(build_id, build_queue, options)).start()
+    # --- Start thread with new thread_data arg ---
+    threading.Thread(target=run_task, args=(build_id, build_queue, options, thread_data)).start()
 
-    # --- MODIFIED: Return the build_id to the client ---
     return jsonify({'success': True, 'build_id': build_id})
+# --- END MODIFIED ROUTE ---
 
 
 @app.route('/api/db_log_stream')
 def db_log_stream():
-    # --- NEW: Get build_id from client ---
     build_id = request.args.get('build_id')
     if not build_id:
         return Response("data: ERROR: No build_id provided.\n\ndata: __DONE__\n\n", mimetype='text/event-stream')
@@ -2582,36 +2632,33 @@ def db_log_stream():
 
     if not build_queue:
         return Response(f"data: ERROR: Invalid build ID {build_id}. It may be complete or never existed.\n\ndata: __DONE__\n\n", mimetype='text/event-stream')
-    # --- END NEW ---
 
     def generate():
         try:
             while True:
                 try:
-                    # --- MODIFIED: Read from session-specific queue ---
                     message = build_queue.get(timeout=20)
-
                     if message is None: # The sentinel
                         yield 'data: __DONE__\n\n'
                         break
-
-                    # Ensure message is a single line for SSE
                     message = message.strip()
                     yield f"data: {message}\n\n"
-
                 except: # queue.Empty exception
-                    # Send a keep-alive comment if no message for 20s
                     yield ': keep-alive\n\n'
-
         finally:
-            # --- NEW: Clean up the queue from the global dict ---
             with DB_QUEUES_LOCK:
                 if build_id in DB_BUILD_QUEUES:
                     del DB_BUILD_QUEUES[build_id]
             logging.info(f"Closed log stream and cleaned up queue for build {build_id}")
-            # --- END NEW ---
 
     return Response(generate(), mimetype='text/event-stream')
+
+
+# --- REMOVING OLD/DUPLICATE DB AND LOG ROUTES ---
+# The routes /stream, /api/update_db, update_db_in_background
+# and the second /api/db_status are all replaced by
+# /api/db_action and /api/db_log_stream and the first /api/db_status
+# --- END REMOVAL ---
 
 
 @app.route('/static/<path:filename>')
