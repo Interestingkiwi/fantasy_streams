@@ -21,10 +21,10 @@ class DBFinalizer:
     """
     Processes and joins data in the fantasy hockey database after initial creation.
     """
-    # --- MODIFIED: Accept logger in __init__ ---
+    # --- MODIFIED: Accept logger ---
     def __init__(self, db_path, logger):
         self.db_path = db_path
-        self.logger = logger # <-- Store logger
+        self.logger = logger
         self.con = self.get_db_connection()
 
     def get_db_connection(self):
@@ -476,7 +476,7 @@ class DBFinalizer:
                                 ))
                         except (ValueError, SyntaxError) as e:
                             # --- MODIFIED ---
-                            self.logger.warning(f"Could not parse stats for player {player_id} on {date_} in daily_bench_stats: {e}")
+                                self.logger.warning(f"Could not parse stats for player {player_id} on {date_} in daily_bench_stats: {e}")
 
 
         if stats_to_insert:
@@ -501,9 +501,6 @@ class DBFinalizer:
 def _create_tables(cursor, logger):
     """
     Creates all necessary tables in the database if they don't already exist.
-
-    Args:
-        cursor: A sqlite3 cursor object.
     """
     # --- MODIFIED ---
     logger.info("Creating database tables if they don't exist...")
@@ -525,52 +522,19 @@ def _create_tables(cursor, logger):
     ''')
 
     #daily_lineups_dump
-    # This version is cleaned of any invisible characters and
-    # uses the correct (date_, team_id) Primary Key.
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS daily_lineups_dump (
             date_ TEXT NOT NULL,
             team_id INTEGER NOT NULL,
-            c1 TEXT,
-            c2 TEXT,
-            l1 TEXT,
-            l2 TEXT,
-            r1 TEXT,
-            r2 TEXT,
-            d1 TEXT,
-            d2 TEXT,
-            d3 TEXT,
-            d4 TEXT,
-            g1 TEXT,
-            g2 TEXT,
-            b1 TEXT,
-            b2 TEXT,
-            b3 TEXT,
-            b4 TEXT,
-            b5 TEXT,
-            b6 TEXT,
-            b7 TEXT,
-            b8 TEXT,
-            b9 TEXT,
-            b10 TEXT,
-            b11 TEXT,
-            b12 TEXT,
-            b13 TEXT,
-            b14 TEXT,
-            b15 TEXT,
-            b16 TEXT,
-            b17 TEXT,
-            b18 TEXT,
-            b19 TEXT,
-            i1 TEXT,
-            i2 TEXT,
-            i3 TEXT,
-            i4 TEXT,
-            i5 TEXT,
+            c1 TEXT, c2 TEXT, l1 TEXT, l2 TEXT, r1 TEXT, r2 TEXT,
+            d1 TEXT, d2 TEXT, d3 TEXT, d4 TEXT, g1 TEXT, g2 TEXT,
+            b1 TEXT, b2 TEXT, b3 TEXT, b4 TEXT, b5 TEXT, b6 TEXT,
+            b7 TEXT, b8 TEXT, b9 TEXT, b10 TEXT, b11 TEXT, b12 TEXT,
+            b13 TEXT, b14 TEXT, b15 TEXT, b16 TEXT, b17 TEXT, b18 TEXT, b19 TEXT,
+            i1 TEXT, i2 TEXT, i3 TEXT, i4 TEXT, i5 TEXT,
             PRIMARY KEY (date_, team_id)
         )
     ''')
-
     #scoring
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scoring (
@@ -607,35 +571,12 @@ def _create_tables(cursor, logger):
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS rosters (
             team_id INTEGER NOT NULL UNIQUE,
-            p1 INTEGER,
-            p2 INTEGER,
-            p3 INTEGER,
-            p4 INTEGER,
-            p5 INTEGER,
-            p6 INTEGER,
-            p7 INTEGER,
-            p8 INTEGER,
-            p9 INTEGER,
-            p10 INTEGER,
-            p11 INTEGER,
-            p12 INTEGER,
-            p13 INTEGER,
-            p14 INTEGER,
-            p15 INTEGER,
-            p16 INTEGER,
-            p17 INTEGER,
-            p18 INTEGER,
-            p19 INTEGER,
-            p20 INTEGER,
-            p21 INTEGER,
-            p22 INTEGER,
-            p23 INTEGER,
-            p24 INTEGER,
-            p25 INTEGER,
-            p26 INTEGER,
-            p27 INTEGER,
-            p28 INTEGER,
-            p29 INTEGER
+            p1 INTEGER, p2 INTEGER, p3 INTEGER, p4 INTEGER, p5 INTEGER,
+            p6 INTEGER, p7 INTEGER, p8 INTEGER, p9 INTEGER, p10 INTEGER,
+            p11 INTEGER, p12 INTEGER, p13 INTEGER, p14 INTEGER, p15 INTEGER,
+            p16 INTEGER, p17 INTEGER, p18 INTEGER, p19 INTEGER, p20 INTEGER,
+            p21 INTEGER, p22 INTEGER, p23 INTEGER, p24 INTEGER, p25 INTEGER,
+            p26 INTEGER, p27 INTEGER, p28 INTEGER, p29 INTEGER
         )
     ''')
     #free_agents
@@ -685,21 +626,20 @@ def _update_league_info(yq, cursor, league_id, league_name, league_metadata, log
     """
     # --- MODIFIED ---
     logger.info("Updating league_info table...")
-    # Extract data from the metadata object
     num_teams = league_metadata.num_teams
     start_date = league_metadata.start_date
     end_date = league_metadata.end_date
 
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
-                    ('league_id', league_id))
+                   ('league_id', league_id))
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
-                    ('league_name', league_name))
+                   ('league_name', league_name))
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
-                    ('num_teams', num_teams))
+                   ('num_teams', num_teams))
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
-                    ('start_date', start_date))
+                   ('start_date', start_date))
     cursor.execute("INSERT OR REPLACE INTO league_info (key, value) VALUES (?, ?)",
-                    ('end_date', end_date))
+                   ('end_date', end_date))
 
 
 # --- MODIFIED: Accept logger ---
@@ -711,17 +651,13 @@ def _update_teams_info(yq, cursor, logger):
     logger.info("Updating teams table...")
     try:
         teams = yq.get_league_teams()
-
         teams_data_to_insert = []
         for team in teams:
-            # Extract team data.
             team_id = team.team_id
             team_name = team.name
-
-            manager_nickname = None  # Default to None
+            manager_nickname = None
             if team.managers and team.managers[0].nickname:
                 manager_nickname = team.managers[0].nickname
-
             teams_data_to_insert.append((team_id, team_name, manager_nickname))
 
         sql = "INSERT OR IGNORE INTO teams (team_id, name, manager_nickname) VALUES (?, ?, ?)"
@@ -774,11 +710,9 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, league_start_date, is_ful
             last_fetch_date_plus_one = (last_fetch_date + timedelta(days=1)).isoformat()
 
         if is_full_mode:
-            # CHECKED: full history from league start or last entry
             start_date_for_fetch = league_start_date
             if last_fetch_date_plus_one:
                     start_date_for_fetch = last_fetch_date_plus_one
-
             if last_fetch_date_str:
                 # --- MODIFIED ---
                 logger.info(f"Capture Daily Lineups is CHECKED. Resuming full history fetch from {start_date_for_fetch}.")
@@ -786,31 +720,23 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, league_start_date, is_ful
                 # --- MODIFIED ---
                 logger.info(f"Capture Daily Lineups is CHECKED. Starting full history fetch from league start date: {start_date_for_fetch}.")
         else:
-            # UNCHECKED: current week or last entry, whichever is newer
             # --- MODIFIED: Pass logger ---
             current_week_start_date_str = _get_current_week_start_date(cursor, logger)
-
-            # --- MODIFICATION: Calculate one day *before* the week start to catch Sundays ---
             current_week_start_obj = date.fromisoformat(current_week_start_date_str)
             start_of_week_minus_one_obj = current_week_start_obj - timedelta(days=1)
             start_of_week_minus_one_str = start_of_week_minus_one_obj.isoformat()
-            # --- END MODIFICATION ---
 
             if last_fetch_date_plus_one:
-                # --- MODIFIED: Use the new date string in the max() function ---
                 start_date_for_fetch = max(start_of_week_minus_one_str, last_fetch_date_plus_one)
                 # --- MODIFIED ---
                 logger.info(f"Capture Daily Lineups is UNCHECKED. Resuming from more recent of week start-1 ({start_of_week_minus_one_str}) or last fetch+1 ({last_fetch_date_plus_one}): {start_date_for_fetch}.")
             else:
-                # --- MODIFIED: Use the new date string as the fallback ---
                 start_date_for_fetch = start_of_week_minus_one_str
                 # --- MODIFIED ---
                 logger.info(f"No existing lineup data. Capture is UNCHECKED, starting from current week start date - 1 day: {start_date_for_fetch}.")
 
 
         team_id = 1
-        # stop_date is today. The loop runs *until* today (current_date < stop_date)
-        # This correctly fetches all data up to and including yesterday.
         stop_date = date.today().isoformat()
         lineup_data_to_insert = []
 
@@ -825,56 +751,31 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, league_start_date, is_ful
                 # --- MODIFIED ---
                 logger.info(f"Fetching daily lineups for team {team_id}, for {current_date}...")
                 players = yq.get_team_roster_player_info_by_date(team_id,current_date)
-                c = 0
-                lw = 0
-                rw = 0
-                d = 0
-                g = 0
-                bn = 0
-                ir = 0
+                c, lw, rw, d, g, bn, ir = 0, 0, 0, 0, 0, 0, 0
                 lineup_data_raw = []
                 for player in players:
                     player_id = player.player_id
                     player_name = player.name.full
                     pos = player.selected_position.position
-                    if pos == "C":
-                        pos = 'c'+str(c+1)
-                        c += 1
-                    elif pos == "LW":
-                        pos = 'l'+str(lw+1)
-                        lw += 1
-                    elif pos == "RW":
-                        pos = 'r'+str(rw+1)
-                        rw += 1
-                    elif pos == "D":
-                        pos = 'd'+str(d+1)
-                        d += 1
-                    elif pos == "G":
-                        pos = 'g'+str(g+1)
-                        g += 1
-                    elif pos == "BN":
-                        pos = 'b'+str(bn+1)
-                        bn += 1
-                    elif pos == "IR" or pos == "IR+":
-                        pos = 'i'+str(ir+1)
-                        ir += 1
+                    if pos == "C": pos, c = 'c'+str(c+1), c+1
+                    elif pos == "LW": pos, lw = 'l'+str(lw+1), lw+1
+                    elif pos == "RW": pos, rw = 'r'+str(rw+1), rw+1
+                    elif pos == "D": pos, d = 'd'+str(d+1), d+1
+                    elif pos == "G": pos, g = 'g'+str(g+1), g+1
+                    elif pos == "BN": pos, bn = 'b'+str(bn+1), bn+1
+                    elif pos == "IR" or pos == "IR+": pos, ir = 'i'+str(ir+1), ir+1
+
                     player_stats = []
                     if player.player_stats and player.player_stats.stats:
                         stats_list = player.player_stats.stats
-                        stats_dict = {
-                            stat_item.stat_id: stat_item.value
-                            for stat_item in stats_list
-                        }
+                        stats_dict = {stat_item.stat_id: stat_item.value for stat_item in stats_list}
                         for stat_id, stat_value in stats_dict.items():
                             player_stats.append((stat_id, stat_value))
-                    #add all stat pulls here too
+
                     player_data_string = f"ID: {player_id}, Name: {player_name}, Stats: {str(player_stats)}"
                     lineup_data_raw.append((player_data_string, pos))
 
-                lineup_raw_dict = {
-                    position: (data_string)
-                    for data_string, position in lineup_data_raw
-                }
+                lineup_raw_dict = {position: data_string for data_string, position in lineup_data_raw}
                 lineup_order = [
                     'c1', 'c2', 'l1', 'l2', 'r1', 'r2', 'd1', 'd2', 'd3', 'd4',
                     'g1', 'g2', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6',
@@ -900,8 +801,6 @@ def _update_daily_lineups(yq, cursor, conn, num_teams, league_start_date, is_ful
                 b16, b17, b18, b19, i1, i2, i3, i4, i5
             ) VALUES ({placeholders})
         """
-
-
         cursor.executemany(sql, lineup_data_to_insert)
         # --- MODIFIED ---
         logger.info(f"Successfully inserted or replaced data for {len(lineup_data_to_insert)} dates.")
@@ -917,15 +816,7 @@ def _update_player_id(yq, cursor, logger):
     # --- MODIFIED ---
     logger.info("Fetching all league players (this may take a while)...")
     try:
-        TEAM_TRICODE_MAP = {
-            "TB": "TBL",
-            "NJ": "NJD",
-            "SJ": "SJS",
-            "LA": "LAK",
-            "MON": "MTL",
-            "WAS": "WSH"
-        }
-
+        TEAM_TRICODE_MAP = {"TB": "TBL", "NJ": "NJD", "SJ": "SJS", "LA": "LAK", "MON": "MTL", "WAS": "WSH"}
         player_data_to_insert = []
         batch_size = 100
         player_count = 0
@@ -939,14 +830,13 @@ def _update_player_id(yq, cursor, logger):
             player_name_normalized = re.sub(r'[^a-z0-9]', '', ascii_name)
             player_team_abbr = player.editorial_team_abbr.upper()
             player_team = TEAM_TRICODE_MAP.get(player_team_abbr, player_team_abbr)
-
             player_data_to_insert.append((player.player_id, player_name, player_team, player_name_normalized))
 
             if len(player_data_to_insert) >= batch_size:
                 # --- MODIFIED ---
                 logger.info(f"Processed {player_count} players, inserting batch of {len(player_data_to_insert)}...")
                 cursor.executemany(sql, player_data_to_insert)
-                player_data_to_insert = [] # Clear the batch
+                player_data_to_insert = []
 
         if player_data_to_insert:
             # --- MODIFIED ---
@@ -979,7 +869,6 @@ def _update_league_scoring_settings(yq, cursor, logger):
                 category = 'SVpct'
             scoring_group = stat_details.group
             stat_id = stat_details.stat_id
-
             scoring_settings_to_insert.append((stat_id, category, scoring_group))
 
         sql = "INSERT OR IGNORE INTO scoring (stat_id, category, scoring_group) VALUES (?, ?, ?)"
@@ -1002,7 +891,6 @@ def _update_lineup_settings(yq, cursor, logger):
             position_details = roster_position_item
             position = position_details.position
             position_count = position_details.count
-
             lineup_settings_data_to_insert.append((position, position_count))
 
         sql = "INSERT OR IGNORE INTO lineup_settings (position, position_count) VALUES (?, ?)"
@@ -1098,7 +986,6 @@ def _update_current_rosters(yq, cursor, conn, num_teams, logger):
 
     try:
         roster_data_to_insert = []
-
         MAX_PLAYERS = 29
 
         for team_id in range(1, num_teams + 1):
@@ -1116,7 +1003,6 @@ def _update_current_rosters(yq, cursor, conn, num_teams, logger):
         """
         cursor.executemany(sql, roster_data_to_insert)
         conn.commit()
-
         # --- MODIFIED ---
         logger.info(f"Successfully inserted data for {len(roster_data_to_insert)} teams.")
     except Exception as e:
@@ -1132,8 +1018,6 @@ def _create_rosters_tall_and_drop_rosters(cursor, conn, logger):
     # --- MODIFIED ---
     logger.info("Creating tall rosters table and dropping the wide version...")
     try:
-        # Step 1: Create the new 'rosters_tall' table.
-        # Drop it first to ensure a clean run (emulates 'CREATE OR REPLACE').
         cursor.execute("DROP TABLE IF EXISTS rosters_tall;")
 
         union_all_parts = []
@@ -1143,13 +1027,11 @@ def _create_rosters_tall_and_drop_rosters(cursor, conn, logger):
             )
         unpivot_query = "\nUNION ALL\n".join(union_all_parts)
 
-        # The source table is 'rosters', as per the user's query.
         create_tall_table_query = f"CREATE TABLE rosters_tall AS\n{unpivot_query};"
         cursor.execute(create_tall_table_query)
         # --- MODIFIED ---
         logger.info("Successfully created 'rosters_tall' table.")
 
-        # Step 2: Drop the original wide 'rosters' table, as requested.
         cursor.execute("DROP TABLE IF EXISTS rosters;")
         # --- MODIFIED ---
         logger.info("Successfully dropped 'rosters' table.")
@@ -1167,8 +1049,6 @@ def _update_league_transactions(yq, cursor, logger):
     Writes player name, fantasy team id, add or drop, and yahoo id to transactions
     table for all transactions in the league
     """
-
-    # --- NEW: Clear the table first to prevent duplicates ---
     try:
         # --- MODIFIED ---
         logger.info("Clearing existing transaction data...")
@@ -1176,20 +1056,14 @@ def _update_league_transactions(yq, cursor, logger):
     except Exception as e:
         # --- MODIFIED ---
         logger.error(f"Failed to clear transactions table: {e}", exc_info=True)
-        # We might want to stop here if we can't clear the table
         return
-    # --- END NEW ---
 
     # --- MODIFIED ---
     logger.info("Fetching player info...")
     try:
         transactions = yq.get_league_transactions()
         transaction_data_to_insert = []
-
-        # --- NEW: Keep track of unique transactions to avoid API-side duplication ---
-        # (timestamp, player_id, move_type) should be unique
         processed_transactions = set()
-        # --- END NEW ---
 
         for transaction in transactions:
             if transaction.status == 'successful':
@@ -1206,14 +1080,11 @@ def _update_league_transactions(yq, cursor, logger):
                     else:
                         fantasy_team = player_obj.transaction_data.source_team_name
 
-                    # --- NEW: Check for uniqueness before adding to insert list ---
                     unique_key = (timestamp_epoch, player_id, move_type)
                     if unique_key not in processed_transactions:
                         transaction_data_to_insert.append((transaction_date, player_id, player_name, fantasy_team, move_type))
                         processed_transactions.add(unique_key)
-                    # --- END NEW ---
 
-        # --- MODIFIED: Use standard INSERT since the table is empty ---
         sql = "INSERT INTO transactions (transaction_date, player_id, player_name, fantasy_team, move_type) VALUES (?, ?, ?, ?, ?)"
         cursor.executemany(sql, transaction_data_to_insert)
         # --- MODIFIED ---
@@ -1329,9 +1200,7 @@ def _update_rostered_players(lg, conn, logger):
             player_id = player['player_id']
             eligible_positions_list = player['eligible_positions']
             eligible_positions_str = ','.join(eligible_positions_list)
-
             rostered_players_to_insert.append((player_id, 'R', eligible_positions_str))
-
     except Exception as e:
         # --- MODIFIED ---
         logger.error(f"Could not fetch rostered players: {e}", exc_info=True)
@@ -1358,7 +1227,6 @@ def _update_rostered_players(lg, conn, logger):
 def _update_db_metadata(cursor, logger, update_available_players_timestamp=False):
     """
     Updates the db_metadata table with the current timestamp.
-    Can also be used to specifically update the timestamp for available players.
     """
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
@@ -1368,60 +1236,46 @@ def _update_db_metadata(cursor, logger, update_available_players_timestamp=False
         # --- MODIFIED ---
         logger.info("Updating available players timestamp in db_metadata...")
         cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
-                        ('available_players_last_updated_date', date_str))
+                       ('available_players_last_updated_date', date_str))
         cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
-                        ('available_players_last_updated_timestamp', timestamp_str))
+                       ('available_players_last_updated_timestamp', timestamp_str))
         # --- MODIFIED ---
         logger.info("Successfully updated available players timestamp.")
     else:
         # --- MODIFIED ---
         logger.info("Updating general db_metadata timestamp...")
         cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
-                        ('last_updated_date', date_str))
+                       ('last_updated_date', date_str))
         cursor.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
-                        ('last_updated_timestamp', timestamp_str))
+                       ('last_updated_timestamp', timestamp_str))
         # --- MODIFIED ---
         logger.info("Successfully updated general db_metadata timestamp.")
 
 
-# --- MODIFIED: Renamed to run_build_process and accept logger ---
-# Note: The original 'skip_static_info' and 'skip_available_players' flags
-# were commented out in your HTML, so I've removed them from the function
-# signature to match the version from my previous answer.
-# I've also kept the 'lg' parameter as your file requires it.
-def run_build_process(yq, lg, league_id, data_dir, logger, capture_lineups=False):
+# --- MODIFIED: Accept logger ---
+def update_league_db(yq, lg, league_id, data_dir, logger, capture_lineups=False):
     """
     Creates or updates the league-specific SQLite database by calling
     individual query and update functions.
-
-    Args:
-        yq: An authenticated yfpy.query.YahooFantasySportsQuery object.
-        lg: An authenticated yahoo_fantasy_api.league.League object.
-        league_id: The ID of the fantasy league.
-        data_dir: The directory where the database file should be stored.
-        logger: The session-specific logger object.
-        capture_lineups: Boolean to determine if daily lineups should be captured in full (True) or weekly (False).
-
-    Returns:
-        A dictionary with the success status and database info, or an error message.
     """
     try:
         # --- MODIFIED ---
         logger.info(f"Starting DB update for league {league_id}...")
-
         logger.info("Fetching league metadata to determine filename...")
-        league_metadata = yq.get_league_metadata()
 
+        if yq is None:
+            logger.error("Yahoo Query object (yq) is None. Cannot proceed.")
+            return {'success': False, 'error': 'yfpy (yq) object not initialized. Check dev mode.'}
+
+        league_metadata = yq.get_league_metadata()
         league_name_str = league_metadata.name
         if isinstance(league_name_str, bytes):
             league_name_str = league_name_str.decode('utf-8', 'ignore')
 
         sanitized_name = re.sub(r'[\\/*?:"<>|]', "", league_name_str)
-
         db_filename = f"yahoo-{league_id}-{sanitized_name}.db"
         db_path = os.path.join(data_dir, db_filename)
 
-        # --- NEW CONDITIONAL DELETION ---
         if capture_lineups:
             # --- MODIFIED ---
             logger.info("Full mode selected (capture_lineups=True). Checking for existing database file...")
@@ -1441,7 +1295,6 @@ def run_build_process(yq, lg, league_id, data_dir, logger, capture_lineups=False
         else:
             # --- MODIFIED ---
             logger.info("Update mode selected (capture_lineups=False). Existing database file will be updated.")
-        # --- END NEW CONDITIONAL DELETION ---
 
         # --- MODIFIED ---
         logger.info(f"Connecting to database: {db_path}")
@@ -1451,7 +1304,7 @@ def run_build_process(yq, lg, league_id, data_dir, logger, capture_lineups=False
         # --- yfpy API Call Functions ---
         # --- MODIFIED: Pass logger to all calls ---
         _create_tables(cursor, logger)
-        _update_db_metadata(cursor, logger) # This will set the main 'last_updated' timestamp
+        _update_db_metadata(cursor, logger)
 
         _update_league_info(yq, cursor, league_id, sanitized_name, league_metadata, logger)
         _update_teams_info(yq, cursor, logger)
@@ -1461,18 +1314,19 @@ def run_build_process(yq, lg, league_id, data_dir, logger, capture_lineups=False
         _update_league_matchups(yq, cursor, playoff_start_week, logger)
         _update_league_transactions(yq, cursor, logger)
 
-        # Always run lineup updates, but mode depends on 'capture_lineups'
         _update_daily_lineups(yq, cursor, conn, league_metadata.num_teams, league_metadata.start_date, capture_lineups, logger)
-
         _update_current_rosters(yq, cursor, conn, league_metadata.num_teams, logger)
         _create_rosters_tall_and_drop_rosters(cursor, conn, logger)
 
         # --- yfa API Call Functions ---
-        _update_free_agents(lg, conn, logger)
-        _update_waivers(lg, conn, logger)
-        _update_rostered_players(lg, conn, logger)
-        # Now, specifically update the timestamp for available players
-        _update_db_metadata(cursor, logger, update_available_players_timestamp=True)
+        if lg is None:
+            logger.error("Yahoo Fantasy API (lg) object is None. Skipping FA, Waiver, and Rostered Players update.")
+            logger.error("This is expected in dev mode.")
+        else:
+            _update_free_agents(lg, conn, logger)
+            _update_waivers(lg, conn, logger)
+            _update_rostered_players(lg, conn, logger)
+            _update_db_metadata(cursor, logger, update_available_players_timestamp=True)
 
         conn.commit()
         conn.close()
@@ -1482,8 +1336,6 @@ def run_build_process(yq, lg, league_id, data_dir, logger, capture_lineups=False
         # --- DB Finalization ---
         # --- MODIFIED ---
         logger.info("--- Starting Database Finalization Process ---")
-
-        # Define paths to static DBs relative to this script's location
         script_dir = os.path.dirname(os.path.abspath(__file__))
         SERVER_DIR = os.path.join(script_dir, 'server')
         PLAYER_IDS_DB_PATH = os.path.join(SERVER_DIR, 'yahoo_player_ids.db')
@@ -1494,7 +1346,6 @@ def run_build_process(yq, lg, league_id, data_dir, logger, capture_lineups=False
         if finalizer.con:
             finalizer.import_player_ids(PLAYER_IDS_DB_PATH)
             finalizer.process_with_projections(PROJECTIONS_DB_PATH)
-            # Always parse stats now that lineups are always captured.
             finalizer.parse_and_store_player_stats()
             finalizer.parse_and_store_bench_stats()
             finalizer.close_connection()
@@ -1505,7 +1356,6 @@ def run_build_process(yq, lg, league_id, data_dir, logger, capture_lineups=False
 
         # --- MODIFIED ---
         logger.info("--- Database Finalization Process Complete ---")
-
         timestamp = os.path.getmtime(db_path)
         # --- MODIFIED ---
         logger.info(f"Database for '{sanitized_name}' updated successfully.")
