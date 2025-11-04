@@ -2586,7 +2586,7 @@ def db_action():
                 yq,
                 lg,
                 data['league_id'],
-                app.config['DATA_DIR'], # Pass the data directory
+                DATA_DIR, # Pass the data directory
                 logger, # Pass the new logger
                 capture_lineups=options['capture_lineups']
                 # Note: I am using the function from your db_builder.py file,
