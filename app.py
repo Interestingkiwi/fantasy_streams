@@ -2033,7 +2033,6 @@ def get_free_agent_data():
 
         unchecked_categories = [cat for cat in all_scoring_categories if cat not in checked_categories]
 
-        # We will always fetch all category rank columns to display every stat.
         all_cat_rank_columns = [f"{cat}_cat_rank" for cat in all_scoring_categories]
 
         # Determine current week
@@ -2042,9 +2041,6 @@ def get_free_agent_data():
         current_week_row = cursor.fetchone()
         current_week = current_week_row['week_num'] if current_week_row else 1
 
-        # Get waiver and free agent players.
-        # Note: This call to _get_ranked_players will fetch ranks for ALL categories.
-        # The total_cat_rank it returns will be based on all stats, so we will recalculate it below.
         cursor.execute("SELECT player_id FROM waiver_players")
         waiver_player_ids = [row['player_id'] for row in cursor.fetchall()]
         waiver_players = _get_ranked_players(cursor, waiver_player_ids, all_cat_rank_columns, current_week)
@@ -2067,11 +2063,16 @@ def get_free_agent_data():
                             total_rank += rank_value
                 player['total_cat_rank'] = round(total_rank, 2)
 
-# --- Calculate Unused Roster Spots for the SELECTED Team ---
+        # --- Calculate Unused Roster Spots for the SELECTED Team ---
         unused_roster_spots = None
-        team_ranked_roster = [] # --- NEW: Initialize roster list
-        days_in_week_data = [] # --- NEW: Initialize dates list
+        team_ranked_roster = []
+        days_in_week_data = []
         selected_team_name = request_data.get('team_name')
+
+        # --- [START] THE FIX ---
+        # 1. Get the simulated moves list from the request
+        simulated_moves = request_data.get('simulated_moves', [])
+        # --- [END] THE FIX ---
 
         if selected_team_name:
             cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (selected_team_name,))
@@ -2085,7 +2086,6 @@ def get_free_agent_data():
                     end_date_obj = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
                     days_in_week = [(start_date_obj + timedelta(days=i)) for i in range((end_date_obj - start_date_obj).days + 1)]
 
-                    # --- NEW: Populate dates for date picker (from today onwards) ---
                     today_obj = date.today()
                     for day in days_in_week:
                         if day >= today_obj:
@@ -2095,7 +2095,11 @@ def get_free_agent_data():
                     lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
 
                     team_ranked_roster = _get_ranked_roster_for_week(cursor, team_id, current_week)
-                    unused_roster_spots = _calculate_unused_spots(days_in_week, team_ranked_roster, lineup_settings)
+
+                    # --- [START] THE FIX ---
+                    # 2. Pass the simulated_moves list to the helper function
+                    unused_roster_spots = _calculate_unused_spots(days_in_week, team_ranked_roster, lineup_settings, simulated_moves)
+                    # --- [END] THE FIX ---
 
         # Get all scoring categories for checkboxes
         cursor.execute("SELECT category FROM scoring")
@@ -2105,11 +2109,11 @@ def get_free_agent_data():
             'waiver_players': waiver_players,
             'free_agents': free_agents,
             'scoring_categories': all_scoring_categories_for_checkboxes,
-            'ranked_categories': all_scoring_categories,  # Send all categories for table columns
-            'checked_categories': checked_categories,  # Send the list of checked categories
+            'ranked_categories': all_scoring_categories,
+            'checked_categories': checked_categories,
             'unused_roster_spots': unused_roster_spots,
-            'team_roster': [dict(p) for p in team_ranked_roster], # --- NEW: Send the roster
-            'week_dates': days_in_week_data # --- NEW: Send the valid transaction dates
+            'team_roster': [dict(p) for p in team_ranked_roster],
+            'week_dates': days_in_week_data
         })
 
     except Exception as e:
