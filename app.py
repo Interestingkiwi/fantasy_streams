@@ -1783,22 +1783,28 @@ def get_category_strengths_data():
     try:
         cursor = conn.cursor()
         data = request.get_json()
-        team_name = data.get('team_name')
+        selected_team_name = data.get('team_name')
         week = data.get('week')
 
-        logging.info("--- Category Strengths Report ---")
-        logging.info(f"Selected team: {team_name}, week: '{week}'")
+        logging.info("--- Category Strengths Report (League) ---")
+        logging.info(f"Selected team: {selected_team_name}, week: '{week}'")
 
-        # 1. Get team_id
-        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
-        team_id_row = cursor.fetchone()
-        if not team_id_row:
-            return jsonify({'error': f'Team not found: {team_name}'}), 404
-        team_id = team_id_row['team_id']
-        logging.info(f"Found team_id: {team_id}")
+        # 1. Get *all* teams from the DB
+        cursor.execute("SELECT team_id, name FROM teams")
+        all_teams_raw = cursor.fetchall()
+        # Create maps for team_id <-> name
+        # Use decode and strip for safety, as seen in transaction_history
+        teams_map_id_to_name = {row['team_id']: row['name'].decode('utf-8').strip() for row in all_teams_raw}
+        teams_map_name_to_id = {v: k for k, v in teams_map_id_to_name.items()}
 
-        # 2. Get Dates
+        if selected_team_name not in teams_map_name_to_id:
+             return jsonify({'error': f'Team not found: {selected_team_name}'}), 404
+
+        selected_team_id = teams_map_name_to_id[selected_team_name]
+
+        # 2. Get Dates and Opponent
         start_date, end_date = None, None
+        opponent_name = None
 
         if week != 'all':
             try:
@@ -1810,6 +1816,19 @@ def get_category_strengths_data():
                     start_date = week_dates['start_date']
                     end_date = week_dates['end_date']
                     logging.info(f"Found week dates: {start_date} to {end_date}")
+
+                    # --- Find Opponent (reusing your provided logic) ---
+                    cursor.execute(
+                        "SELECT team1, team2 FROM matchups WHERE week = ? AND (CAST(team1 AS TEXT) = ? OR CAST(team2 AS TEXT) = ?)",
+                        (week_num_int, selected_team_name, selected_team_name)
+                    )
+                    matchup_row = cursor.fetchone()
+                    if matchup_row:
+                        matchup_row_decoded = decode_dict_values(dict(matchup_row))
+                        opponent_name = matchup_row_decoded['team2'] if matchup_row_decoded['team1'] == selected_team_name else matchup_row_decoded['team1']
+                        logging.info(f"Found opponent_name: {opponent_name}")
+                    else:
+                        logging.warning(f"Could not find matchup row for week = {week_num_int}")
                 else:
                     logging.warning(f"Could not find week_num = {week_num_int}")
             except (ValueError, TypeError):
@@ -1822,79 +1841,107 @@ def get_category_strengths_data():
         all_categories_raw = cursor.fetchall()
         skater_categories = [row['category'] for row in all_categories_raw if row['scoring_group'] == 'offense']
         goalie_categories = [row['category'] for row in all_categories_raw if row['scoring_group'] == 'goaltending']
-
-        # Define all categories we need to fetch, including components for GAA/SVpct
         all_scoring_categories = set(skater_categories + goalie_categories)
         categories_to_fetch = all_scoring_categories | {'SV', 'SA', 'GA', 'TOI/G'}
 
-        # 4. Build and execute the aggregation query
-        sql_params = [team_id]
+        # 4. Build and execute the *league-wide* aggregation query
+        sql_params = []
         sql_query = """
-            SELECT category, SUM(stat_value) as total
+            SELECT team_id, category, SUM(stat_value) as total
             FROM daily_player_stats
-            WHERE team_id = ?
         """
 
+        date_filter_applied = False
         if start_date and end_date: # Week-specific
-            sql_query += " AND date_ >= ? AND date_ <= ?"
+            sql_query += " WHERE date_ >= ? AND date_ <= ?"
             sql_params.extend([start_date, end_date])
+            date_filter_applied = True
         elif week != 'all': # Week was selected but no dates found (error)
-             sql_query += " AND 1=0" # Force no results
-        # else: 'all' weeks selected, no date filter needed
+             sql_query += " WHERE 1=0" # Force no results
 
-        sql_query += " GROUP BY category"
+        sql_query += " GROUP BY team_id, category"
 
         cursor.execute(sql_query, tuple(sql_params))
         raw_stats = decode_dict_values([dict(row) for row in cursor.fetchall()])
-        logging.info(f"Found {len(raw_stats)} aggregated stat rows.")
+        logging.info(f"Found {len(raw_stats)} aggregated stat rows for the whole league.")
 
-        # 5. Pivot data and recalculate derived stats
+        # 5. Pivot data for *all* teams and recalculate derived stats
 
-        # Initialize map with all categories we care about
-        aggregated_stats = {cat: 0 for cat in categories_to_fetch}
+        # Initialize map for all teams
+        all_team_stats = {
+            team_id: {cat: 0 for cat in categories_to_fetch}
+            for team_id in teams_map_id_to_name
+        }
 
         # Populate map with query results
         for row in raw_stats:
-            if row['category'] in aggregated_stats:
-                aggregated_stats[row['category']] = row.get('total', 0)
+            team_id = row['team_id']
+            if team_id in all_team_stats and row['category'] in all_team_stats[team_id]:
+                all_team_stats[team_id][row['category']] = row.get('total', 0)
 
-        # Recalculate derived goalie stats
-        sv = aggregated_stats.get('SV', 0)
-        sa = aggregated_stats.get('SA', 0)
-        ga = aggregated_stats.get('GA', 0)
-        toi = aggregated_stats.get('TOI/G', 0)
-        sho = aggregated_stats.get('SHO', 0)
+        # Recalculate derived goalie stats for *each* team
+        for team_id in all_team_stats:
+            stats = all_team_stats[team_id] # Get this team's stat dict
+            sv = stats.get('SV', 0)
+            sa = stats.get('SA', 0)
+            ga = stats.get('GA', 0)
+            toi = stats.get('TOI/G', 0)
+            sho = stats.get('SHO', 0)
 
-        # Apply TOI/G fix for shutouts (from other routes)
-        if sho > 0:
-            toi += (sho * 60)
+            if sho > 0:
+                toi += (sho * 60)
+                stats['TOI/G'] = toi # Store the corrected TOI
 
-        if 'GAA' in aggregated_stats:
-            aggregated_stats['GAA'] = (ga * 60) / toi if toi > 0 else 0
-        if 'SVpct' in aggregated_stats:
-            aggregated_stats['SVpct'] = sv / sa if sa > 0 else 0
+            if 'GAA' in stats:
+                stats['GAA'] = (ga * 60) / toi if toi > 0 else 0
+            if 'SVpct' in stats:
+                stats['SVpct'] = sv / sa if sa > 0 else 0
 
-        # 6. Format data for output
-        skater_data = []
+        # 6. Determine Column Order
+        team_headers = []
+        team_headers.append(selected_team_name) # Column 1: Selected Team
+
+        other_team_names = [name for name in teams_map_name_to_id if name != selected_team_name]
+
+        if opponent_name:
+            team_headers.append(opponent_name) # Column 2: Opponent
+            other_team_names.remove(opponent_name)
+
+        team_headers.extend(sorted(other_team_names)) # Columns 3+: Everyone else
+        logging.info(f"Team header order: {team_headers}")
+
+        # 7. Format data for vertical table output
+        skater_data_rows = []
         for cat in skater_categories:
-            value = aggregated_stats.get(cat, 0)
-            skater_data.append({'category': cat, 'value': round(value, 1)})
+            row = {'category': cat}
+            for team_name in team_headers:
+                team_id = teams_map_name_to_id[team_name]
+                value = all_team_stats[team_id].get(cat, 0)
+                row[team_name] = round(value, 1)
+            skater_data_rows.append(row)
 
-        goalie_data = []
+        goalie_data_rows = []
         for cat in goalie_categories:
-            value = aggregated_stats.get(cat, 0)
-            if cat == 'GAA':
-                value = round(value, 2)
-            elif cat == 'SVpct':
-                value = round(value, 3)
-            elif isinstance(value, (int, float)):
-                value = round(value, 1)
-            goalie_data.append({'category': cat, 'value': value})
+            row = {'category': cat}
+            for team_name in team_headers:
+                team_id = teams_map_name_to_id[team_name]
+                value = all_team_stats[team_id].get(cat, 0)
+
+                # Apply specific rounding
+                if cat == 'GAA':
+                    value = round(value, 2)
+                elif cat == 'SVpct':
+                    value = round(value, 3)
+                else:
+                    value = round(value, 1)
+                row[team_name] = value
+            goalie_data_rows.append(row)
 
         logging.info("--- Category Strengths Report End ---")
         return jsonify({
-            'skater_stats': skater_data,
-            'goalie_stats': goalie_data
+            'team_headers': team_headers,
+            'skater_stats': skater_data_rows,
+            'goalie_stats': goalie_data_rows
         })
 
     except Exception as e:

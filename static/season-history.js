@@ -672,11 +672,11 @@
     }
 
 
-    function createCategoryStrengthsTable(title, statsList) {
+    function createDynamicCategoryTable(title, teamHeaders, statRows) {
             let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                             <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
 
-            if (!statsList || statsList.length === 0) {
+            if (!statRows || statRows.length === 0 || !teamHeaders || teamHeaders.length === 0) {
                 html += '<p class="text-gray-400">No stats found for this period.</p></div>';
                 return html;
             }
@@ -685,17 +685,31 @@
                         <table class="min-w-full divide-y divide-gray-700">
                             <thead>
                                 <tr>
-                                    <th class="table-header !text-left">Category</th>
-                                    <th class="table-header">Total</th>
-                                </tr>
+                                    <th class="table-header !text-left">Category</th>`;
+
+            // Create a header column for each team
+            for (const teamName of teamHeaders) {
+                // Highlight the first column (selected team)
+                const headerClass = (teamName === teamHeaders[0]) ? "!text-yellow-400" : "";
+                html += `<th class="table-header ${headerClass}">${teamName}</th>`;
+            }
+
+            html += `           </tr>
                             </thead>
                             <tbody class="bg-gray-900 divide-y divide-gray-700">`;
 
-            for (const stat of statsList) {
+            // Create a row for each category
+            for (const categoryRow of statRows) {
                 html += `<tr>
-                            <td class="table-cell !text-left">${stat.category}</td>
-                            <td class="table-cell text-center">${stat.value}</td>
-                           </tr>`;
+                            <td class="table-cell !text-left font-semibold">${categoryRow.category}</td>`;
+
+                // Add the stat value for each team, in the correct column order
+                for (const teamName of teamHeaders) {
+                    // Highlight the first column (selected team)
+                    const cellClass = (teamName === teamHeaders[0]) ? "text-yellow-400" : "";
+                    html += `<td class="table-cell text-center ${cellClass}">${categoryRow[teamName]}</td>`;
+                }
+                html += `</tr>`;
             }
 
             html += `       </tbody>
@@ -813,44 +827,44 @@
 
 
     async function fetchCategoryStrengths(teamName, week) {
-            loadingSpinner.classList.remove('hidden');
-            historyContent.innerHTML = '';
-            errorDiv.classList.add('hidden');
+        loadingSpinner.classList.remove('hidden');
+        historyContent.innerHTML = '';
+        errorDiv.classList.add('hidden');
 
-            try {
-                const response = await fetch('/api/history/category_strengths', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ team_name: teamName, week: week })
-                });
+        try {
+            const response = await fetch('/api/history/category_strengths', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ team_name: teamName, week: week })
+            });
 
-                if (!response.ok) throw new Error(`Server error: ${response.status}`);
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
+            if (!response.ok) throw new Error(`Server error: ${response.status}`);
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
 
-                // Create the two tables
-                const skaterTable = createCategoryStrengthsTable('Skater Stats', data.skater_stats);
-                const goalieTable = createCategoryStrengthsTable('Goalie Stats', data.goalie_stats);
+            // Create the two tables using the new dynamic helper
+            const skaterTable = createDynamicCategoryTable('Skater Stats', data.team_headers, data.skater_stats);
+            const goalieTable = createDynamicCategoryTable('Goalie Stats', data.team_headers, data.goalie_stats);
 
-                // Render in a simple two-column layout
-                historyContent.innerHTML = `
-                    <div class="flex flex-col lg:flex-row gap-6">
-                        <div class="w-full lg:w-1/2">
-                            ${skaterTable}
-                        </div>
-                        <div class="w-full lg:w-1/2">
-                            ${goalieTable}
-                        </div>
+            // Render tables stacked vertically
+            historyContent.innerHTML = `
+                <div class="flex flex-col gap-6">
+                    <div>
+                        ${skaterTable}
                     </div>
-                `;
+                    <div>
+                        ${goalieTable}
+                    </div>
+                </div>
+            `;
 
-            } catch (error) {
-                console.error('Error fetching category strengths:', error);
-                showError(error.message);
-            } finally {
-                loadingSpinner.classList.add('hidden');
-            }
+        } catch (error) {
+            console.error('Error fetching category strengths:', error);
+            showError(error.message);
+        } finally {
+            loadingSpinner.classList.add('hidden');
         }
+    }
 
 
     // --- MODIFIED: fetchAndRenderTable to pass view mode ---
