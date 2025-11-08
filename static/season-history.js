@@ -751,29 +751,10 @@
             }
 
 
-    // --- Helper functions for heatmap ---
-        const pastelRed = [248, 204, 204];    // A light pastel red
-        const pastelYellow = [255, 255, 224]; // A light pastel yellow
-        const pastelGreen = [204, 248, 204];  // A light pastel green
-
-        // Linear interpolation for a single number
-        function lerp(a, b, t) {
-            return a + (b - a) * t;
-        }
-
-        // Interpolate between two RGB colors
-        function lerpColor(colorA, colorB, t) {
-            // Clamp t from 0.0 to 1.0
-            const tClamped = Math.max(0, Math.min(1, t));
-            const r = Math.round(lerp(colorA[0], colorB[0], tClamped));
-            const g = Math.round(lerp(colorA[1], colorB[1], tClamped));
-            const b = Math.round(lerp(colorA[2], colorB[2], tClamped));
-            return `rgb(${r}, ${g}, ${b})`;
-        }
-
-        /**
+            /**
          * Pre-calculates heatmap colors for each row and stores them
          * in a `heatmapColors` object on the row itself.
+         * USES HSL logic from lineups.js
          */
         function addHeatmapData(statRows, teamHeaders) {
             // Define reverse-scoring categories here
@@ -794,7 +775,7 @@
                 for (const teamName of teamHeaders) {
                     const value = row[teamName];
 
-                    // Calculate normalized position (0.0 to 1.0)
+                    // Calculate normalized position (t = 0.0 for worst, t = 1.0 for best)
                     let t = 0.5; // Default to neutral if min === max
                     if (maxVal !== minVal) {
                         t = (value - minVal) / (maxVal - minVal);
@@ -805,15 +786,13 @@
                         t = 1 - t;
                     }
 
-                    // 3. Interpolate color (3-point Red -> Yellow -> Green)
-                    let color;
-                    if (t < 0.5) {
-                        // From Red (0.0) to Yellow (0.5)
-                        color = lerpColor(pastelRed, pastelYellow, t * 2);
-                    } else {
-                        // From Yellow (0.5) to Green (1.0)
-                        color = lerpColor(pastelYellow, pastelGreen, (t - 0.5) * 2);
-                    }
+                    // 3. Calculate HSL color based on lineups.js logic
+                    // t=0.0 (worst) -> hue 0 (red)
+                    // t=1.0 (best) -> hue 120 (green)
+                    const hue = t * 120;
+
+                    // Use the same saturation and lightness from lineups.js
+                    const color = `hsl(${hue}, 65%, 75%)`;
 
                     row.heatmapColors[teamName] = color;
                 }
