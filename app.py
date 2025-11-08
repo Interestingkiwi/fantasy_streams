@@ -1851,14 +1851,15 @@ def get_category_strengths_data():
             FROM daily_player_stats
         """
 
-        date_filter_applied = False
+        # Add date filter if necessary
         if start_date and end_date: # Week-specific
             sql_query += " WHERE date_ >= ? AND date_ <= ?"
             sql_params.extend([start_date, end_date])
-            date_filter_applied = True
         elif week != 'all': # Week was selected but no dates found (error)
              sql_query += " WHERE 1=0" # Force no results
+        # else: 'all' weeks selected, no date filter needed
 
+        # Add GROUP BY at the end
         sql_query += " GROUP BY team_id, category"
 
         cursor.execute(sql_query, tuple(sql_params))
