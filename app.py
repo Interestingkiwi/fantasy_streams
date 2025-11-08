@@ -1793,15 +1793,12 @@ def get_category_strengths_data():
         cursor.execute("SELECT team_id, name FROM teams")
         all_teams_raw = cursor.fetchall()
 
-        # --- [START] FIX 1: Cast all team_ids to strings from the start ---
         teams_map_id_to_name = {str(row['team_id']): row['name'].decode('utf-8').strip() for row in all_teams_raw}
         teams_map_name_to_id = {v: k for k, v in teams_map_id_to_name.items()}
-        # --- [END] FIX 1 ---
 
         if selected_team_name not in teams_map_name_to_id:
              return jsonify({'error': f'Team not found: {selected_team_name}'}), 404
 
-        # This is now a string, e.g., '5'
         selected_team_id = teams_map_name_to_id[selected_team_name]
 
         # 2. Get Dates and Opponent
@@ -1845,8 +1842,10 @@ def get_category_strengths_data():
         all_scoring_categories = set(skater_categories + goalie_categories)
         categories_to_fetch = all_scoring_categories | {'SV', 'SA', 'GA', 'TOI/G'}
 
+        # --- NEW: Define reverse scoring categories ---
+        reverse_scoring_cats = {'GA', 'GAA'}
+
         # 4. Build and execute the *league-wide* aggregation query
-        # (This query logic from the last fix was correct)
         sql_params = []
         sql_query = """
             SELECT team_id, category, SUM(stat_value) as total
@@ -1866,22 +1865,16 @@ def get_category_strengths_data():
         logging.info(f"Found {len(raw_stats)} aggregated stat rows for the whole league.")
 
         # 5. Pivot data for *all* teams and recalculate derived stats
-
-        # The keys here are now STRINGS (e.g., '5') because of Fix 1
         all_team_stats = {
             team_id: {cat: 0 for cat in categories_to_fetch}
             for team_id in teams_map_id_to_name
         }
 
         for row in raw_stats:
-            # --- [START] FIX 2: Cast the team_id from the query to a string ---
             team_id = str(row['team_id'])
-            # --- [END] FIX 2 ---
-
             if team_id in all_team_stats and row['category'] in all_team_stats[team_id]:
                 all_team_stats[team_id][row['category']] = row.get('total', 0)
 
-        # Recalculate derived goalie stats for *each* team
         for team_id in all_team_stats:
             stats = all_team_stats[team_id]
             sv = stats.get('SV', 0)
@@ -1899,6 +1892,10 @@ def get_category_strengths_data():
             if 'SVpct' in stats:
                 stats['SVpct'] = sv / sa if sa > 0 else 0
 
+        # --- NEW: Get list of opponent IDs ---
+        opponent_team_ids = [team_id for team_id in all_team_stats if team_id != selected_team_id]
+        num_opponents = len(opponent_team_ids)
+
         # 6. Determine Column Order
         team_headers = []
         team_headers.append(selected_team_name)
@@ -1907,7 +1904,6 @@ def get_category_strengths_data():
 
         if opponent_name:
             team_headers.append(opponent_name)
-            # Add a check in case opponent_name isn't in other_team_names (e.g., test DB)
             if opponent_name in other_team_names:
                 other_team_names.remove(opponent_name)
 
@@ -1918,8 +1914,28 @@ def get_category_strengths_data():
         skater_data_rows = []
         for cat in skater_categories:
             row = {'category': cat}
+            my_value = all_team_stats[selected_team_id].get(cat, 0)
+            is_reverse = cat in reverse_scoring_cats
+
+            # --- Calculate Rank ---
+            all_values = [all_team_stats[team_id].get(cat, 0) for team_id in all_team_stats]
+            # Use set() for a dense rank (e.g., 1, 2, 2, 3)
+            sorted_values = sorted(list(set(all_values)), reverse=(not is_reverse))
+            row['Rank'] = sorted_values.index(my_value) + 1
+
+            # --- Calculate Average Delta ---
+            if num_opponents > 0:
+                opponent_values = [all_team_stats[team_id].get(cat, 0) for team_id in opponent_team_ids]
+                deltas = [my_value - opp_value for opp_value in opponent_values]
+                avg_delta = sum(deltas) / num_opponents
+                if is_reverse:
+                    avg_delta = -avg_delta # Flip sign so positive is always "good"
+                row['Average Delta'] = round(avg_delta, 2)
+            else:
+                row['Average Delta'] = 0
+
+            # --- Add team stats ---
             for team_name in team_headers:
-                # Use string key (e.g., '5') to look up team_id
                 team_id = teams_map_name_to_id[team_name]
                 value = all_team_stats[team_id].get(cat, 0)
                 row[team_name] = round(value, 1)
@@ -1928,6 +1944,26 @@ def get_category_strengths_data():
         goalie_data_rows = []
         for cat in goalie_categories:
             row = {'category': cat}
+            my_value = all_team_stats[selected_team_id].get(cat, 0)
+            is_reverse = cat in reverse_scoring_cats
+
+            # --- Calculate Rank ---
+            all_values = [all_team_stats[team_id].get(cat, 0) for team_id in all_team_stats]
+            sorted_values = sorted(list(set(all_values)), reverse=(not is_reverse))
+            row['Rank'] = sorted_values.index(my_value) + 1
+
+            # --- Calculate Average Delta ---
+            if num_opponents > 0:
+                opponent_values = [all_team_stats[team_id].get(cat, 0) for team_id in opponent_team_ids]
+                deltas = [my_value - opp_value for opp_value in opponent_values]
+                avg_delta = sum(deltas) / num_opponents
+                if is_reverse:
+                    avg_delta = -avg_delta # Flip sign so positive is always "good"
+                row['Average Delta'] = round(avg_delta, 2)
+            else:
+                row['Average Delta'] = 0
+
+            # --- Add team stats ---
             for team_name in team_headers:
                 team_id = teams_map_name_to_id[team_name]
                 value = all_team_stats[team_id].get(cat, 0)

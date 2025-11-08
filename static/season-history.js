@@ -673,51 +673,76 @@
 
 
     function createDynamicCategoryTable(title, teamHeaders, statRows) {
-            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                            <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
+        let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                        <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
 
-            if (!statRows || statRows.length === 0 || !teamHeaders || teamHeaders.length === 0) {
-                html += '<p class="text-gray-400">No stats found for this period.</p></div>';
-                return html;
-            }
-
-            html += `<div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-700">
-                            <thead>
-                                <tr>
-                                    <th class="table-header !text-left">Category</th>`;
-
-            // Create a header column for each team
-            for (const teamName of teamHeaders) {
-                // Highlight the first column (selected team)
-                const headerClass = (teamName === teamHeaders[0]) ? "!text-yellow-400" : "";
-                html += `<th class="table-header ${headerClass}">${teamName}</th>`;
-            }
-
-            html += `           </tr>
-                            </thead>
-                            <tbody class="bg-gray-900 divide-y divide-gray-700">`;
-
-            // Create a row for each category
-            for (const categoryRow of statRows) {
-                html += `<tr>
-                            <td class="table-cell !text-left font-semibold">${categoryRow.category}</td>`;
-
-                // Add the stat value for each team, in the correct column order
-                for (const teamName of teamHeaders) {
-                    // Highlight the first column (selected team)
-                    const cellClass = (teamName === teamHeaders[0]) ? "text-yellow-400" : "";
-                    html += `<td class="table-cell text-center ${cellClass}">${categoryRow[teamName]}</td>`;
-                }
-                html += `</tr>`;
-            }
-
-            html += `       </tbody>
-                        </table>
-                    </div>
-                </div>`;
+        if (!statRows || statRows.length === 0 || !teamHeaders || teamHeaders.length === 0) {
+            html += '<p class="text-gray-400">No stats found for this period.</p></div>';
             return html;
         }
+
+        html += `<div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead>
+                            <tr>
+                                <th class="table-header !text-left">Category</th>`;
+
+        // --- MODIFIED: Add Rank/Delta headers after the first team ---
+        for (const teamName of teamHeaders) {
+            // Highlight the first column (selected team)
+            const headerClass = (teamName === teamHeaders[0]) ? "!text-yellow-400" : "";
+            html += `<th class="table-header ${headerClass}">${teamName}</th>`;
+
+            // If this is the first team, add the new headers right after it
+            if (teamName === teamHeaders[0]) {
+                html += `<th class="table-header">Rank</th>`;
+                html += `<th class="table-header">Avg Delta</th>`;
+            }
+        }
+        // --- END MODIFICATION ---
+
+        html += `           </tr>
+                        </thead>
+                        <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+        // Create a row for each category
+        for (const categoryRow of statRows) {
+            html += `<tr>
+                        <td class="table-cell !text-left font-semibold">${categoryRow.category}</td>`;
+
+            // --- MODIFIED: Add Rank/Delta data after the first team ---
+            for (const teamName of teamHeaders) {
+                // Highlight the first column (selected team)
+                const cellClass = (teamName === teamHeaders[0]) ? "text-yellow-400" : "";
+                html += `<td class="table-cell text-center ${cellClass}">${categoryRow[teamName]}</td>`;
+
+                // If this is the first team, add the new data cells right after it
+                if (teamName === teamHeaders[0]) {
+                    html += `<td class="table-cell text-center">${categoryRow['Rank']}</td>`;
+                    // Use the new formatDelta helper function
+                    html += `<td class="table-cell text-center">${formatDelta(categoryRow['Average Delta'])}</td>`;
+                }
+            }
+            // --- END MODIFICATION ---
+            html += `</tr>`;
+        }
+
+        html += `       </tbody>
+                    </table>
+                </div>
+            </div>`;
+        return html;
+    }
+
+
+        function formatDelta(delta) {
+                if (delta > 0) {
+                    return `<span class="text-green-400">+${delta.toFixed(2)}</span>`;
+                } else if (delta < 0) {
+                    return `<span class="text-red-400">${delta.toFixed(2)}</span>`;
+                }
+                return `<span class="text-gray-500">0.00</span>`;
+            }
 
 
 
