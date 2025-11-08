@@ -69,6 +69,7 @@
         reportOptions += '<option value="please_select">--Please Select--</option>'; // Your default
         reportOptions += '<option value="bench_points">Bench Points</option>';
         reportOptions += '<option value="transaction_history">Transaction History</option>';
+        reportOptions += '<option value="category_strengths">Category Strengths</option>';
         reportOptions += '<option value="tbd">TBD</option>';
 
         reportSelect.innerHTML = reportOptions;
@@ -671,6 +672,41 @@
     }
 
 
+    function createCategoryStrengthsTable(title, statsList) {
+            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                            <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
+
+            if (!statsList || statsList.length === 0) {
+                html += '<p class="text-gray-400">No stats found for this period.</p></div>';
+                return html;
+            }
+
+            html += `<div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-700">
+                            <thead>
+                                <tr>
+                                    <th class="table-header !text-left">Category</th>
+                                    <th class="table-header">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+            for (const stat of statsList) {
+                html += `<tr>
+                            <td class="table-cell !text-left">${stat.category}</td>
+                            <td class="table-cell text-center">${stat.value}</td>
+                           </tr>`;
+            }
+
+            html += `       </tbody>
+                        </table>
+                    </div>
+                </div>`;
+            return html;
+        }
+
+
+
     // --- MODIFIED: Function to fetch and render transaction success ---
     async function fetchTransactionSuccess(teamName, week, viewMode) {
         loadingSpinner.classList.remove('hidden');
@@ -776,6 +812,47 @@
     }
 
 
+    async function fetchCategoryStrengths(teamName, week) {
+            loadingSpinner.classList.remove('hidden');
+            historyContent.innerHTML = '';
+            errorDiv.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/history/category_strengths', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ team_name: teamName, week: week })
+                });
+
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+
+                // Create the two tables
+                const skaterTable = createCategoryStrengthsTable('Skater Stats', data.skater_stats);
+                const goalieTable = createCategoryStrengthsTable('Goalie Stats', data.goalie_stats);
+
+                // Render in a simple two-column layout
+                historyContent.innerHTML = `
+                    <div class="flex flex-col lg:flex-row gap-6">
+                        <div class="w-full lg:w-1/2">
+                            ${skaterTable}
+                        </div>
+                        <div class="w-full lg:w-1/2">
+                            ${goalieTable}
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Error fetching category strengths:', error);
+                showError(error.message);
+            } finally {
+                loadingSpinner.classList.add('hidden');
+            }
+        }
+
+
     // --- MODIFIED: fetchAndRenderTable to pass view mode ---
     async function fetchAndRenderTable() {
             const selectedTeam = yourTeamSelect.value;
@@ -794,7 +871,10 @@
                 case 'transaction_history':
                     await fetchTransactionSuccess(selectedTeam, selectedWeek, currentViewMode);
                     break;
-                // --- END MODIFICATION ---
+
+              case 'category_strengths':
+                  await fetchCategoryStrengths(selectedTeam, selectedWeek);
+                  break;
 
                 case 'tbd':
                     loadingSpinner.classList.remove('hidden');

@@ -1772,6 +1772,138 @@ def get_transaction_history_data():
         if conn:
             conn.close()
 
+
+@app.route('/api/history/category_strengths', methods=['POST'])
+def get_category_strengths_data():
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg}), 404
+
+    try:
+        cursor = conn.cursor()
+        data = request.get_json()
+        team_name = data.get('team_name')
+        week = data.get('week')
+
+        logging.info("--- Category Strengths Report ---")
+        logging.info(f"Selected team: {team_name}, week: '{week}'")
+
+        # 1. Get team_id
+        cursor.execute("SELECT team_id FROM teams WHERE CAST(name AS TEXT) = ?", (team_name,))
+        team_id_row = cursor.fetchone()
+        if not team_id_row:
+            return jsonify({'error': f'Team not found: {team_name}'}), 404
+        team_id = team_id_row['team_id']
+        logging.info(f"Found team_id: {team_id}")
+
+        # 2. Get Dates
+        start_date, end_date = None, None
+
+        if week != 'all':
+            try:
+                week_num_int = int(week)
+                cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (week_num_int,))
+                week_dates = cursor.fetchone()
+
+                if week_dates:
+                    start_date = week_dates['start_date']
+                    end_date = week_dates['end_date']
+                    logging.info(f"Found week dates: {start_date} to {end_date}")
+                else:
+                    logging.warning(f"Could not find week_num = {week_num_int}")
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Invalid week format.'}), 400
+        else:
+            logging.info("Week is 'all', aggregating all season stats.")
+
+        # 3. Get Scoring Categories
+        cursor.execute("SELECT category, scoring_group FROM scoring ORDER BY scoring_group DESC, stat_id")
+        all_categories_raw = cursor.fetchall()
+        skater_categories = [row['category'] for row in all_categories_raw if row['scoring_group'] == 'offense']
+        goalie_categories = [row['category'] for row in all_categories_raw if row['scoring_group'] == 'goaltending']
+
+        # Define all categories we need to fetch, including components for GAA/SVpct
+        all_scoring_categories = set(skater_categories + goalie_categories)
+        categories_to_fetch = all_scoring_categories | {'SV', 'SA', 'GA', 'TOI/G'}
+
+        # 4. Build and execute the aggregation query
+        sql_params = [team_id]
+        sql_query = """
+            SELECT category, SUM(stat_value) as total
+            FROM daily_player_stats
+            WHERE team_id = ?
+        """
+
+        if start_date and end_date: # Week-specific
+            sql_query += " AND date_ >= ? AND date_ <= ?"
+            sql_params.extend([start_date, end_date])
+        elif week != 'all': # Week was selected but no dates found (error)
+             sql_query += " AND 1=0" # Force no results
+        # else: 'all' weeks selected, no date filter needed
+
+        sql_query += " GROUP BY category"
+
+        cursor.execute(sql_query, tuple(sql_params))
+        raw_stats = decode_dict_values([dict(row) for row in cursor.fetchall()])
+        logging.info(f"Found {len(raw_stats)} aggregated stat rows.")
+
+        # 5. Pivot data and recalculate derived stats
+
+        # Initialize map with all categories we care about
+        aggregated_stats = {cat: 0 for cat in categories_to_fetch}
+
+        # Populate map with query results
+        for row in raw_stats:
+            if row['category'] in aggregated_stats:
+                aggregated_stats[row['category']] = row.get('total', 0)
+
+        # Recalculate derived goalie stats
+        sv = aggregated_stats.get('SV', 0)
+        sa = aggregated_stats.get('SA', 0)
+        ga = aggregated_stats.get('GA', 0)
+        toi = aggregated_stats.get('TOI/G', 0)
+        sho = aggregated_stats.get('SHO', 0)
+
+        # Apply TOI/G fix for shutouts (from other routes)
+        if sho > 0:
+            toi += (sho * 60)
+
+        if 'GAA' in aggregated_stats:
+            aggregated_stats['GAA'] = (ga * 60) / toi if toi > 0 else 0
+        if 'SVpct' in aggregated_stats:
+            aggregated_stats['SVpct'] = sv / sa if sa > 0 else 0
+
+        # 6. Format data for output
+        skater_data = []
+        for cat in skater_categories:
+            value = aggregated_stats.get(cat, 0)
+            skater_data.append({'category': cat, 'value': round(value, 1)})
+
+        goalie_data = []
+        for cat in goalie_categories:
+            value = aggregated_stats.get(cat, 0)
+            if cat == 'GAA':
+                value = round(value, 2)
+            elif cat == 'SVpct':
+                value = round(value, 3)
+            elif isinstance(value, (int, float)):
+                value = round(value, 1)
+            goalie_data.append({'category': cat, 'value': value})
+
+        logging.info("--- Category Strengths Report End ---")
+        return jsonify({
+            'skater_stats': skater_data,
+            'goalie_stats': goalie_data
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching category strengths data: {e}", exc_info=True)
+        return jsonify({'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
 @app.route('/api/roster_data', methods=['POST'])
 def get_roster_data():
     league_id = session.get('league_id')
