@@ -687,7 +687,7 @@
                             <tr>
                                 <th class="table-header !text-left">Category</th>`;
 
-        // --- (Header loop is unchanged) ---
+        // (Header loop is unchanged)
         for (const teamName of teamHeaders) {
             const headerClass = (teamName === teamHeaders[0]) ? "!text-yellow-400" : "";
             html += `<th class="table-header ${headerClass}">${teamName}</th>`;
@@ -707,25 +707,27 @@
             html += `<tr>
                         <td class="table-cell !text-left font-semibold">${categoryRow.category}</td>`;
 
-            // --- MODIFIED: Add style attribute for heatmap ---
+            // --- MODIFIED: Add dark text class to heatmap cells ---
             for (const teamName of teamHeaders) {
-                const cellClass = (teamName === teamHeaders[0]) ? "text-yellow-400" : "";
+                // Get the base cell class (for user's column)
+                const baseCellClass = (teamName === teamHeaders[0]) ? "text-yellow-400" : "";
 
-                // --- Get the pre-calculated color ---
-                // Use a fallback of '' if the color object doesn't exist for some reason
+                // Get the pre-calculated color
                 const bgColor = (categoryRow.heatmapColors && categoryRow.heatmapColors[teamName])
                                 ? categoryRow.heatmapColors[teamName]
                                 : '';
 
-                // --- Add the style attribute ---
-                html += `<td class="table-cell text-center ${cellClass}" style="background-color: ${bgColor};">
+                // --- FIX: Add font-semibold and text-gray-800 for dark text ---
+                // This mimics the 'text-gray-600' from lineups.js
+                html += `<td class="table-cell text-center font-semibold text-gray-800" style="background-color: ${bgColor};">
                             ${categoryRow[teamName]}
                          </td>`;
-                // --- End style modification ---
+                // --- END FIX ---
 
-                // This logic is unchanged and correctly skips the heatmap
+                // This part is for Rank and Avg Delta (no heatmap)
                 if (teamName === teamHeaders[0]) {
-                    html += `<td class="table-cell text-center">${categoryRow['Rank']}</td>`;
+                    // We *keep* the yellow text for the Rank column
+                    html += `<td class="table-cell text-center ${baseCellClass}">${categoryRow['Rank']}</td>`;
                     html += `<td class="table-cell text-center">${formatDelta(categoryRow['Average Delta'])}</td>`;
                 }
             }
@@ -754,44 +756,70 @@
             /**
          * Pre-calculates heatmap colors for each row and stores them
          * in a `heatmapColors` object on the row itself.
-         * USES HSL logic from lineups.js
+         * USES HSL logic from lineups.js (based on RANK, not value)
          */
         function addHeatmapData(statRows, teamHeaders) {
             // Define reverse-scoring categories here
             const reverseScoringCats = new Set(['GA', 'GAA']);
 
+            // Define the rank range. Min is always 1. Max is number of teams.
+            const minRank = 1;
+            const maxRank = teamHeaders.length; // e.g., 12 teams
+
             for (const row of statRows) {
                 const cat = row.category;
                 const isReverse = reverseScoringCats.has(cat);
 
-                // 1. Get all values for this category
-                const values = teamHeaders.map(team => row[team]);
-                const minVal = Math.min(...values);
-                const maxVal = Math.max(...values);
+                // 1. Get all values and map them to objects { teamName, value }
+                //    This is necessary to sort them while keeping track of the team.
+                const teamValues = teamHeaders.map(teamName => ({
+                    teamName: teamName,
+                    value: row[teamName]
+                }));
 
-                row.heatmapColors = {}; // Create a new object to store colors
-
-                // 2. Calculate color for each team
-                for (const teamName of teamHeaders) {
-                    const value = row[teamName];
-
-                    // Calculate normalized position (t = 0.0 for worst, t = 1.0 for best)
-                    let t = 0.5; // Default to neutral if min === max
-                    if (maxVal !== minVal) {
-                        t = (value - minVal) / (maxVal - minVal);
-                    }
-
-                    // Invert if it's a reverse-scoring category (low is good)
+                // 2. Sort the values to determine rank
+                teamValues.sort((a, b) => {
                     if (isReverse) {
-                        t = 1 - t;
+                        return a.value - b.value; // Low is better
+                    }
+                    return b.value - a.value; // High is better
+                });
+
+                // 3. Create a map of { teamName: rank }
+                const teamRanks = {};
+                let currentRank = 1;
+                for (let i = 0; i < teamValues.length; i++) {
+                    const teamName = teamValues[i].teamName;
+
+                    // Handle ties: if value is same as previous, give same rank
+                    if (i > 0 && teamValues[i].value === teamValues[i-1].value) {
+                        teamRanks[teamName] = teamRanks[teamValues[i-1].teamName];
+                    } else {
+                        currentRank = i + 1;
+                        teamRanks[teamName] = currentRank;
+                    }
+                }
+
+                row.heatmapColors = {}; // Create object to store colors
+
+                // 4. Calculate color for each team BASED ON ITS RANK
+                for (const teamName of teamHeaders) {
+                    const rank = teamRanks[teamName]; // Get the team's rank (e.g., 1, 2, 5...)
+
+                    // 5. Calculate normalized percentage (t) based on RANK, not value
+                    //    This is the logic from lineups.js
+                    //    A rank of 1 (best) will be 0%. A rank of 12 (worst) will be 100%.
+                    let percentage = 0.5; // Default for 1-team league
+                    if (maxRank > minRank) {
+                        const clampedRank = Math.max(minRank, Math.min(rank, maxRank));
+                        percentage = (clampedRank - minRank) / (maxRank - minRank);
                     }
 
-                    // 3. Calculate HSL color based on lineups.js logic
-                    // t=0.0 (worst) -> hue 0 (red)
-                    // t=1.0 (best) -> hue 120 (green)
-                    const hue = t * 120;
+                    // 6. Calculate HSL color (same as lineups.js)
+                    //    We want green (hue 120) at 0% (best rank)
+                    //    and red (hue 0) at 100% (worst rank).
+                    const hue = (1 - percentage) * 120;
 
-                    // Use the same saturation and lightness from lineups.js
                     const color = `hsl(${hue}, 65%, 75%)`;
 
                     row.heatmapColors[teamName] = color;
