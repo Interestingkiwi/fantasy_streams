@@ -1830,8 +1830,10 @@ def _get_ranks_for_one_week(cursor, all_team_ids, selected_team_id, categories_t
 
     # 6. Calculate ranks for selected team
     for cat in categories_to_process:
-        if cat not in all_team_stats[selected_team_id]:
-            continue
+        # --- [START] FIX ---
+        # Removed the faulty 'if cat not in ...' check.
+        # We will get the value (defaulting to 0) and rank it.
+        # --- [END] FIX ---
 
         my_value = all_team_stats[selected_team_id].get(cat, 0)
         is_reverse = cat in reverse_scoring_cats

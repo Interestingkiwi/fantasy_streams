@@ -1059,14 +1059,18 @@
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
-            // --- (This part is unchanged) ---
+            // (This part is unchanged)
             addHeatmapData(data.skater_stats, data.team_headers);
             addHeatmapData(data.goalie_stats, data.team_headers);
             const skaterTable = createDynamicCategoryTable('Skater Stats', data.team_headers, data.skater_stats);
             const goalieTable = createDynamicCategoryTable('Goalie Stats', data.team_headers, data.goalie_stats);
 
-            // --- [START] NEW LOGIC for Trend Table ---
+            // --- [START] MODIFIED LOGIC for Trend Table & Styling ---
             let trendTableHtml = '';
+            // Default to a full-width container
+            let trendTableContainerOpen = '<div>';
+            const trendTableContainerClose = '</div>';
+
             if (data.trend_data) {
                 // Get all categories in the correct order
                 const all_categories = data.skater_stats.map(s => s.category)
@@ -1076,11 +1080,15 @@
                     trendTableHtml = createRankTrendMatrixTable(all_categories, data.trend_data);
                 } else if (data.trend_data.type === 'list') {
                     trendTableHtml = createRankTrendListTable(data.trend_data.data);
+
+                    // --- STYLING FIX: Change the container for the list view ---
+                    // This will be 50% width on large screens, max-width on smaller, and centered.
+                    trendTableContainerOpen = '<div class="max-w-xl lg:max-w-none lg:w-1/2 mx-auto lg:mx-0">';
                 }
             }
-            // --- [END] NEW LOGIC ---
+            // --- [END] MODIFIED LOGIC ---
 
-            // Render tables stacked vertically
+            // Render tables stacked vertically, using the new container
             historyContent.innerHTML = `
                 <div class="flex flex-col gap-6">
                     <div>
@@ -1089,9 +1097,10 @@
                     <div>
                         ${goalieTable}
                     </div>
-                    <div>
+
+                    ${trendTableContainerOpen}
                         ${trendTableHtml}
-                    </div>
+                    ${trendTableContainerClose}
                 </div>
             `;
 
