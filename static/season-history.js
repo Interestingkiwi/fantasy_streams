@@ -901,40 +901,51 @@
             /**
              * Creates the "Individual Week" trend table (List)
              */
-            function createRankTrendListTable(listData) {
-                let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                                <h3 class="text-lg font-semibold text-white mb-3">Category Rank Trends</h3>
-                                <div class="overflow-x-auto">
-                                    <table class="min-w-full divide-y divide-gray-700">
-                                        <thead>
-                                            <tr>
-                                                <th class="table-header !text-left">Category</th>
-                                                <th class="table-header">Rank</th>
-                                                <th class="table-header">Change</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+             function createRankTrendListTable(listData) {
+         let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                         <h3 class="text-lg font-semibold text-white mb-3">Category Rank Trends</h3>
+                         <div class="overflow-x-auto">
+                             <table class="min-w-full divide-y divide-gray-700">
+                                 <thead>
+                                     <tr>
+                                         <th class="table-header !text-left">Category</th>
+                                         <th class="table-header">Rank</th>
+                                         <th class="table-header">Change</th>
+                                     </tr>
+                                 </thead>
+                                 <tbody class="bg-gray-900 divide-y divide-gray-700">`;
 
-                listData.forEach(row => {
-                    // Re-use formatRankDelta but split it to just get the delta part
-                    const rankStr = formatRankDelta(row.rank, row.delta);
-                    const deltaStr = rankStr.includes('span')
-                        ? rankStr.split(' ')[1]
-                        : '<span class="text-gray-500">(-)</span>';
+         listData.forEach(row => {
+             // Get the full formatted string, e.g., "4 <span>...</span>"
+             const rankStr = formatRankDelta(row.rank, row.delta);
 
-                    html += `<tr>
-                                <td class="table-cell !text-left font-semibold">${row.category}</td>
-                                <td class="table-cell text-center">${row.rank || '-'}</td>
-                                <td class="table-cell text-center">${deltaStr}</td>
-                            </tr>`;
-                });
+             // --- [START] FIX ---
+             // Find the position of the delta span.
+             const spanIndex = rankStr.indexOf('<span');
+             let deltaStr;
 
-                html += `       </tbody>
-                            </table>
-                        </div>
-                    </div>`;
-                return html;
-            }
+             if (spanIndex !== -1) {
+                 // If a span exists, extract it.
+                 deltaStr = rankStr.substring(spanIndex);
+             } else {
+                 // Otherwise (e.g., rank is 4, delta is 0), default to (-)
+                 deltaStr = '<span class="text-gray-500">(-)</span>';
+             }
+             // --- [END] FIX ---
+
+             html += `<tr>
+                         <td class="table-cell !text-left font-semibold">${row.category}</td>
+                         <td class="table-cell text-center">${row.rank || '-'}</td>
+                         <td class="table-cell text-center">${deltaStr}</td>
+                     </tr>`;
+         });
+
+         html += `       </tbody>
+                     </table>
+                 </div>
+             </div>`;
+         return html;
+     }
 
 
 
