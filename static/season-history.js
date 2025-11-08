@@ -687,19 +687,16 @@
                             <tr>
                                 <th class="table-header !text-left">Category</th>`;
 
-        // --- MODIFIED: Add Rank/Delta headers after the first team ---
+        // --- (Header loop is unchanged) ---
         for (const teamName of teamHeaders) {
-            // Highlight the first column (selected team)
             const headerClass = (teamName === teamHeaders[0]) ? "!text-yellow-400" : "";
             html += `<th class="table-header ${headerClass}">${teamName}</th>`;
 
-            // If this is the first team, add the new headers right after it
             if (teamName === teamHeaders[0]) {
                 html += `<th class="table-header">Rank</th>`;
                 html += `<th class="table-header">Avg Delta</th>`;
             }
         }
-        // --- END MODIFICATION ---
 
         html += `           </tr>
                         </thead>
@@ -710,16 +707,25 @@
             html += `<tr>
                         <td class="table-cell !text-left font-semibold">${categoryRow.category}</td>`;
 
-            // --- MODIFIED: Add Rank/Delta data after the first team ---
+            // --- MODIFIED: Add style attribute for heatmap ---
             for (const teamName of teamHeaders) {
-                // Highlight the first column (selected team)
                 const cellClass = (teamName === teamHeaders[0]) ? "text-yellow-400" : "";
-                html += `<td class="table-cell text-center ${cellClass}">${categoryRow[teamName]}</td>`;
 
-                // If this is the first team, add the new data cells right after it
+                // --- Get the pre-calculated color ---
+                // Use a fallback of '' if the color object doesn't exist for some reason
+                const bgColor = (categoryRow.heatmapColors && categoryRow.heatmapColors[teamName])
+                                ? categoryRow.heatmapColors[teamName]
+                                : '';
+
+                // --- Add the style attribute ---
+                html += `<td class="table-cell text-center ${cellClass}" style="background-color: ${bgColor};">
+                            ${categoryRow[teamName]}
+                         </td>`;
+                // --- End style modification ---
+
+                // This logic is unchanged and correctly skips the heatmap
                 if (teamName === teamHeaders[0]) {
                     html += `<td class="table-cell text-center">${categoryRow['Rank']}</td>`;
-                    // Use the new formatDelta helper function
                     html += `<td class="table-cell text-center">${formatDelta(categoryRow['Average Delta'])}</td>`;
                 }
             }
@@ -744,6 +750,75 @@
                 return `<span class="text-gray-500">0.00</span>`;
             }
 
+
+    // --- Helper functions for heatmap ---
+        const pastelRed = [248, 204, 204];    // A light pastel red
+        const pastelYellow = [255, 255, 224]; // A light pastel yellow
+        const pastelGreen = [204, 248, 204];  // A light pastel green
+
+        // Linear interpolation for a single number
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+
+        // Interpolate between two RGB colors
+        function lerpColor(colorA, colorB, t) {
+            // Clamp t from 0.0 to 1.0
+            const tClamped = Math.max(0, Math.min(1, t));
+            const r = Math.round(lerp(colorA[0], colorB[0], tClamped));
+            const g = Math.round(lerp(colorA[1], colorB[1], tClamped));
+            const b = Math.round(lerp(colorA[2], colorB[2], tClamped));
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        /**
+         * Pre-calculates heatmap colors for each row and stores them
+         * in a `heatmapColors` object on the row itself.
+         */
+        function addHeatmapData(statRows, teamHeaders) {
+            // Define reverse-scoring categories here
+            const reverseScoringCats = new Set(['GA', 'GAA']);
+
+            for (const row of statRows) {
+                const cat = row.category;
+                const isReverse = reverseScoringCats.has(cat);
+
+                // 1. Get all values for this category
+                const values = teamHeaders.map(team => row[team]);
+                const minVal = Math.min(...values);
+                const maxVal = Math.max(...values);
+
+                row.heatmapColors = {}; // Create a new object to store colors
+
+                // 2. Calculate color for each team
+                for (const teamName of teamHeaders) {
+                    const value = row[teamName];
+
+                    // Calculate normalized position (0.0 to 1.0)
+                    let t = 0.5; // Default to neutral if min === max
+                    if (maxVal !== minVal) {
+                        t = (value - minVal) / (maxVal - minVal);
+                    }
+
+                    // Invert if it's a reverse-scoring category (low is good)
+                    if (isReverse) {
+                        t = 1 - t;
+                    }
+
+                    // 3. Interpolate color (3-point Red -> Yellow -> Green)
+                    let color;
+                    if (t < 0.5) {
+                        // From Red (0.0) to Yellow (0.5)
+                        color = lerpColor(pastelRed, pastelYellow, t * 2);
+                    } else {
+                        // From Yellow (0.5) to Green (1.0)
+                        color = lerpColor(pastelYellow, pastelGreen, (t - 0.5) * 2);
+                    }
+
+                    row.heatmapColors[teamName] = color;
+                }
+            }
+        }
 
 
     // --- MODIFIED: Function to fetch and render transaction success ---
@@ -866,6 +941,11 @@
             if (!response.ok) throw new Error(`Server error: ${response.status}`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
+
+            // --- NEW: Pre-process data to add heatmap colors ---
+            addHeatmapData(data.skater_stats, data.team_headers);
+            addHeatmapData(data.goalie_stats, data.team_headers);
+            // --- END NEW ---
 
             // Create the two tables using the new dynamic helper
             const skaterTable = createDynamicCategoryTable('Skater Stats', data.team_headers, data.skater_stats);
