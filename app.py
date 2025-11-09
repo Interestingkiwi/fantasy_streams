@@ -515,7 +515,7 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
         'avg_ppTimeOnIcePctPerGame',
         'total_ppAssists',
         'total_ppGoals',
-        'tean_games_played' # Using your specified column name
+        'team_games_played' # Using your specified column name
     ]
     columns_to_select = base_columns + cat_rank_columns + pp_stat_columns
     # --- END MODIFICATION ---
