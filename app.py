@@ -505,6 +505,7 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
     # --- START MODIFICATION ---
     # Construct the full list of columns to select
     base_columns = ['player_id', 'player_name', 'player_team', 'positions', 'player_name_normalized']
+    # Corrected spellings: avg_, ...Assists, team_...
     pp_stat_columns = [
         'avg_ppTimeOnIcePctPerGame',
         'lg_ppTimeOnIce',
@@ -512,11 +513,15 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
         'lg_ppAssists',
         'lg_ppGoals',
         'avg_ppTimeOnIce',
-        'avg_ppTimeOnIcePctPerGame',
         'total_ppAssists',
         'total_ppGoals',
-        'team_games_played' # Using your specified column name
+        'team_games_played'
     ]
+    # We still query for 'avg_ppTimeOnIcePctPerGame' (for the cell) and 'lg_ppTimeOnIcePctPerGame' (for the modal)
+    # The original request was contradictory, but your new complaint clarifies the cell value
+    # so we will use avg_ppTimeOnIcePctPerGame for the cell.
+    pp_stat_columns.append('avg_ppTimeOnIcePctPerGame')
+
     columns_to_select = base_columns + cat_rank_columns + pp_stat_columns
     # --- END MODIFICATION ---
 

@@ -438,17 +438,17 @@
 
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300 cursor-pointer hover:bg-gray-700 pp-util-cell"
                             data-player-name="${player.player_name}"
-                            data-ave-pp-pct="${player.ave_ppTimeOnIcePctPerGame}"
+                            data-avg-pp-pct="${player.avg_ppTimeOnIcePctPerGame}"
                             data-lg-pp-toi="${player.lg_ppTimeOnIce}"
                             data-lg-pp-pct="${player.lg_ppTimeOnIcePctPerGame}"
-                            data-lg-ppa="${player.lg_ppAsists}"
+                            data-lg-ppa="${player.lg_ppAssists}"
                             data-lg-ppg="${player.lg_ppGoals}"
                             data-lw-pp-toi="${player.avg_ppTimeOnIce}"
                             data-lw-pp-pct="${player.avg_ppTimeOnIcePctPerGame}"
-                            data-lw-ppa="${player.total_ppAsists}"
+                            data-lw-ppa="${player.total_ppAssists}"
                             data-lw-ppg="${player.total_ppGoals}"
-                            data-lw-gp="${player.tean_games_played}">
-                            ${formatPercentage(player.ave_ppTimeOnIcePctPerGame)}
+                            data-lw-gp="${player.team_games_played}">
+                            ${formatPercentage(player.avg_ppTimeOnIcePctPerGame)}
                         </td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm font-bold text-yellow-300">${player.total_cat_rank}</td>
                 `;
@@ -771,11 +771,11 @@
                         <div>
                             <h4 class="text-md font-semibold text-white mb-2">Last Week</h4>
                             <dl class="grid grid-cols-2 sm:grid-cols-5 gap-x-4 gap-y-2">
-                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">PP TOI</dt><dd class="text-sm font-medium">${formatSecondsToMMSS(data.lwPpToi)}</dd></div>
-                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">PP %</dt><dd class="text-sm font-medium">${formatPercentage(data.lwPpPct)}</dd></div>
-                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">PPA</dt><dd class="text-sm font-medium">${formatNullable(data.lwPpa)}</dd></div>
-                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">PPG</dt><dd class="text-sm font-medium">${formatNullable(data.lwPpg)}</dd></div>
-                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">Games</dt><dd class="text-sm font-medium">${formatNullable(data.lwGp)}</dd></div>
+                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">Average PP TOI</dt><dd class="text-sm font-medium">${formatSecondsToMMSS(data.lwPpToi)}</dd></div>
+                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">Average PP %</dt><dd class="text-sm font-medium">${formatPercentage(data.lwPpPct)}</dd></div>
+                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">Total PPA</dt><dd class="text-sm font-medium">${formatNullable(data.lwPpa)}</dd></div>
+                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">Total PPG</dt><dd class="text-sm font-medium">${formatNullable(data.lwPpg)}</dd></div>
+                                <div class="bg-gray-700 p-2 rounded"><dt class="text-xs text-gray-400">Games Played</dt><dd class="text-sm font-medium">${formatNullable(data.lwGp)}</dd></div>
                             </dl>
                         </div>
                     </div>
