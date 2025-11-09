@@ -506,7 +506,7 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
     # Construct the full list of columns to select
     base_columns = ['player_id', 'player_name', 'player_team', 'positions', 'player_name_normalized']
     pp_stat_columns = [
-        'ave_ppTimeOnIcePctPerGame',
+        'avg_ppTimeOnIcePctPerGame',
         'lg_ppTimeOnIce',
         'lg_ppTimeOnIcePctPerGame',
         'lg_ppAsists',
