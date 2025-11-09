@@ -509,11 +509,11 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
         'avg_ppTimeOnIcePctPerGame',
         'lg_ppTimeOnIce',
         'lg_ppTimeOnIcePctPerGame',
-        'lg_ppAsists',
+        'lg_ppAssists',
         'lg_ppGoals',
         'avg_ppTimeOnIce',
         'avg_ppTimeOnIcePctPerGame',
-        'total_ppAsists',
+        'total_ppAssists',
         'total_ppGoals',
         'tean_games_played' # Using your specified column name
     ]
