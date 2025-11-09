@@ -502,8 +502,23 @@ def _get_ranked_players(cursor, player_ids, cat_rank_columns, week_num):
 
     placeholders = ','.join('?' for _ in player_ids)
 
+    # --- START MODIFICATION ---
     # Construct the full list of columns to select
-    columns_to_select = ['player_id', 'player_name', 'player_team', 'positions', 'player_name_normalized'] + cat_rank_columns
+    base_columns = ['player_id', 'player_name', 'player_team', 'positions', 'player_name_normalized']
+    pp_stat_columns = [
+        'ave_ppTimeOnIcePctPerGame',
+        'lg_ppTimeOnIce',
+        'lg_ppTimeOnIcePctPerGame',
+        'lg_ppAsists',
+        'lg_ppGoals',
+        'avg_ppTimeOnIce',
+        'avg_ppTimeOnIcePctPerGame',
+        'total_ppAsists',
+        'total_ppGoals',
+        'tean_games_played' # Using your specified column name
+    ]
+    columns_to_select = base_columns + cat_rank_columns + pp_stat_columns
+    # --- END MODIFICATION ---
 
     query = f"""
         SELECT {', '.join(columns_to_select)}
