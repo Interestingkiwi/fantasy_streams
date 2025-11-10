@@ -672,6 +672,99 @@
     }
 
 
+    function createLeagueTransactionStatsTable(title, headers = [], rows = []) {
+            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                            <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
+
+            if (rows.length === 0) {
+                html += `<p class="text-gray-400">No ${title.toLowerCase().includes('skater') ? 'skaters' : 'goalies'} added league-wide.</p></div>`;
+                return html;
+            }
+
+            // --- Goalie sub-category logic (copied from createAddedPlayerStatsTable) ---
+            const goalieCats = {
+                'SVpct': ['SV', 'SA'],
+                'GAA': ['GA', 'TOI/G']
+            };
+            const headersSet = new Set(headers);
+            const catsToSkip = new Set();
+            if (headersSet.has('SVpct')) {
+                goalieCats['SVpct'].forEach(cat => catsToSkip.add(cat));
+            }
+            if (headersSet.has('GAA')) {
+                goalieCats['GAA'].forEach(cat => catsToSkip.add(cat));
+            }
+            // --- END Goalie logic ---
+
+            html += `<div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-700">
+                            <thead>
+                                <tr>
+                                    <th class="table-header !text-left">Team</th>
+                                    <th class="table-header !text-left">Player</th>
+                                    <th class="table-header">GP</th>
+                                    `;
+
+            const headersToDisplay = headers.filter(h => h !== 'GP' && !catsToSkip.has(h));
+
+            for (const header of headersToDisplay) {
+                html += `<th class="table-header">${header}</th>`;
+            }
+
+            html += `           </tr>
+                            </thead>
+                            <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+            // Sort rows by team name first, then player name
+            rows.sort((a, b) => {
+                if (a.teamName < b.teamName) return -1;
+                if (a.teamName > b.teamName) return 1;
+                if (a.Player < b.Player) return -1;
+                if (a.Player > b.Player) return 1;
+                return 0;
+            });
+
+            for (const row of rows) {
+                html += `<tr>
+                            <td class="table-cell !text-left">${row['teamName']}</td>
+                            <td class="table-cell !text-left">${row['Player']}</td>
+                            <td class="table-cell text-center">${row['GP'] || 0}</td>
+                            `;
+
+                for (const header of headersToDisplay) {
+                    let value = row[header] || 0;
+                    let displayHtml = '';
+
+                    // --- Formatting for calculated stats (copied from createAddedPlayerStatsTable) ---
+                    if (header === 'SVpct') {
+                        const sv = row['SV'] || 0;
+                        const sa = row['SA'] || 0;
+                        displayHtml = `${value.toFixed(3)}
+                                     <br><span class="text-xs text-gray-400">(${sv}/${sa})</span>`;
+                    } else if (header === 'GAA') {
+                        const ga = row['GA'] || 0;
+                        const toi = row['TOI/G'] || 0;
+                        const toiDisplay = Number.isInteger(toi) ? toi : toi.toFixed(2);
+                        displayHtml = `${value.toFixed(2)}
+                                     <br><span class="text-xs text-gray-400">(${ga} GA / ${toiDisplay} TOI)</span>`;
+                    } else {
+                        displayHtml = Number.isInteger(value) ? value : value.toFixed(2);
+                    }
+                    // --- END Formatting ---
+
+                    html += `<td class="table-cell text-center align-middle">${displayHtml}</td>`;
+                }
+                html += `</tr>`;
+            }
+
+            html += `       </tbody>
+                        </table>
+                    </div>
+                </div>`;
+            return html;
+        }
+
+
     function createDynamicCategoryTable(title, teamHeaders, statRows) {
         let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                         <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
@@ -959,7 +1052,6 @@
             const response = await fetch('/api/history/transaction_history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                // --- MODIFIED: Send the viewMode ---
                 body: JSON.stringify({
                     team_name: teamName,
                     week: week,
@@ -971,9 +1063,8 @@
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
-            // --- NEW: Handle different view modes ---
             if (data.view_mode === 'team') {
-                // --- TEAM VIEW LOGIC ---
+                // --- TEAM VIEW LOGIC (Unchanged) ---
                 const addsTable = createTransactionTable('Player Adds', data.adds);
                 const dropsTable = createTransactionTable('Player Drops', data.drops);
 
@@ -1007,43 +1098,49 @@
                 `;
 
             } else if (data.view_mode === 'league') {
-                // --- LEAGUE VIEW LOGIC ---
-                let leagueHtml = '';
+                // --- [START] LEAGUE VIEW LOGIC (MODIFIED) ---
+
+                const allSkaters = [];
+                const allGoalies = [];
                 const teamNames = Object.keys(data.league_data).sort();
 
-                if (teamNames.length === 0) {
-                     leagueHtml = '<p class="text-gray-400">No transactions found for any team this week.</p>';
-                }
-
+                // 1. Aggregate all players into single arrays, adding teamName
                 for (const teamName of teamNames) {
                     const teamData = data.league_data[teamName];
-                    const skaterStatsHtml = createAddedPlayerStatsTable(
-                        'Skaters',
-                        data.skater_stat_headers,
-                        teamData.skaters
-                    );
-                    const goalieStatsHtml = createAddedPlayerStatsTable(
-                        'Goalies',
-                        data.goalie_stat_headers,
-                        teamData.goalies
-                    );
 
-                    leagueHtml += `
-                        <div class="bg-gray-900 rounded-lg shadow-lg p-4 space-y-4">
-                            <h2 class="text-xl font-semibold text-white">${teamName}</h2>
-                            ${skaterStatsHtml}
-                            ${goalieStatsHtml}
-                        </div>
-                    `;
+                    teamData.skaters.forEach(skater => {
+                        // Add the teamName to the skater object
+                        allSkaters.push({ ...skater, teamName: teamName });
+                    });
+
+                    teamData.goalies.forEach(goalie => {
+                        // Add the teamName to the goalie object
+                        allGoalies.push({ ...goalie, teamName: teamName });
+                    });
                 }
 
-                // --- MODIFICATION: Replaced single-column layout with a 3-column grid ---
-                // This will be 1 column on small, 2 on medium, and 3 on extra-large screens.
-                historyContent.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">${leagueHtml}</div>`;
-                // --- END MODIFICATION ---
+                // 2. Create the two league-wide tables using the new helper
+                const allSkatersTable = createLeagueTransactionStatsTable(
+                    'All Added Skaters (League-wide)',
+                    data.skater_stat_headers,
+                    allSkaters
+                );
 
+                const allGoaliesTable = createLeagueTransactionStatsTable(
+                    'All Added Goalies (League-wide)',
+                    data.goalie_stat_headers,
+                    allGoalies
+                );
+
+                // 3. Render the two tables stacked vertically
+                historyContent.innerHTML = `
+                    <div class="flex flex-col gap-6">
+                        ${allSkatersTable}
+                        ${allGoaliesTable}
+                    </div>
+                `;
+                // --- [END] LEAGUE VIEW LOGIC (MODIFIED) ---
             }
-            // --- END NEW ---
 
         } catch (error) {
             console.error('Error fetching transaction data:', error);
