@@ -396,6 +396,13 @@
                 const isAlreadyAdded = simulatedMoves.some(m => m.added_player.player_id === player.player_id);
                 const checkboxDisabled = isAlreadyAdded ? 'disabled' : '';
 
+                // --- START: Added status HTML logic ---
+                // Check if player.status exists and is not empty
+                const statusHtml = player.status
+                    ? `<span class="text-red-400 ml-1">(${player.status})</span>`
+                    : '';
+                // --- END: Added status HTML logic ---
+
                 // --- NEW LOGIC for This Week Highlighting ---
                 let gamesThisWeekHtml = '';
                 const playerPositions = player.positions ? player.positions.split(',') : [];
@@ -430,7 +437,7 @@
                             <input type="checkbox" name="player-to-add" class="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-600 focus:ring-indigo-500 rounded"
                                    value="${player.player_id}" data-table="${tableType}" ${checkboxDisabled}>
                         </td>
-                        <td class="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}</td>
+                        <td class="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-300">${player.player_name}${statusHtml}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.player_team}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${player.positions}</td>
                         <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-300">${gamesThisWeekHtml}</td>
