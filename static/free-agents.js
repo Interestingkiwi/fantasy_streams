@@ -436,12 +436,16 @@
                 const isAlreadyAdded = simulatedMoves.some(m => m.added_player.player_id === player.player_id);
                 const checkboxDisabled = isAlreadyAdded ? 'disabled' : '';
 
-                // --- START: Added status HTML logic ---
-                // Check if player.status exists and is not empty
+                // --- START: Modified status HTML logic for hyperlink ---
+                // Create a clickable link if the player has a status
                 const statusHtml = player.status
-                    ? `<span class="text-red-400 ml-1">(${player.status})</span>`
+                    ? ` <a href="https://sports.yahoo.com/nhl/players/${player.player_id}/news/"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="text-red-400 ml-1 hover:text-red-300 hover:underline"
+                           title="View player news on Yahoo (opens new tab)">(${player.status})</a>`
                     : '';
-                // --- END: Added status HTML logic ---
+                // --- END: Modified status HTML logic ---
 
                 // --- NEW LOGIC for This Week Highlighting ---
                 let gamesThisWeekHtml = '';
