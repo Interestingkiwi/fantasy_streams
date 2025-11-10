@@ -80,7 +80,94 @@
         yourTeamSelect.addEventListener('change', fetchAndRenderTable);
         reportSelect.addEventListener('change', handleReportChange);
         viewToggleButton.addEventListener('click', toggleViewMode);
+        historyContent.addEventListener('click', handleTableSort);
     }
+
+
+    function handleTableSort(event) {
+            const header = event.target.closest('.sortable-header');
+            if (!header) return; // Clicked somewhere else
+
+            const table = header.closest('table');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const sortKey = header.dataset.sortKey;
+
+            // --- Determine sort direction ---
+            let currentDir = header.dataset.sortDir || 'none';
+            let nextDir;
+            if (currentDir === 'asc') {
+                nextDir = 'desc'; // Flip from asc to desc
+            } else {
+                nextDir = 'asc'; // Default to asc (or flip from desc)
+            }
+
+            // --- Clear old sort indicators ---
+            table.querySelectorAll('.sortable-header').forEach(th => {
+                th.dataset.sortDir = 'none';
+                // Remove existing arrows
+                const arrow = th.querySelector('.sort-arrow');
+                if (arrow) arrow.remove();
+            });
+
+            // --- Set new direction and indicator ---
+            header.dataset.sortDir = nextDir;
+            const arrowSpan = document.createElement('span');
+            arrowSpan.className = 'sort-arrow ml-1'; // ml-1 for margin
+            arrowSpan.textContent = (nextDir === 'asc') ? '▲' : '▼';
+            header.appendChild(arrowSpan);
+
+            // --- Define reverse scoring categories ---
+            const reverseScoringCats = new Set(['GA', 'GAA']);
+            const isReverseSort = reverseScoringCats.has(sortKey);
+
+            // --- Find column index ---
+            const headers = Array.from(header.parentElement.children);
+            const colIndex = headers.indexOf(header);
+
+            // --- Sort the rows ---
+            rows.sort((rowA, rowB) => {
+                const cellA = rowA.children[colIndex];
+                const cellB = rowB.children[colIndex];
+
+                let valA, valB;
+
+                // Handle string sorting
+                if (sortKey === 'teamName' || sortKey === 'Player') {
+                    valA = cellA.textContent.toLowerCase();
+                    valB = cellB.textContent.toLowerCase();
+                } else {
+                // Handle numeric sorting (for GP and all stat cats)
+                // Use firstChild.textContent to get value before <br>
+                    valA = parseFloat(cellA.firstChild ? cellA.firstChild.textContent : cellA.textContent) || 0;
+                    valB = parseFloat(cellB.firstChild ? cellB.firstChild.textContent : cellB.textContent) || 0;
+                }
+
+                // --- Get the raw difference ---
+                let sortVal = 0;
+                if (typeof valA === 'string') {
+                    sortVal = valA.localeCompare(valB); // A-Z
+                } else {
+                    sortVal = valA - valB; // 1-10
+                }
+
+                // --- Handle direction ---
+                if (nextDir === 'desc') {
+                    sortVal *= -1; // Z-A or 10-1
+                }
+
+                // --- Handle reverse scoring (flips the final direction) ---
+                if (isReverseSort) {
+                    sortVal *= -1;
+                }
+
+                return sortVal;
+            });
+
+            // --- Re-append sorted rows ---
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
 
     // --- MODIFIED: Removed teamSelectWrapper logic ---
     function handleReportChange() {
@@ -672,7 +759,53 @@
     }
 
 
-    function createLeagueTransactionStatsTable(title, headers = [], rows = []) {
+    function addHeatmapToStatRows(rows, headers, reverseScoringCats) {
+            if (rows.length === 0) return;
+
+            for (const header of headers) {
+                const isReverse = reverseScoringCats.has(header);
+
+                // 1. Get all valid values for this header
+                const values = rows.map(r => r[header]).filter(v => v !== null && v !== undefined);
+                if (values.length === 0) continue;
+
+                let min = Math.min(...values);
+                let max = Math.max(...values);
+
+                // 2. Iterate and apply colors
+                for (const row of rows) {
+                    if (!row.heatmapColors) {
+                        row.heatmapColors = {};
+                    }
+
+                    const value = row[header];
+                    if (value === null || value === undefined) {
+                        row.heatmapColors[header] = 'transparent';
+                        continue;
+                    }
+
+                    let t = 0.5; // Default for single value
+                    if (max > min) {
+                        if (isReverse) {
+                            t = (max - value) / (max - min); // 1.0 for min, 0.0 for max
+                        } else {
+                            t = (value - min) / (max - min); // 1.0 for max, 0.0 for min
+                        }
+                    } else if (max === min && values.length > 1) {
+                        // All values are the same
+                        t = 0.5;
+                    }
+
+                    // Use HSLA for transparency gradient
+                    // Hue 120 (green), Sat 60%, Light 45% (a bit darker), Alpha 't'
+                    // 0.0 (worst) = transparent, 1.0 (best) = solid green
+                    row.heatmapColors[header] = `hsla(120, 60%, 45%, ${t.toFixed(2)})`;
+                }
+            }
+        }
+
+
+        function createLeagueTransactionStatsTable(title, headers = [], rows = []) {
             let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                             <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>`;
 
@@ -696,26 +829,32 @@
             }
             // --- END Goalie logic ---
 
+            // --- [NEW] Heatmap pre-calculation ---
+            const headersToDisplay = headers.filter(h => h !== 'GP' && !catsToSkip.has(h));
+            const reverseScoringCats = new Set(['GA', 'GAA']);
+            addHeatmapToStatRows(rows, headersToDisplay, reverseScoringCats);
+            // --- [END] Heatmap ---
+
+
             html += `<div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-700">
                             <thead>
                                 <tr>
-                                    <th class="table-header !text-left">Team</th>
-                                    <th class="table-header !text-left">Player</th>
-                                    <th class="table-header">GP</th>
+                                    <th class="table-header !text-left sortable-header cursor-pointer" data-sort-key="teamName">Team</th>
+                                    <th class="table-header !text-left sortable-header cursor-pointer" data-sort-key="Player">Player</th>
+                                    <th class="table-header sortable-header cursor-pointer" data-sort-key="GP">GP</th>
                                     `;
 
-            const headersToDisplay = headers.filter(h => h !== 'GP' && !catsToSkip.has(h));
-
             for (const header of headersToDisplay) {
-                html += `<th class="table-header">${header}</th>`;
+                // --- [MODIFIED] Added sortable classes and data-key ---
+                html += `<th class="table-header sortable-header cursor-pointer" data-sort-key="${header}">${header}</th>`;
             }
 
             html += `           </tr>
                             </thead>
                             <tbody class="bg-gray-900 divide-y divide-gray-700">`;
 
-            // Sort rows by team name first, then player name
+            // Sort rows by team name first, then player name (for initial view)
             rows.sort((a, b) => {
                 if (a.teamName < b.teamName) return -1;
                 if (a.teamName > b.teamName) return 1;
@@ -752,7 +891,12 @@
                     }
                     // --- END Formatting ---
 
-                    html += `<td class="table-cell text-center align-middle">${displayHtml}</td>`;
+                    // --- [NEW] Get heatmap color and apply style + dark text ---
+                    const bgColor = (row.heatmapColors && row.heatmapColors[header]) ? row.heatmapColors[header] : 'transparent';
+                    // Add dark text and bolding if there's a background color
+                    const textClass = (bgColor !== 'transparent') ? 'text-gray-800 font-semibold' : '';
+
+                    html += `<td class="table-cell text-center align-middle ${textClass}" style="background-color: ${bgColor};">${displayHtml}</td>`;
                 }
                 html += `</tr>`;
             }
