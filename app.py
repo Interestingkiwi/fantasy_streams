@@ -2167,7 +2167,6 @@ def schedules_page_data():
         return jsonify({
             'db_exists': True,
             'weeks': weeks
-            # We don't need to return 'teams' or 'current_week' for this page
         })
 
     except Exception as e:

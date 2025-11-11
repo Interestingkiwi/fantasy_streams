@@ -277,7 +277,7 @@
                         </div>
                     </div>`;
             return html;
-
+    }
     // --- [END] NEW: Table Creation Helpers ---
 
 
