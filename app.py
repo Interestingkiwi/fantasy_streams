@@ -2144,6 +2144,41 @@ def get_category_strengths_data():
         if conn:
             conn.close()
 
+
+@app.route('/api/schedules_page_data')
+def schedules_page_data():
+    """
+    Provides the necessary data to populate the Schedules page.
+    This includes all weeks in the season.
+    """
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+
+    if not conn:
+        return jsonify({'db_exists': False, 'error': error_msg})
+
+    try:
+        cursor = conn.cursor()
+
+        # Fetch all weeks (as requested for the schedules page)
+        cursor.execute("SELECT week_num, start_date, end_date FROM weeks ORDER BY week_num")
+        weeks = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        return jsonify({
+            'db_exists': True,
+            'weeks': weeks
+            # We don't need to return 'teams' or 'current_week' for this page
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching schedules page data: {e}", exc_info=True)
+        return jsonify({'db_exists': False, 'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+
 @app.route('/api/roster_data', methods=['POST'])
 def get_roster_data():
     league_id = session.get('league_id')
