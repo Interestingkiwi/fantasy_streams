@@ -220,6 +220,9 @@
     function createPlayoffScheduleTable(data) {
             const { title, headers, rows } = data;
 
+            // --- NEW: Define the divider class we'll use ---
+            const dividerClass = 'border-r-2 border-gray-600';
+
             let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
                             <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>
                             <div class="overflow-x-auto">
@@ -229,17 +232,20 @@
 
             // Create headers dynamically
             for (const header of headers) {
-                let sortKey = header.toLowerCase().replace(/ /g, '_'); // e.g., "week_21_games"
+                let sortKey = header.toLowerCase().replace(/ /g, '_');
                 let helpText = '';
                 if (header.includes(" Games")) {
-                    // Add help icon/text for "Games" columns
                     helpText = `<span class="help-icon ml-1" data-title="Games (Off Days)" data-text="Total games played in the week, with (off-day games) in parentheses.">?</span>`;
                 }
-
-                // Special sort key for team
                 if (header === 'Team') sortKey = 'team';
 
-                html += `<th class="table-header sortable-header cursor-pointer" data-sort-key="${sortKey}">
+                // --- MODIFIED: Add base class and conditional divider class ---
+                let thClass = 'table-header sortable-header cursor-pointer';
+                if (header === 'Team' || header.includes('Opponent Avg Pt %')) {
+                    thClass += ` ${dividerClass}`; // NEW
+                }
+
+                html += `<th class="${thClass}" data-sort-key="${sortKey}">
                             <div class="flex items-center justify-center">
                                 ${header}
                                 ${helpText}
@@ -256,7 +262,7 @@
                 html += `<tr>`;
                 for (const header of headers) {
                     let content = row[header] || '';
-                    let cellClass = 'table-cell text-center';
+                    let cellClass = 'table-cell text-center'; // Base class
 
                     // Left-align team name and Opponents
                     if (header === 'Team' || header.includes('Opponents')) {
@@ -265,6 +271,11 @@
                     // Center N/A values
                     if (content === 'N/A') {
                         cellClass = 'table-cell text-center text-gray-500';
+                    }
+
+                    // --- MODIFIED: Add conditional divider class ---
+                    if (header === 'Team' || header.includes('Opponent Avg Pt %')) {
+                        cellClass += ` ${dividerClass}`; // NEW
                     }
 
                     html += `<td class="${cellClass}">${content}</td>`;
@@ -277,7 +288,8 @@
                         </div>
                     </div>`;
             return html;
-    }
+
+        }
     // --- [END] NEW: Table Creation Helpers ---
 
 

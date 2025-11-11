@@ -2332,6 +2332,8 @@ def schedules_playoff_schedules():
     try:
         cursor = conn.cursor()
 
+        # ... (Steps 1-6 are unchanged) ...
+
         # 1. Get league playoff end date
         cursor.execute("SELECT value FROM league_info WHERE key = 'end_date'")
         league_end_date_row = cursor.fetchone()
@@ -2359,7 +2361,6 @@ def schedules_playoff_schedules():
 
             if found_start:
                 playoff_weeks.append(week)
-                # Stop when we find the week that matches the league end date
                 if week['end_date'] == league_end_date:
                     break
 
@@ -2368,7 +2369,7 @@ def schedules_playoff_schedules():
                  'title': 'Playoff Weeks',
                  'headers': [],
                  'rows': []
-            }), 200 # Return empty data, not an error
+            }), 200
 
         # 5. Get data for schedule and off-days
         cursor.execute("SELECT off_day_date FROM off_days")
@@ -2401,17 +2402,19 @@ def schedules_playoff_schedules():
                 team_data[team][week_num] = {
                     'games': total_games,
                     'off_days': off_day_games,
-                    'opponents': ", ".join(opponents) # Format as comma-separated string
+                    'opponents': ", ".join(opponents)
                 }
 
+        # --- [START] MODIFICATION ---
         # 7. Format for the frontend table
         headers = ['Team']
         for week in playoff_weeks:
             week_num = week['week_num']
             headers.append(f'Week {week_num} Games')
-            headers.append(f'Opponents')
-            headers.append(f'Opponent Avg GA')
-            headers.append(f'Opponent Avg Pt %')
+            # Add week number to headers to make them unique
+            headers.append(f'Week {week_num} Opponents')
+            headers.append(f'Week {week_num} Opponent Avg GA')
+            headers.append(f'Week {week_num} Opponent Avg Pt %')
 
         rows = []
         for team in TEAM_TRICODES:
@@ -2422,10 +2425,13 @@ def schedules_playoff_schedules():
 
                 # Format: "4 (2)"
                 row[f'Week {week_num} Games'] = f"{data['games']} ({data['off_days']})"
-                row[f'Opponents'] = data['opponents']
-                row[f'Opponent Avg GA'] = 'N/A'
-                row[f'Opponent Avg Pt %'] = 'N/A'
+
+                # Use the same unique headers as keys for the row data
+                row[f'Week {week_num} Opponents'] = data['opponents']
+                row[f'Week {week_num} Opponent Avg GA'] = 'N/A'
+                row[f'Week {week_num} Opponent Avg Pt %'] = 'N/A'
             rows.append(row)
+        # --- [END] MODIFICATION ---
 
         return jsonify({
             'title': 'Playoff Weeks',
