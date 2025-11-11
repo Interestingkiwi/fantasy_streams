@@ -2407,19 +2407,41 @@ def get_free_agent_data():
 
         all_cat_rank_columns = [f"{cat}_cat_rank" for cat in all_scoring_categories]
 
-        # Determine current week
-        today = date.today().isoformat()
-        cursor.execute("SELECT week_num FROM weeks WHERE start_date <= ? AND end_date >= ?", (today, today))
-        current_week_row = cursor.fetchone()
-        current_week = current_week_row['week_num'] if current_week_row else 1
+        # --- NEW: Determine target week based on request ---
+        selected_week_str = request_data.get('selected_week') # This might be "1", "2", etc. or None
+        target_week = None
+
+        if selected_week_str:
+            try:
+                target_week = int(selected_week_str)
+                # Check if this week exists in the 'weeks' table
+                cursor.execute("SELECT 1 FROM weeks WHERE week_num = ?", (target_week,))
+                if not cursor.fetchone():
+                    target_week = None # Week doesn't exist, fall back
+                    logging.warn(f"Selected week '{selected_week_str}' not found in database. Falling back to current week.")
+            except ValueError:
+                logging.warn(f"Invalid selected_week value: '{selected_week_str}'. Falling back to current week.")
+
+        if target_week is None:
+            # Fallback logic: Determine current week based on today's date
+            today = date.today().isoformat()
+            cursor.execute("SELECT week_num FROM weeks WHERE start_date <= ? AND end_date >= ?", (today, today))
+            current_week_row = cursor.fetchone()
+            target_week = current_week_row['week_num'] if current_week_row else 1
+            logging.info(f"No valid selected week provided. Using current week: {target_week}")
+        else:
+            logging.info(f"Using selected week: {target_week}")
+        # --- END NEW ---
 
         cursor.execute("SELECT player_id FROM waiver_players")
         waiver_player_ids = [row['player_id'] for row in cursor.fetchall()]
-        waiver_players = _get_ranked_players(cursor, waiver_player_ids, all_cat_rank_columns, current_week)
+        # --- NEW: Use target_week ---
+        waiver_players = _get_ranked_players(cursor, waiver_player_ids, all_cat_rank_columns, target_week)
 
         cursor.execute("SELECT player_id FROM free_agents")
         free_agent_ids = [row['player_id'] for row in cursor.fetchall()]
-        free_agents = _get_ranked_players(cursor, free_agent_ids, all_cat_rank_columns, current_week)
+        # --- NEW: Use target_week ---
+        free_agents = _get_ranked_players(cursor, free_agent_ids, all_cat_rank_columns, target_week)
 
         # Recalculate total_cat_rank based on checked/unchecked categories
         for player_list in [waiver_players, free_agents]:
@@ -2451,7 +2473,8 @@ def get_free_agent_data():
             team_row = cursor.fetchone()
             if team_row:
                 team_id = team_row['team_id']
-                cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (current_week,))
+                # --- NEW: Use target_week ---
+                cursor.execute("SELECT start_date, end_date FROM weeks WHERE week_num = ?", (target_week,))
                 week_dates = cursor.fetchone()
                 if week_dates:
                     start_date_obj = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
@@ -2459,6 +2482,7 @@ def get_free_agent_data():
                     days_in_week = [(start_date_obj + timedelta(days=i)) for i in range((end_date_obj - start_date_obj).days + 1)]
 
                     today_obj = date.today()
+                    # This logic correctly filters for dates from today onwards
                     for day in days_in_week:
                         if day >= today_obj:
                             days_in_week_data.append(day.isoformat())
@@ -2466,7 +2490,8 @@ def get_free_agent_data():
                     cursor.execute("SELECT position, position_count FROM lineup_settings WHERE position NOT IN ('BN', 'IR', 'IR+')")
                     lineup_settings = {row['position']: row['position_count'] for row in cursor.fetchall()}
 
-                    team_ranked_roster = _get_ranked_roster_for_week(cursor, team_id, current_week)
+                    # --- NEW: Use target_week ---
+                    team_ranked_roster = _get_ranked_roster_for_week(cursor, team_id, target_week)
 
                     # --- [START] THE FIX ---
                     # 2. Pass the simulated_moves list to the helper function
