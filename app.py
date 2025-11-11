@@ -2240,6 +2240,7 @@ def schedules_off_days():
 
         # 4. Format the response based on selected_week
         if selected_week == 'all':
+            # --- "All Season" logic (Unchanged) ---
             ros_data = {'headers': [], 'rows': []}
             past_data = {'headers': [], 'rows': []}
 
@@ -2248,28 +2249,21 @@ def schedules_off_days():
             ros_data['headers'] = ros_headers
             past_data['headers'] = past_headers
 
-            # --- [START] MODIFICATION ---
             for team in TEAM_TRICODES:
                 ros_row = {'team': team}
                 past_row = {'team': team}
-
-                ros_total = 0 # <-- NEW: Initialize total for ROS
-
-                for week_header in ros_headers: # "Week 6"
+                ros_total = 0
+                for week_header in ros_headers:
                     week_num = int(week_header.split(' ')[1])
-                    off_days_count = all_weeks_data[week_num][team]['off_days'] # <-- Get count
+                    off_days_count = all_weeks_data[week_num][team]['off_days']
                     ros_row[week_header] = off_days_count
-                    ros_total += off_days_count # <-- NEW: Add to total
-
-                ros_row['Total'] = ros_total # <-- NEW: Add total to the row
-
-                for week_header in past_headers: # "Week 1"
+                    ros_total += off_days_count
+                ros_row['Total'] = ros_total
+                for week_header in past_headers:
                     week_num = int(week_header.split(' ')[1])
                     past_row[week_header] = all_weeks_data[week_num][team]['off_days']
-
                 ros_data['rows'].append(ros_row)
                 past_data['rows'].append(past_row)
-            # --- [END] MODIFICATION ---
 
             return jsonify({
                 'report_type': 'all_season',
@@ -2277,24 +2271,44 @@ def schedules_off_days():
                 'past_data': past_data
             })
 
-        else: # Single week (Unchanged)
+        else:
+            # --- [START] MODIFIED: Single week logic ---
             week_num_int = int(selected_week)
             table_data = []
             if week_num_int not in all_weeks_data:
                  return jsonify({'error': f'Data for week {week_num_int} not found.'}), 404
 
+            # Find the correct week's start/end dates
+            selected_week_details = next((w for w in weeks if w['week_num'] == week_num_int), None)
+            if not selected_week_details:
+                 return jsonify({'error': f'Week details for {week_num_int} not found.'}), 404
+
+            start_date = selected_week_details['start_date']
+            end_date = selected_week_details['end_date']
             week_data = all_weeks_data[week_num_int]
+
             for team in TEAM_TRICODES:
+                # Find opponents for this team in this week
+                games_this_week = [g for g in schedule if start_date <= g['game_date'] <= end_date and (g['home_team'] == team or g['away_team'] == team)]
+                opponents = []
+                for game in games_this_week:
+                    opponent = game['away_team'] if game['home_team'] == team else game['home_team']
+                    opponents.append(opponent)
+
                 table_data.append({
                     'team': team,
                     'off_days': week_data[team]['off_days'],
-                    'total_games': week_data[team]['total_games']
+                    'total_games': week_data[team]['total_games'],
+                    'opponents': ", ".join(opponents),
+                    'opponent_avg_ga': 'N/A',
+                    'opponent_avg_pt_pct': 'N/A'
                 })
 
             return jsonify({
                 'report_type': 'single_week',
                 'table_data': table_data
             })
+            # --- [END] MODIFIED ---
 
     except Exception as e:
         logging.error(f"Error fetching schedules/off_days data: {e}", exc_info=True)
@@ -2303,6 +2317,129 @@ def schedules_off_days():
         if conn:
             conn.close()
 
+
+
+@app.route('/api/schedules/playoff_schedules', methods=['GET'])
+def schedules_playoff_schedules():
+    """
+    Determines the league's playoff weeks and fetches the schedule,
+    off-day games, and opponents for each team during those weeks.
+    """
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg}), 500
+
+    try:
+        cursor = conn.cursor()
+
+        # 1. Get league playoff end date
+        cursor.execute("SELECT value FROM league_info WHERE key = 'end_date'")
+        league_end_date_row = cursor.fetchone()
+        if not league_end_date_row:
+            return jsonify({'error': 'League end_date not found in league_info table.'}), 404
+        league_end_date = league_end_date_row['value']
+
+        # 2. Get max regular season matchup week
+        cursor.execute("SELECT MAX(week) as max_week FROM matchups")
+        max_week_row = cursor.fetchone()
+        if not max_week_row or max_week_row['max_week'] is None:
+            return jsonify({'error': 'No matchup data found to determine playoff start.'}), 404
+        start_playoff_week_num = max_week_row['max_week'] + 1
+
+        # 3. Get all weeks from the database
+        cursor.execute("SELECT week_num, start_date, end_date FROM weeks ORDER BY week_num")
+        all_weeks = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        # 4. Filter to find the exact playoff weeks
+        playoff_weeks = []
+        found_start = False
+        for week in all_weeks:
+            if week['week_num'] == start_playoff_week_num:
+                found_start = True
+
+            if found_start:
+                playoff_weeks.append(week)
+                # Stop when we find the week that matches the league end date
+                if week['end_date'] == league_end_date:
+                    break
+
+        if not playoff_weeks:
+             return jsonify({
+                 'title': 'Playoff Weeks',
+                 'headers': [],
+                 'rows': []
+            }), 200 # Return empty data, not an error
+
+        # 5. Get data for schedule and off-days
+        cursor.execute("SELECT off_day_date FROM off_days")
+        off_days_set = set(row['off_day_date'] for row in cursor.fetchall())
+
+        cursor.execute("SELECT game_date, home_team, away_team FROM schedule")
+        schedule = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        # 6. Process data for each team for each playoff week
+        team_data = {team: {} for team in TEAM_TRICODES}
+        for team in TEAM_TRICODES:
+            for week in playoff_weeks:
+                week_num = week['week_num']
+                start_date = week['start_date']
+                end_date = week['end_date']
+
+                games_this_week = [g for g in schedule if start_date <= g['game_date'] <= end_date and (g['home_team'] == team or g['away_team'] == team)]
+
+                total_games = len(games_this_week)
+                off_day_games = 0
+                opponents = []
+
+                for game in games_this_week:
+                    if game['game_date'] in off_days_set:
+                        off_day_games += 1
+
+                    opponent = game['away_team'] if game['home_team'] == team else game['home_team']
+                    opponents.append(opponent)
+
+                team_data[team][week_num] = {
+                    'games': total_games,
+                    'off_days': off_day_games,
+                    'opponents': ", ".join(opponents) # Format as comma-separated string
+                }
+
+        # 7. Format for the frontend table
+        headers = ['Team']
+        for week in playoff_weeks:
+            week_num = week['week_num']
+            headers.append(f'Week {week_num} Games')
+            headers.append(f'Opponents')
+            headers.append(f'Opponent Avg GA')
+            headers.append(f'Opponent Avg Pt %')
+
+        rows = []
+        for team in TEAM_TRICODES:
+            row = {'Team': team}
+            for week in playoff_weeks:
+                week_num = week['week_num']
+                data = team_data[team][week_num]
+
+                # Format: "4 (2)"
+                row[f'Week {week_num} Games'] = f"{data['games']} ({data['off_days']})"
+                row[f'Opponents'] = data['opponents']
+                row[f'Opponent Avg GA'] = 'N/A'
+                row[f'Opponent Avg Pt %'] = 'N/A'
+            rows.append(row)
+
+        return jsonify({
+            'title': 'Playoff Weeks',
+            'headers': headers,
+            'rows': rows
+        })
+
+    except Exception as e:
+        logging.error(f"Error fetching schedules/playoff_schedules data: {e}", exc_info=True)
+        return jsonify({'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route('/api/roster_data', methods=['POST'])

@@ -60,7 +60,8 @@
         // --- MODIFIED: Added "Off Days" ---
         let reportOptions = '';
         reportOptions += '<option value="please_select">--Please Select--</option>';
-        reportOptions += '<option value="off_days">Off Days</option>'; // NEW
+        reportOptions += '<option value="off_days">Off Days</option>';
+        reportOptions += '<option value="playoff_schedules">Playoff Schedules</option>';
         reportOptions += '<option value="tbd">TBD</option>';
         reportSelect.innerHTML = reportOptions;
         // --- END MODIFIED ---
@@ -137,34 +138,39 @@
     /**
      * Creates the HTML table for the single week "Off Days" report.
      */
-    function createSingleWeekOffDaysTable(rows) {
-        let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full divide-y divide-gray-700">
-                                <thead>
-                                    <tr>
-                                        <th class="table-header !text-left sortable-header cursor-pointer" data-sort-key="team">Team</th>
-                                        <th class="table-header sortable-header cursor-pointer" data-sort-key="off_days">Off Days This Week</th>
-                                        <th class="table-header sortable-header cursor-pointer" data-sort-key="total_games">Total Games</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+     function createSingleWeekOffDaysTable(rows) {
+         let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                         <div class="overflow-x-auto">
+                             <table class="min-w-full divide-y divide-gray-700">
+                                 <thead>
+                                     <tr>
+                                         <th class="table-header !text-left sortable-header cursor-pointer" data-sort-key="team">Team</th>
+                                         <th class="table-header sortable-header cursor-pointer" data-sort-key="off_days">Off Days This Week</th>
+                                         <th class="table-header sortable-header cursor-pointer" data-sort-key="total_games">Total Games</th>
+                                         <th class="table-header !text-left sortable-header cursor-pointer" data-sort-key="opponents">Opponents</th>
+                                         <th class="table-header sortable-header cursor-pointer" data-sort-key="opponent_avg_ga">Opponent Avg GA</th>
+                                         <th class="table-header sortable-header cursor-pointer" data-sort-key="opponent_avg_pt_pct">Opponent Avg Pt %</th>
+                                         </tr>
+                                 </thead>
+                                 <tbody class="bg-gray-900 divide-y divide-gray-700">`;
 
-        for (const row of rows) {
-            html += `<tr>
-                        <td class="table-cell !text-left">${row.team}</td>
-                        <td class="table-cell text-center">${row.off_days}</td>
-                        <td class="table-cell text-center">${row.total_games}</td>
-                    </tr>`;
-        }
+         for (const row of rows) {
+             html += `<tr>
+                         <td class="table-cell !text-left">${row.team}</td>
+                         <td class="table-cell text-center">${row.off_days}</td>
+                         <td class="table-cell text-center">${row.total_games}</td>
+                         <td class="table-cell !text-left">${row.opponents || ''}</td>
+                         <td class="table-cell text-center text-gray-500">${row.opponent_avg_ga}</td>
+                         <td class="table-cell text-center text-gray-500">${row.opponent_avg_pt_pct}</td>
+                         </tr>`;
+         }
 
-        html += `           </tbody>
-                        </table>
-                    </div>
-                </div>`;
-        return html;
-    }
-
+         html += `           </tbody>
+                         </table>
+                     </div>
+                 </div>`;
+         return html;
+     }
     /**
      * Creates the HTML table for the "All Season" (Past or ROS) "Off Days" report.
      */
@@ -209,6 +215,68 @@
                 </div>`;
         return html;
     }
+
+
+    function createPlayoffScheduleTable(data) {
+            const { title, headers, rows } = data;
+
+            let html = `<div class="bg-gray-800 rounded-lg shadow-lg p-4">
+                            <h3 class="text-lg font-semibold text-white mb-3">${title}</h3>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-700">
+                                    <thead>
+                                        <tr>`;
+
+            // Create headers dynamically
+            for (const header of headers) {
+                let sortKey = header.toLowerCase().replace(/ /g, '_'); // e.g., "week_21_games"
+                let helpText = '';
+                if (header.includes(" Games")) {
+                    // Add help icon/text for "Games" columns
+                    helpText = `<span class="help-icon ml-1" data-title="Games (Off Days)" data-text="Total games played in the week, with (off-day games) in parentheses.">?</span>`;
+                }
+
+                // Special sort key for team
+                if (header === 'Team') sortKey = 'team';
+
+                html += `<th class="table-header sortable-header cursor-pointer" data-sort-key="${sortKey}">
+                            <div class="flex items-center justify-center">
+                                ${header}
+                                ${helpText}
+                            </div>
+                         </th>`;
+            }
+
+            html += `           </tr>
+                            </thead>
+                            <tbody class="bg-gray-900 divide-y divide-gray-700">`;
+
+            // Create rows
+            for (const row of rows) {
+                html += `<tr>`;
+                for (const header of headers) {
+                    let content = row[header] || '';
+                    let cellClass = 'table-cell text-center';
+
+                    // Left-align team name and Opponents
+                    if (header === 'Team' || header.includes('Opponents')) {
+                        cellClass = 'table-cell !text-left';
+                    }
+                    // Center N/A values
+                    if (content === 'N/A') {
+                        cellClass = 'table-cell text-center text-gray-500';
+                    }
+
+                    html += `<td class="${cellClass}">${content}</td>`;
+                }
+                html += `</tr>`;
+            }
+
+            html += `           </tbody>
+                            </table>
+                        </div>
+                    </div>`;
+            return html;
 
     // --- [END] NEW: Table Creation Helpers ---
 
@@ -255,34 +323,71 @@
     }
     // --- [END] NEW: Off Days Fetch Function ---
 
+    async function fetchPlayoffSchedules() {
+            loadingSpinner.classList.remove('hidden');
+            scheduleContent.innerHTML = '';
+            errorDiv.classList.add('hidden');
 
-    async function fetchAndRenderReport() {
-        const selectedWeek = weekSelect.value;
-        const selectedReport = reportSelect.value;
+            try {
+                // This endpoint doesn't need any POST data (like week)
+                const response = await fetch('/api/schedules/playoff_schedules', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
 
-        console.log(`Fetching data for: Week ${selectedWeek}, Report ${selectedReport}`);
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
 
-        loadingSpinner.classList.remove('hidden');
+                if (data.rows.length === 0) {
+                     showError("Could not determine playoff weeks. Please check your league settings and database.");
+                     return;
+                }
 
-        // --- MODIFIED: Added "off_days" case ---
-        switch (selectedReport) {
-            case 'off_days': // NEW
-                await fetchOffDaysReport(selectedWeek);
-                break;
+                // Render the single, dynamic table
+                scheduleContent.innerHTML = createPlayoffScheduleTable(data);
 
-            case 'tbd':
-                scheduleContent.innerHTML = `<p class="text-gray-400">The "TBD" report is not yet implemented.</p>`;
+            } catch (error) {
+                console.error('Error fetching playoff schedules report:', error);
+                showError(error.message);
+            } finally {
                 loadingSpinner.classList.add('hidden');
-                break;
-
-            case 'please_select':
-            default:
-                scheduleContent.innerHTML = `<p class="text-gray-400">Please select a report to view.</p>`;
-                loadingSpinner.classList.add('hidden');
-                break;
+            }
         }
-        // --- END MODIFIED ---
-    }
+        // --- [END] NEW: Playoff Schedules Fetch Function ---
+
+
+        async function fetchAndRenderReport() {
+            const selectedWeek = weekSelect.value;
+            const selectedReport = reportSelect.value;
+
+            console.log(`Fetching data for: Week ${selectedWeek}, Report ${selectedReport}`);
+
+            loadingSpinner.classList.remove('hidden');
+
+            // --- MODIFIED: Added "playoff_schedules" case ---
+            switch (selectedReport) {
+                case 'off_days':
+                    await fetchOffDaysReport(selectedWeek);
+                    break;
+
+                case 'playoff_schedules': // NEW
+                    await fetchPlayoffSchedules(); // This function ignores selectedWeek
+                    break;
+
+                case 'tbd':
+                    scheduleContent.innerHTML = `<p class="text-gray-400">The "TBD" report is not yet implemented.</p>`;
+                    loadingSpinner.classList.add('hidden');
+                    break;
+
+                case 'please_select':
+                default:
+                    scheduleContent.innerHTML = `<p class="text-gray-400">Please select a report to view.</p>`;
+                    loadingSpinner.classList.add('hidden');
+                    break;
+            }
+            // --- END MODIFIED ---
+        }
 
     async function init() {
         loadingSpinner.classList.remove('hidden');
