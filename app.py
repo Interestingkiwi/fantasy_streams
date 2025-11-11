@@ -2178,6 +2178,126 @@ def schedules_page_data():
             conn.close()
 
 
+TEAM_TRICODES = [
+    "FLA", "CHI", "NYR", "PIT", "LAK", "COL", "TOR", "MTL", "WSH", "BOS",
+    "EDM", "CGY", "VGK", "BUF", "DET", "TBL", "OTT", "PHI", "NYI", "CAR",
+    "NJD", "STL", "MIN", "NSH", "CBJ", "WPG", "DAL", "UTA", "VAN", "SJS",
+    "SEA", "ANA"
+]
+
+@app.route('/api/schedules/off_days', methods=['POST'])
+def schedules_off_days():
+    """
+    Fetches and processes "Off Days" data based on the selected week.
+    """
+    league_id = session.get('league_id')
+    conn, error_msg = get_db_connection_for_league(league_id)
+    if not conn:
+        return jsonify({'error': error_msg}), 500
+
+    try:
+        data = request.get_json()
+        selected_week = data.get('week')
+        cursor = conn.cursor()
+
+        # 1. Fetch data from all three tables
+        cursor.execute("SELECT off_day_date FROM off_days")
+        off_days_set = set(row['off_day_date'] for row in cursor.fetchall())
+
+        cursor.execute("SELECT week_num, start_date, end_date FROM weeks ORDER BY week_num")
+        weeks = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        cursor.execute("SELECT game_date, home_team, away_team FROM schedule")
+        schedule = decode_dict_values([dict(row) for row in cursor.fetchall()])
+
+        # 2. Determine current week (for "All Season" split)
+        today = date.today().isoformat()
+        cursor.execute("SELECT week_num FROM weeks WHERE start_date <= ? AND end_date >= ?", (today, today))
+        current_week_row = cursor.fetchone()
+        current_week = current_week_row['week_num'] if current_week_row else (weeks[0]['week_num'] if weeks else 1)
+        if not weeks:
+            return jsonify({'error': 'No week data found in database.'}), 500
+
+        # 3. Process the data into a master structure
+        # all_weeks_data[week_num][team] = {'off_days': 0, 'total_games': 0}
+        all_weeks_data = {}
+        for week in weeks:
+            week_num = week['week_num']
+            start_date = week['start_date']
+            end_date = week['end_date']
+            all_weeks_data[week_num] = {team: {'off_days': 0, 'total_games': 0} for team in TEAM_TRICODES}
+
+            # Filter schedule for this week
+            week_schedule = [g for g in schedule if start_date <= g['game_date'] <= end_date]
+
+            for game in week_schedule:
+                is_off_day = game['game_date'] in off_days_set
+                teams_in_game = [game['home_team'], game['away_team']]
+
+                for team in teams_in_game:
+                    if team in all_weeks_data[week_num]:
+                        all_weeks_data[week_num][team]['total_games'] += 1
+                        if is_off_day:
+                            all_weeks_data[week_num][team]['off_days'] += 1
+
+        # 4. Format the response based on selected_week
+        if selected_week == 'all':
+            ros_data = {'headers': [], 'rows': []}
+            past_data = {'headers': [], 'rows': []}
+
+            # Create headers
+            ros_headers = [f"Week {w['week_num']}" for w in weeks if w['week_num'] >= current_week]
+            past_headers = [f"Week {w['week_num']}" for w in weeks if w['week_num'] < current_week]
+            ros_data['headers'] = ros_headers
+            past_data['headers'] = past_headers
+
+            # Create rows
+            for team in TEAM_TRICODES:
+                ros_row = {'team': team}
+                past_row = {'team': team}
+                for week_header in ros_headers: # "Week 6"
+                    week_num = int(week_header.split(' ')[1])
+                    ros_row[week_header] = all_weeks_data[week_num][team]['off_days']
+                for week_header in past_headers: # "Week 1"
+                    week_num = int(week_header.split(' ')[1])
+                    past_row[week_header] = all_weeks_data[week_num][team]['off_days']
+
+                ros_data['rows'].append(ros_row)
+                past_data['rows'].append(past_row)
+
+            return jsonify({
+                'report_type': 'all_season',
+                'ros_data': ros_data,
+                'past_data': past_data
+            })
+
+        else: # Single week
+            week_num_int = int(selected_week)
+            table_data = []
+            if week_num_int not in all_weeks_data:
+                 return jsonify({'error': f'Data for week {week_num_int} not found.'}), 404
+
+            week_data = all_weeks_data[week_num_int]
+            for team in TEAM_TRICODES:
+                table_data.append({
+                    'team': team,
+                    'off_days': week_data[team]['off_days'],
+                    'total_games': week_data[team]['total_games']
+                })
+
+            return jsonify({
+                'report_type': 'single_week',
+                'table_data': table_data
+            })
+
+    except Exception as e:
+        logging.error(f"Error fetching schedules/off_days data: {e}", exc_info=True)
+        return jsonify({'error': f"An error occurred: {e}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
 
 @app.route('/api/roster_data', methods=['POST'])
 def get_roster_data():
