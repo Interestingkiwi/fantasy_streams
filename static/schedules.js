@@ -183,7 +183,9 @@
             // Use week number (e.g., "Week 6") as the sort key
             html += `<th class="table-header sortable-header cursor-pointer" data-sort-key="${header}">${header}</th>`;
         }
-
+        if (title === "Off Days For ROS") {
+                html += `<th class="table-header sortable-header cursor-pointer" data-sort-key="Total">Total</th>`;
+            }
         html += `           </tr>
                         </thead>
                         <tbody class="bg-gray-900 divide-y divide-gray-700">`;
@@ -194,6 +196,10 @@
             for (const header of headers) {
                 html += `<td class="table-cell text-center">${row[header] || 0}</td>`;
             }
+            if (title === "Off Days For ROS") {
+                        // Making this bold to stand out
+                        html += `<td class="table-cell text-center font-bold">${row['Total'] || 0}</td>`;
+                    }
             html += `</tr>`;
         }
 

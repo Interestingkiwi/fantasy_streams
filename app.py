@@ -2200,7 +2200,7 @@ def schedules_off_days():
         selected_week = data.get('week')
         cursor = conn.cursor()
 
-        # 1. Fetch data from all three tables
+        # 1. Fetch data from all three tables (Unchanged)
         cursor.execute("SELECT off_day_date FROM off_days")
         off_days_set = set(row['off_day_date'] for row in cursor.fetchall())
 
@@ -2210,7 +2210,7 @@ def schedules_off_days():
         cursor.execute("SELECT game_date, home_team, away_team FROM schedule")
         schedule = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
-        # 2. Determine current week (for "All Season" split)
+        # 2. Determine current week (Unchanged)
         today = date.today().isoformat()
         cursor.execute("SELECT week_num FROM weeks WHERE start_date <= ? AND end_date >= ?", (today, today))
         current_week_row = cursor.fetchone()
@@ -2218,8 +2218,7 @@ def schedules_off_days():
         if not weeks:
             return jsonify({'error': 'No week data found in database.'}), 500
 
-        # 3. Process the data into a master structure
-        # all_weeks_data[week_num][team] = {'off_days': 0, 'total_games': 0}
+        # 3. Process the data into a master structure (Unchanged)
         all_weeks_data = {}
         for week in weeks:
             week_num = week['week_num']
@@ -2227,7 +2226,6 @@ def schedules_off_days():
             end_date = week['end_date']
             all_weeks_data[week_num] = {team: {'off_days': 0, 'total_games': 0} for team in TEAM_TRICODES}
 
-            # Filter schedule for this week
             week_schedule = [g for g in schedule if start_date <= g['game_date'] <= end_date]
 
             for game in week_schedule:
@@ -2245,25 +2243,33 @@ def schedules_off_days():
             ros_data = {'headers': [], 'rows': []}
             past_data = {'headers': [], 'rows': []}
 
-            # Create headers
             ros_headers = [f"Week {w['week_num']}" for w in weeks if w['week_num'] >= current_week]
             past_headers = [f"Week {w['week_num']}" for w in weeks if w['week_num'] < current_week]
             ros_data['headers'] = ros_headers
             past_data['headers'] = past_headers
 
-            # Create rows
+            # --- [START] MODIFICATION ---
             for team in TEAM_TRICODES:
                 ros_row = {'team': team}
                 past_row = {'team': team}
+
+                ros_total = 0 # <-- NEW: Initialize total for ROS
+
                 for week_header in ros_headers: # "Week 6"
                     week_num = int(week_header.split(' ')[1])
-                    ros_row[week_header] = all_weeks_data[week_num][team]['off_days']
+                    off_days_count = all_weeks_data[week_num][team]['off_days'] # <-- Get count
+                    ros_row[week_header] = off_days_count
+                    ros_total += off_days_count # <-- NEW: Add to total
+
+                ros_row['Total'] = ros_total # <-- NEW: Add total to the row
+
                 for week_header in past_headers: # "Week 1"
                     week_num = int(week_header.split(' ')[1])
                     past_row[week_header] = all_weeks_data[week_num][team]['off_days']
 
                 ros_data['rows'].append(ros_row)
                 past_data['rows'].append(past_row)
+            # --- [END] MODIFICATION ---
 
             return jsonify({
                 'report_type': 'all_season',
@@ -2271,7 +2277,7 @@ def schedules_off_days():
                 'past_data': past_data
             })
 
-        else: # Single week
+        else: # Single week (Unchanged)
             week_num_int = int(selected_week)
             table_data = []
             if week_num_int not in all_weeks_data:
