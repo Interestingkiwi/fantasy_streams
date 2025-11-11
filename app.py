@@ -49,7 +49,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 DB_BUILD_QUEUES = {}
 DB_QUEUES_LOCK = threading.Lock() # To safely add/remove from the dict
 
-db_build_status = {"running": False, "error": None}
+db_build_status = {"running": False, "error": None, "current_build_id": None}
 db_build_status_lock = threading.Lock()
 
 # --- Yahoo OAuth2 Settings ---
@@ -137,7 +137,7 @@ def get_yfa_lg_instance():
         "xoauth_yahoo_guid": token.get('xoauth_yahoo_guid')
     }
 
-    temp_dir = os.path.join(DATA_DIR, 'temp_creds')
+    temp_dir = os.path.join(tempfile.gettempdir(), 'temp_creds')
     os.makedirs(temp_dir, exist_ok=True)
     temp_file_path = os.path.join(temp_dir, f"{uuid.uuid4()}.json")
 
@@ -2833,8 +2833,22 @@ def db_action():
     global db_build_status
     with db_build_status_lock:
         if db_build_status["running"]:
-            return jsonify({'error': 'A build is already in progress.'}), 409
-        db_build_status = {"running": True, "error": None}
+            # --- MODIFICATION: Return the active build_id to allow other sessions to listen ---
+            return jsonify({
+                'error': 'A build is already in progress.',
+                'build_id': db_build_status.get("current_build_id") # Send the active ID
+            }), 409
+            # --- END MODIFICATION ---
+
+        # --- Create session-specific build items ---
+        build_id = str(uuid.uuid4())
+        # --- MODIFICATION: Use ephemeral temp directory ---
+        log_file_path = os.path.join(tempfile.gettempdir(), f"{build_id}.log")
+        # --- END MODIFICATION ---
+
+        # --- MODIFICATION: Store the new build_id in the global status ---
+        db_build_status = {"running": True, "error": None, "current_build_id": build_id}
+        # --- END MODIFICATION ---
 
     data = request.get_json()
     options = {
@@ -2853,34 +2867,27 @@ def db_action():
     }
     # --- End FIX 2 ---
 
-    # --- Create session-specific build items ---
-    build_id = str(uuid.uuid4())
-    build_queue = Queue()
-    with DB_QUEUES_LOCK:
-        DB_BUILD_QUEUES[build_id] = build_queue
-
-    def run_task(build_id, build_queue, options, data):
+    # --- MODIFICATION: Use file-based logging, not Queues ---
+    def run_task(build_id, log_file_path, options, data):
         # --- Create a temporary logger FOR THIS THREAD ONLY ---
         logger = logging.getLogger(f"db_build_{build_id}")
         logger.setLevel(logging.INFO)
         logger.propagate = False  # IMPORTANT: Do not send to root logger
 
-        class QueueLogHandler(logging.Handler):
-            def __init__(self, queue):
-                super().__init__()
-                self.queue = queue
-
-            def emit(self, record):
-                log_entry = self.format(record)
-                self.queue.put(f"{log_entry}\n")
-
-        queue_handler = QueueLogHandler(build_queue)
-        queue_handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(message)s')
-        queue_handler.setFormatter(formatter)
-
-        if not logger.handlers:
-            logger.addHandler(queue_handler)
+        file_handler = None
+        try:
+            file_handler = logging.FileHandler(log_file_path, mode='w', encoding='utf-8')
+            file_handler.setLevel(logging.INFO)
+            formatter = logging.Formatter('%(message)s')
+            file_handler.setFormatter(formatter)
+            if not logger.handlers:
+                logger.addHandler(file_handler)
+        except Exception as e:
+            # If we can't even create the log file, just log to console and exit
+            logging.error(f"Failed to create FileHandler for build {build_id}: {e}")
+            with db_build_status_lock:
+                db_build_status = {"running": False, "error": str(e), "current_build_id": None}
+            return
         # --- END NEW LOGGER SETUP ---
 
         yq = None
@@ -2916,7 +2923,9 @@ def db_action():
                     "token_time": data['token'].get('expires_at', time.time() + 3600),
                     "xoauth_yahoo_guid": data['token'].get('xoauth_yahoo_guid')
                 }
-                temp_dir = os.path.join(DATA_DIR, 'temp_creds')
+                # --- MODIFICATION: Use ephemeral temp directory ---
+                temp_dir = os.path.join(tempfile.gettempdir(), 'temp_creds')
+                # --- END MODIFICATION ---
                 os.makedirs(temp_dir, exist_ok=True)
                 temp_file_path = os.path.join(temp_dir, f"thread_{build_id}.json")
 
@@ -2975,25 +2984,29 @@ def db_action():
                 db_build_status["error"] = str(e)
         finally:
             with db_build_status_lock:
-                db_build_status["running"] = False
+                # --- MODIFICATION: Reset the whole status object ---
+                error_msg = db_build_status.get("error") # Preserve error if one was set
+                db_build_status = {"running": False, "error": error_msg, "current_build_id": None}
+                # --- END MODIFICATION ---
 
             try:
-                # Send the 'None' sentinel to tell any listener to stop
-                build_queue.put(None, timeout=5)
+                # --- MODIFICATION: Create a .done file as a sentinel ---
+                done_file_path = f"{log_file_path}.done"
+                Path(done_file_path).touch()
+                # --- END MODIFICATION ---
             except Exception as e:
-                logger.error(f"Build task {build_id} couldn't put sentinel in queue: {e}")
+                logger.error(f"Build task {build_id} couldn't create .done file: {e}")
 
-            # Give the listener a brief moment to receive the sentinel and disconnect
-            time.sleep(1)
+            # --- MODIFICATION: Close the file handler ---
+            if file_handler:
+                file_handler.close()
+                logger.removeHandler(file_handler)
+            # --- END MODIFICATION ---
 
-            # Now, this thread cleans up its own queue from the global dict
-            with DB_QUEUES_LOCK:
-                if build_id in DB_BUILD_QUEUES:
-                    del DB_BUILD_QUEUES[build_id]
-                    logger.info(f"Build task {build_id} cleaned up its own queue.")
+            logger.info(f"Build task {build_id} thread finished.")
 
     # --- Start thread with new thread_data arg ---
-    threading.Thread(target=run_task, args=(build_id, build_queue, options, thread_data)).start()
+    threading.Thread(target=run_task, args=(build_id, log_file_path, options, thread_data)).start()
 
     return jsonify({'success': True, 'build_id': build_id})
 # --- END MODIFIED ROUTE ---
@@ -3005,39 +3018,53 @@ def db_log_stream():
     if not build_id:
         return Response("data: ERROR: No build_id provided.\n\ndata: __DONE__\n\n", mimetype='text/event-stream')
 
-    with DB_QUEUES_LOCK:
-        build_queue = DB_BUILD_QUEUES.get(build_id)
+    # --- MODIFICATION: Check for log files in temp dir ---
+    log_file_path = os.path.join(tempfile.gettempdir(), f"{build_id}.log")
+    done_file_path = f"{log_file_path}.done"
 
-    if not build_queue:
-        return Response(f"data: ERROR: Invalid build ID {build_id}. It may be complete or never existed.\n\ndata: __DONE__\n\n", mimetype='text/event-stream')
+    if not os.path.exists(log_file_path):
+        # This can happen due to a (new) race condition where the log stream
+        # request arrives before the build thread has created the file.
+        # We'll give it a moment.
+        time.sleep(1)
+        if not os.path.exists(log_file_path):
+            return Response(f"data: ERROR: Invalid build ID {build_id}. It may be complete or never existed.\n\ndata: __DONE__\n\n", mimetype='text/event-stream')
+    # --- END MODIFICATION ---
 
     def generate():
-        # The try...finally block is removed.
-        while True:
+        # --- MODIFICATION: This entire function tails the log file ---
+        try:
+            with open(log_file_path, 'r', encoding='utf-8') as f:
+                while True:
+                    line = f.readline()
+                    if line:
+                        yield f"data: {line.strip()}\n\n"
+                    elif os.path.exists(done_file_path):
+                        # Done file exists, send final sentinel and break
+                        yield 'data: __DONE__\n\n'
+                        break
+                    else:
+                        # No new line, but not done. Wait and try again.
+                        time.sleep(0.5)
+        except Exception as e:
+            logging.error(f"Error in log stream generator for {build_id}: {e}")
+            yield f"data: ERROR: Log stream failed. {e}\n\n"
+            yield 'data: __DONE__\n\n'
+        finally:
+            # --- NEW: Cleanup logic ---
+            # This block runs when the loop breaks (on __DONE__)
+            # or if the client disconnects.
             try:
-                message = build_queue.get(timeout=20)
-                if message is None: # The sentinel from run_task
-                    yield 'data: __DONE__\n\n'
-                    break # Exit the loop
-                message = message.strip()
-                yield f"data: {message}\n\n"
-            except: # queue.Empty exception
-                # This keep-alive is fine
-                yield ': keep-alive\n\n'
-
-        # When the loop breaks (or client disconnects), this generator just ends.
-        # It no longer deletes the queue.
-        logging.info(f"Log stream {build_id} disconnected.")
+                if os.path.exists(log_file_path):
+                    os.remove(log_file_path)
+                if os.path.exists(done_file_path):
+                    os.remove(done_file_path)
+                logging.info(f"Log stream {build_id} disconnected and files were cleaned up.")
+            except Exception as e:
+                logging.error(f"Failed to clean up log files for {build_id}: {e}")
+            # --- END NEW ---
 
     return Response(generate(), mimetype='text/event-stream')
-
-
-# --- REMOVING OLD/DUPLICATE DB AND LOG ROUTES ---
-# The routes /stream, /api/update_db, update_db_in_background
-# and the second /api/db_status are all replaced by
-# /api/db_action and /api/db_log_stream and the first /api/db_status
-# --- END REMOVAL ---
-
 
 @app.route('/static/<path:filename>')
 def serve_static(filename):
