@@ -3198,6 +3198,7 @@ def db_action():
 
     # --- MODIFICATION: Use file-based logging, not Queues ---
     def run_task(build_id, log_file_path, options, data):
+        global db_build_status
         # --- Create a temporary logger FOR THIS THREAD ONLY ---
         logger = logging.getLogger(f"db_build_{build_id}")
         logger.setLevel(logging.INFO)
@@ -3315,7 +3316,9 @@ def db_action():
             with db_build_status_lock:
                 # --- MODIFICATION: Reset the whole status object ---
                 error_msg = db_build_status.get("error") # Preserve error if one was set
-                db_build_status = {"running": False, "error": error_msg, "current_build_id": None}
+                db_build_status["running"] = False
+                db_build_status["error"] = error_msg
+                db_build_status["current_build_id"] = None
                 # --- END MODIFICATION ---
 
             try:
