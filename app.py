@@ -2199,13 +2199,11 @@ def schedules_off_days():
         selected_week = data.get('week')
         cursor = conn.cursor()
 
-        # --- [NEW] ---
         # 1a. Fetch team standings data
         cursor.execute("SELECT team_tricode, point_pct, goals_against_per_game FROM team_standings")
         standings_rows = cursor.fetchall()
-        # Create a map for easy lookup: {'STL': {'point_pct': 0.550, 'goals_against_per_game': 2.80}, ...}
+        # Create a map for easy lookup: {'STL': {'point_pct': '0.550', 'goals_against_per_game': 2.80}, ...}
         standings_map = {row['team_tricode']: {'point_pct': row['point_pct'], 'goals_against_per_game': row['goals_against_per_game']} for row in standings_rows}
-        # --- [END NEW] ---
 
 
         # 1b. Fetch data from all three tables (Unchanged)
@@ -2280,7 +2278,7 @@ def schedules_off_days():
             })
 
         else:
-            # --- [START] MODIFIED: Single week logic ---
+            # --- Single week logic ---
             week_num_int = int(selected_week)
             table_data = []
             if week_num_int not in all_weeks_data:
@@ -2303,42 +2301,42 @@ def schedules_off_days():
                     opponent = game['away_team'] if game['home_team'] == team else game['home_team']
                     opponents.append(opponent)
 
-                # --- [NEW] Calculate opponent averages ---
+                # --- [START] MODIFIED Calculate opponent averages ---
                 if not opponents:
                     avg_ga_str = 'N/A'
                     avg_pt_pct_str = 'N/A'
                 else:
-                    total_ga = 0
-                    total_pt_pct = 0
+                    total_ga = 0.0      # MODIFIED: Use float
+                    total_pt_pct = 0.0  # MODIFIED: Use float
                     game_count = len(opponents)
 
                     for opp in opponents:
                         team_stats = standings_map.get(opp) # Get stats for the opponent
                         if team_stats:
-                            # Coalesce None (from DB) to 0
-                            total_ga += team_stats.get('goals_against_per_game') or 0
-                            total_pt_pct += team_stats.get('point_pct') or 0
+                            # Coalesce None (from DB) to 0.0
+                            total_ga += team_stats.get('goals_against_per_game') or 0.0
+                            # MODIFIED: Cast TEXT 'point_pct' to float
+                            total_pt_pct += float(team_stats.get('point_pct') or 0.0)
 
                     avg_ga = total_ga / game_count
                     avg_pt_pct = total_pt_pct / game_count
                     avg_ga_str = f"{avg_ga:.2f}"
                     avg_pt_pct_str = f"{avg_pt_pct:.3f}"
-                # --- [END NEW] ---
+                # --- [END] MODIFIED ---
 
                 table_data.append({
                     'team': team,
                     'off_days': week_data[team]['off_days'],
                     'total_games': week_data[team]['total_games'],
                     'opponents': ", ".join(opponents),
-                    'opponent_avg_ga': avg_ga_str,           # MODIFIED
-                    'opponent_avg_pt_pct': avg_pt_pct_str    # MODIFIED
+                    'opponent_avg_ga': avg_ga_str,
+                    'opponent_avg_pt_pct': avg_pt_pct_str
                 })
 
             return jsonify({
                 'report_type': 'single_week',
                 'table_data': table_data
             })
-            # --- [END] MODIFIED ---
 
     except Exception as e:
         logging.error(f"Error fetching schedules/off_days data: {e}", exc_info=True)
@@ -2409,12 +2407,10 @@ def schedules_playoff_schedules():
         cursor.execute("SELECT game_date, home_team, away_team FROM schedule")
         schedule = decode_dict_values([dict(row) for row in cursor.fetchall()])
 
-        # --- [NEW] ---
         # 5a. Fetch team standings data
         cursor.execute("SELECT team_tricode, point_pct, goals_against_per_game FROM team_standings")
         standings_rows = cursor.fetchall()
         standings_map = {row['team_tricode']: {'point_pct': row['point_pct'], 'goals_against_per_game': row['goals_against_per_game']} for row in standings_rows}
-        # --- [END NEW] ---
 
         # 6. Process data for each team for each playoff week
         team_data = {team: {} for team in TEAM_TRICODES}
@@ -2437,42 +2433,41 @@ def schedules_playoff_schedules():
                     opponent = game['away_team'] if game['home_team'] == team else game['home_team']
                     opponents.append(opponent)
 
-                # --- [NEW] Calculate opponent averages ---
+                # --- [START] MODIFIED Calculate opponent averages ---
                 if not opponents:
                     avg_ga_str = 'N/A'
                     avg_pt_pct_str = 'N/A'
                 else:
-                    total_ga = 0
-                    total_pt_pct = 0
+                    total_ga = 0.0      # MODIFIED: Use float
+                    total_pt_pct = 0.0  # MODIFIED: Use float
                     game_count = len(opponents)
 
                     for opp in opponents:
                         team_stats = standings_map.get(opp)
                         if team_stats:
-                            total_ga += team_stats.get('goals_against_per_game') or 0
-                            total_pt_pct += team_stats.get('point_pct') or 0
+                            total_ga += team_stats.get('goals_against_per_game') or 0.0
+                            # MODIFIED: Cast TEXT 'point_pct' to float
+                            total_pt_pct += float(team_stats.get('point_pct') or 0.0)
 
                     avg_ga = total_ga / game_count
                     avg_pt_pct = total_pt_pct / game_count
                     avg_ga_str = f"{avg_ga:.2f}"
                     avg_pt_pct_str = f"{avg_pt_pct:.3f}"
-                # --- [END NEW] ---
+                # --- [END] MODIFIED ---
 
                 team_data[team][week_num] = {
                     'games': total_games,
                     'off_days': off_day_games,
                     'opponents': ", ".join(opponents),
-                    'opponent_avg_ga': avg_ga_str,        # NEW
-                    'opponent_avg_pt_pct': avg_pt_pct_str # NEW
+                    'opponent_avg_ga': avg_ga_str,
+                    'opponent_avg_pt_pct': avg_pt_pct_str
                 }
 
-        # --- [START] MODIFICATION (Step 7) ---
-        # 7. Format for the frontend table
+        # 7. Format for the frontend table (Unchanged)
         headers = ['Team']
         for week in playoff_weeks:
             week_num = week['week_num']
             headers.append(f'Week {week_num} Games')
-            # Add week number to headers to make them unique
             headers.append(f'Week {week_num} Opponents')
             headers.append(f'Week {week_num} Opponent Avg GA')
             headers.append(f'Week {week_num} Opponent Avg Pt %')
@@ -2484,15 +2479,11 @@ def schedules_playoff_schedules():
                 week_num = week['week_num']
                 data = team_data[team][week_num]
 
-                # Format: "4 (2)"
                 row[f'Week {week_num} Games'] = f"{data['games']} ({data['off_days']})"
-
-                # Use the same unique headers as keys for the row data
                 row[f'Week {week_num} Opponents'] = data['opponents']
-                row[f'Week {week_num} Opponent Avg GA'] = data['opponent_avg_ga']        # MODIFIED
-                row[f'Week {week_num} Opponent Avg Pt %'] = data['opponent_avg_pt_pct']  # MODIFIED
+                row[f'Week {week_num} Opponent Avg GA'] = data['opponent_avg_ga']
+                row[f'Week {week_num} Opponent Avg Pt %'] = data['opponent_avg_pt_pct']
             rows.append(row)
-        # --- [END] MODIFICATION ---
 
         return jsonify({
             'title': 'Playoff Weeks',
