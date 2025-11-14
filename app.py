@@ -2552,8 +2552,11 @@ def get_roster_data():
         active_players = _get_ranked_roster_for_week(cursor, team_id, week_num)
 
         # Get the full player list for display, including IR players
+        # ---
+        # --- THE FIX IS HERE: Added "p.player_id" to the SELECT list ---
+        # ---
         cursor.execute("""
-            SELECT p.player_name, p.player_team as team, rp.eligible_positions, p.player_name_normalized
+            SELECT p.player_id, p.player_name, p.player_team as team, rp.eligible_positions, p.player_name_normalized
             FROM rosters_tall r
             JOIN rostered_players rp ON r.player_id = rp.player_id
             JOIN players p ON rp.player_id = p.player_id
@@ -2715,6 +2718,7 @@ def get_roster_data():
 
         # Add starts count to the final player list
         for player in all_players:
+            # This line now works, because player.get('player_id') is no longer None
             player['starts_this_week'] = player_starts_counter.get(player.get('player_id'), 0)
 
         # --- Calculate Unused Roster Spots ---
