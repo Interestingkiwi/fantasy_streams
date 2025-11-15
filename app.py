@@ -1,4 +1,4 @@
-from gevent import monkey
+%Y-%m-%dfrom gevent import monkey
 monkey.patch_all()
 
 """
@@ -2534,8 +2534,8 @@ def get_roster_data():
         week_dates = cursor.fetchone()
         if not week_dates:
             return jsonify({'error': f'Week not found: {week_num}'}), 404
-        start_date = datetime.strptime(week_dates['start_date'], '%Y-%m-d').date()
-        end_date = datetime.strptime(week_dates['end_date'], '%Y-%m-d').date()
+        start_date = datetime.strptime(week_dates['start_date'], '%Y-%m-%d').date()
+        end_date = datetime.strptime(week_dates['end_date'], '%Y-%m-%d').date()
         days_in_week = [(start_date + timedelta(days=i)) for i in range((end_date - start_date).days + 1)]
 
 
@@ -2545,8 +2545,8 @@ def get_roster_data():
         if not week_dates_next:
             start_date_next, end_date_next = None, None
         else:
-            start_date_next = datetime.strptime(week_dates_next['start_date'], '%Y-%m-d').date()
-            end_date_next = datetime.strptime(week_dates_next['end_date'], '%Y-%m-d').date()
+            start_date_next = datetime.strptime(week_dates_next['start_date'], '%Y-%m-%d').date()
+            end_date_next = datetime.strptime(week_dates_next['end_date'], '%Y-%m-%d').date()
 
         # Use the helper to get the ranked roster of active players
         active_players = _get_ranked_roster_for_week(cursor, team_id, week_num)
@@ -2619,7 +2619,7 @@ def get_roster_data():
                 source = active_player_map[player['player_name']]
                 player['total_rank'] = source.get('total_rank')
                 player['game_dates_this_week'] = source.get('game_dates_this_week', [])
-                player['games_this_week'] = [datetime.strptime(d, '%Y-%m-d').strftime('%a') for d in player['game_dates_this_week']]
+                player['games_this_week'] = [datetime.strptime(d, '%Y-%m-%d').strftime('%a') for d in player['game_dates_this_week']]
             else:
                 # This is either an IR player or a Simulated Player
                 # If 'games_this_week' is NOT on the object, it's an IR player. Set to [].
@@ -2666,7 +2666,7 @@ def get_roster_data():
                     if schedule_row and schedule_row['schedule_json']:
                         schedule = json.loads(schedule_row['schedule_json'])
                         for game_date_str in schedule:
-                            game_date = datetime.strptime(game_date_str, '%Y-%m-d').date()
+                            game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
                             if start_date_next <= game_date <= end_date_next:
                                 player['games_next_week'].append(game_date.strftime('%a'))
 
@@ -2699,7 +2699,7 @@ def get_roster_data():
         player_starts_counter = Counter()
 
         for day_date in days_in_week:
-            day_str = day_date.strftime('%Y-%m-d')
+            day_str = day_date.strftime('%Y-%m-%d')
 
             daily_active_roster = _get_daily_simulated_roster(active_players, simulated_moves, day_str)
 
